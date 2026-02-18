@@ -6,7 +6,7 @@ An OpenClaw plugin that turns AI agents into a full business operating system us
 
 MABOS lets you create and manage multiple business ventures, each operated by 9+ autonomous AI agents with human-like reasoning capabilities. Every agent has beliefs about the world, desires that motivate them, goals they pursue, and plans they execute — all coordinated through formal communication protocols.
 
-Businesses are onboarded through a guided 5-phase pipeline (conversational CLI or web UI), generating TOGAF architecture, Business Model Canvas, Tropos goal models, and a full knowledge graph backed by Neo4j. Each agent is initialized with role-specific desires and can reason across 17+ methods, manage contractors, integrate with external services, and report to a stakeholder dashboard.
+Businesses are onboarded through a guided 5-phase pipeline (conversational CLI or web UI), generating TOGAF architecture, Business Model Canvas, Tropos goal models, and a full knowledge graph backed by TypeDB. Each agent is initialized with role-specific desires and can reason across 17+ methods, manage contractors, integrate with external services, and report to a stakeholder dashboard.
 
 ---
 
@@ -205,16 +205,16 @@ Supported reasoning methods:
 
 ### Business Onboarding (8 tools)
 
-| Tool                        | Description                                                                          |
-| --------------------------- | ------------------------------------------------------------------------------------ |
-| `onboard_business`          | End-to-end business onboarding: workspace, BMC, agents. Supports `orchestrate` mode  |
-| `togaf_generate`            | Generate a TOGAF enterprise architecture (business, application, technology layers)  |
-| `bmc_generate`              | Generate a Business Model Canvas for a venture                                       |
-| `tropos_generate`           | Generate a Tropos i\* goal model mapping stakeholder goals to agent responsibilities |
-| `agent_spawn_domain`        | Create domain-specific agents for a business type                                    |
-| `desire_init_from_template` | Batch-initialize desires for all 9 (or specified) agent roles from templates         |
-| `sbvr_sync_to_backend`      | Export SBVR ontology and push to backend, creating business and agent nodes in Neo4j |
-| `onboarding_progress`       | Track onboarding phase state with optional Canvas progress view                      |
+| Tool                        | Description                                                                            |
+| --------------------------- | -------------------------------------------------------------------------------------- |
+| `onboard_business`          | End-to-end business onboarding: workspace, BMC, agents. Supports `orchestrate` mode    |
+| `togaf_generate`            | Generate a TOGAF enterprise architecture (business, application, technology layers)    |
+| `bmc_generate`              | Generate a Business Model Canvas for a venture                                         |
+| `tropos_generate`           | Generate a Tropos i\* goal model mapping stakeholder goals to agent responsibilities   |
+| `agent_spawn_domain`        | Create domain-specific agents for a business type                                      |
+| `desire_init_from_template` | Batch-initialize desires for all 9 (or specified) agent roles from templates           |
+| `sbvr_sync_to_backend`      | Export SBVR ontology and push to backend, creating business and agent schema in TypeDB |
+| `onboarding_progress`       | Track onboarding phase state with optional Canvas progress view                        |
 
 ### Stakeholder Governance (4 tools)
 
@@ -317,7 +317,7 @@ Guided 5-phase conversational business onboarding pipeline:
 | 1. Discovery        | Collect business info via TOGAF questionnaire (9 questions), confirm with stakeholder |
 | 2. Architecture     | Generate workspace, TOGAF model, BMC, Tropos goal model                               |
 | 3. Agent Activation | Spawn domain-specific agents, initialize desires from templates                       |
-| 4. Knowledge Graph  | Sync SBVR ontology to Neo4j backend (falls back to local export if unavailable)       |
+| 4. Knowledge Graph  | Sync SBVR ontology to TypeDB backend (falls back to local export if unavailable)      |
 | 5. Launch           | Present progress canvas, run CEO's first BDI cycle, show dashboard                    |
 
 Each phase is independently retriable. Progress is tracked in `onboarding-progress.json` across sessions.
@@ -345,7 +345,7 @@ The ontology loader (`src/ontology/index.ts`) provides:
 
 - `loadOntologies()` — Load and validate all ontology files
 - `mergeOntologies()` — Merge into a unified graph
-- `exportSBVRForNeo4j()` — Export concept types, fact types, rules, and proof tables for Neo4j ingestion
+- `exportSBVRForTypeDB()` — Export concept types, fact types, rules, and proof tables for TypeDB ingestion
 
 ---
 
@@ -402,11 +402,11 @@ Each agent's workspace contains 10 cognitive files:
 
 MABOS connects to a FastAPI backend (`mabos-workbench`) for persistent storage:
 
-| Service    | Purpose                                                          |
-| ---------- | ---------------------------------------------------------------- |
-| PostgreSQL | Business records, agent metadata, audit trails                   |
-| Neo4j      | SBVR ontology graph, agent knowledge nodes, relationship queries |
-| Redis      | State caching, session data, real-time metrics                   |
+| Service    | Purpose                                                             |
+| ---------- | ------------------------------------------------------------------- |
+| PostgreSQL | Business records, agent metadata, audit trails                      |
+| TypeDB     | SBVR ontology graph, agent knowledge nodes, typed inference queries |
+| Redis      | State caching, session data, real-time metrics                      |
 
 ### Key Endpoints
 
@@ -438,10 +438,10 @@ Both the CLI skill and web UI converge on the same backend endpoint.
 
 The plugin registers two lifecycle hooks:
 
-| Hook                 | Trigger              | Behavior                                                                        |
-| -------------------- | -------------------- | ------------------------------------------------------------------------------- |
-| `before_agent_start` | Agent session begins | Injects `Persona.md` content into system prompt if found in workspace           |
-| `after_tool_call`    | Any tool completes   | Logs BDI tool calls (belief*\*, goal*_, intention\__, bdi_cycle) to audit trail |
+| Hook                 | Trigger              | Behavior                                                                          |
+| -------------------- | -------------------- | --------------------------------------------------------------------------------- |
+| `before_agent_start` | Agent session begins | Injects `Persona.md` content into system prompt if found in workspace             |
+| `after_tool_call`    | Any tool completes   | Logs BDI tool calls (belief*\*, goal*\_, intention\_\_, bdi_cycle) to audit trail |
 
 ---
 

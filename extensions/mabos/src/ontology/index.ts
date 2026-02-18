@@ -6,7 +6,7 @@
  * and returns a merged graph for querying.
  *
  * SBVR support: validates SBVR annotations and provides
- * query functions and Neo4j export bridge.
+ * query functions and TypeDB export bridge.
  */
 
 import { readFileSync, readdirSync } from "fs";
@@ -456,7 +456,7 @@ export function getRulesForFactType(graph: MergedGraph, factTypeId: string): Ont
 }
 
 /**
- * Export the merged graph in the format expected by the Neo4j SBVROntologyManager.
+ * Export the merged graph in the format expected by the TypeDB schema manager.
  *
  * Transforms:
  * - Classes with sbvr:conceptType → create_concept_type() input
@@ -464,7 +464,7 @@ export function getRulesForFactType(graph: MergedGraph, factTypeId: string): Ont
  * - Rules (sbvr:DefinitionalRule / sbvr:BehavioralRule) → create_business_rule() input
  * - ProofTables → create_proof_table() input
  */
-export function exportSBVRForNeo4j(graph: MergedGraph): SBVRExport {
+export function exportSBVRForTypeDB(graph: MergedGraph): SBVRExport {
   const conceptTypes: SBVRExportConceptType[] = [];
   const factTypes: SBVRExportFactType[] = [];
   const rules: SBVRExportRule[] = [];

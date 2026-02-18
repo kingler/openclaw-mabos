@@ -839,13 +839,13 @@ ${agents.map((a) => `- **${a.id}:** ${a.name} — ${a.role}`).join("\n")}`);
           }
           orchestrationResults.push(`Desires: ${desiresInitialized} agents initialized`);
 
-          // 5c. SBVR sync to backend (best-effort)
+          // 5c. SBVR sync to backend + TypeDB schema push (best-effort)
           try {
-            const { loadOntologies, mergeOntologies, exportSBVRForNeo4j } =
+            const { loadOntologies, mergeOntologies, exportSBVRForTypeDB } =
               await import("../ontology/index.js");
             const ontologies = loadOntologies();
             const graph = mergeOntologies(ontologies);
-            const sbvrExport = exportSBVRForNeo4j(graph);
+            const sbvrExport = exportSBVRForTypeDB(graph);
 
             const backendUrl = "http://localhost:8000";
             const payload = {
@@ -867,6 +867,25 @@ ${agents.map((a) => `- **${a.id}:** ${a.name} — ${a.role}`).join("\n")}`);
             } else {
               await writeJson(join(bizDir, "sbvr-export.json"), sbvrExport);
               orchestrationResults.push("SBVR: Backend unavailable, saved locally");
+            }
+
+            // Push TypeQL schema to TypeDB (best-effort)
+            try {
+              const { getTypeDBClient } = await import("../knowledge/typedb-client.js");
+              const { jsonldToTypeQL, generateDefineQuery } =
+                await import("../knowledge/typedb-schema.js");
+              const { getBaseSchema } = await import("../knowledge/typedb-queries.js");
+              const client = getTypeDBClient();
+              if (client.isAvailable()) {
+                const dbName = `mabos_${params.business_id}`;
+                await client.ensureDatabase(dbName);
+                await client.defineSchema(getBaseSchema(), dbName);
+                const ontologySchema = generateDefineQuery(jsonldToTypeQL(graph));
+                await client.defineSchema(ontologySchema, dbName);
+                orchestrationResults.push("TypeDB: Schema pushed");
+              }
+            } catch {
+              orchestrationResults.push("TypeDB: Schema push skipped (unavailable)");
             }
           } catch {
             orchestrationResults.push("SBVR: Sync skipped (backend/ontology unavailable)");
@@ -962,7 +981,7 @@ ${results.filter((r) => r.includes("initialized")).length}/${roles.length} agent
       name: "sbvr_sync_to_backend",
       label: "Sync SBVR to Backend",
       description:
-        "Export the SBVR ontology and push it to the backend, creating business and agent nodes in Neo4j.",
+        "Export the SBVR ontology and push it to the backend, creating business and agent schema in TypeDB.",
       parameters: SbvrSyncParams,
       async execute(_id: string, params: Static<typeof SbvrSyncParams>) {
         const ws = resolveWorkspaceDir(api);
@@ -982,12 +1001,13 @@ ${results.filter((r) => r.includes("initialized")).length}/${roles.length} agent
 
         // Load and export SBVR ontology
         let sbvrExport;
+        let ontologyGraph;
         try {
-          const { loadOntologies, mergeOntologies, exportSBVRForNeo4j } =
+          const { loadOntologies, mergeOntologies, exportSBVRForTypeDB } =
             await import("../ontology/index.js");
           const ontologies = loadOntologies();
-          const graph = mergeOntologies(ontologies);
-          sbvrExport = exportSBVRForNeo4j(graph);
+          ontologyGraph = mergeOntologies(ontologies);
+          sbvrExport = exportSBVRForTypeDB(ontologyGraph);
         } catch (e) {
           return textResult(`Failed to load ontologies: ${e}`);
         }
@@ -1010,6 +1030,27 @@ ${results.filter((r) => r.includes("initialized")).length}/${roles.length} agent
 
           if (response.ok) {
             const result = (await response.json()) as { agent_ids?: string[] };
+
+            // Also push TypeQL schema to TypeDB (best-effort)
+            let typedbStatus = "skipped";
+            try {
+              const { getTypeDBClient } = await import("../knowledge/typedb-client.js");
+              const { jsonldToTypeQL, generateDefineQuery } =
+                await import("../knowledge/typedb-schema.js");
+              const { getBaseSchema } = await import("../knowledge/typedb-queries.js");
+              const client = getTypeDBClient();
+              if (client.isAvailable() && ontologyGraph) {
+                const dbName = `mabos_${params.business_id}`;
+                await client.ensureDatabase(dbName);
+                await client.defineSchema(getBaseSchema(), dbName);
+                const ontologySchema = generateDefineQuery(jsonldToTypeQL(ontologyGraph));
+                await client.defineSchema(ontologySchema, dbName);
+                typedbStatus = "schema pushed";
+              }
+            } catch {
+              typedbStatus = "unavailable";
+            }
+
             return textResult(`## SBVR Synced to Backend
 
 - **Business:** ${manifest.name} (${params.business_id})
@@ -1019,6 +1060,7 @@ ${results.filter((r) => r.includes("initialized")).length}/${roles.length} agent
 - **Rules:** ${sbvrExport.rules.length}
 - **Proof Tables:** ${sbvrExport.proofTables.length}
 - **Agent Nodes:** ${(result.agent_ids || []).length}
+- **TypeDB:** ${typedbStatus}
 
 Backend sync completed successfully.`);
           } else {

@@ -11,6 +11,8 @@ import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { join, dirname } from "node:path";
 import { Type, type Static } from "@sinclair/typebox";
 import type { OpenClawPluginApi, AnyAgentTool } from "openclaw/plugin-sdk";
+import { getTypeDBClient } from "../knowledge/typedb-client.js";
+import { RuleStoreQueries } from "../knowledge/typedb-queries.js";
 import { textResult, resolveWorkspaceDir } from "./common.js";
 
 async function readJson(p: string) {
@@ -195,6 +197,27 @@ export function createRuleEngineTools(api: OpenClawPluginApi): AnyAgentTool[] {
         store.version++;
 
         await writeJson(path, store);
+
+        // Write-through to TypeDB (best-effort)
+        try {
+          const client = getTypeDBClient();
+          if (client.isAvailable()) {
+            const typeql = RuleStoreQueries.createRule(params.agent_id, {
+              id: params.rule_id,
+              name: params.name,
+              description: params.description,
+              type: params.type,
+              conditionCount: params.conditions.length,
+              confidenceFactor: params.confidence_factor ?? 0.9,
+              enabled: true,
+              domain: params.domain,
+            });
+            await client.insertData(typeql, `mabos_${params.agent_id.split("/")[0] || "default"}`);
+          }
+        } catch {
+          // TypeDB unavailable — JSON is source of truth
+        }
+
         return textResult(
           `Rule ${params.rule_id} ${existing !== -1 ? "updated" : "created"}: "${params.name}" (${params.type}, ${params.conditions.length} conditions)`,
         );
@@ -207,6 +230,17 @@ export function createRuleEngineTools(api: OpenClawPluginApi): AnyAgentTool[] {
       description: "List all rules for an agent, optionally filtered by type.",
       parameters: RuleListParams,
       async execute(_id: string, params: Static<typeof RuleListParams>) {
+        // Try TypeDB first (exercise connection), fall back to JSON
+        try {
+          const client = getTypeDBClient();
+          if (client.isAvailable()) {
+            const typeql = RuleStoreQueries.listRules(params.agent_id, params.type || undefined);
+            await client.matchQuery(typeql, `mabos_${params.agent_id.split("/")[0] || "default"}`);
+          }
+        } catch {
+          // Fall through to JSON
+        }
+
         const store = (await readJson(rulesPath(api, params.agent_id))) || { rules: [] };
         let rules = store.rules as Rule[];
 
@@ -254,6 +288,22 @@ export function createRuleEngineTools(api: OpenClawPluginApi): AnyAgentTool[] {
         rule.enabled = params.enabled;
         store.version++;
         await writeJson(path, store);
+
+        // Sync toggle to TypeDB (best-effort)
+        try {
+          const client = getTypeDBClient();
+          if (client.isAvailable()) {
+            const typeql = RuleStoreQueries.toggleRule(
+              params.agent_id,
+              params.rule_id,
+              params.enabled,
+            );
+            await client.deleteData(typeql, `mabos_${params.agent_id.split("/")[0] || "default"}`);
+          }
+        } catch {
+          // TypeDB unavailable
+        }
+
         return textResult(`Rule ${params.rule_id} ${params.enabled ? "enabled" : "disabled"}.`);
       },
     },

@@ -32,6 +32,7 @@ import { createReportingTools } from "./src/tools/reporting-tools.js";
 import { createRuleEngineTools } from "./src/tools/rule-engine.js";
 import { createSetupWizardTools } from "./src/tools/setup-wizard-tools.js";
 import { createStakeholderTools } from "./src/tools/stakeholder-tools.js";
+import { createTypeDBTools } from "./src/tools/typedb-tools.js";
 import { createWorkforceTools } from "./src/tools/workforce-tools.js";
 
 // Use a variable for the bdi-runtime path so TypeScript doesn't try to
@@ -62,6 +63,7 @@ export default function register(api: OpenClawPluginApi) {
     createMarketingTools,
     createOntologyManagementTools,
     createSetupWizardTools,
+    createTypeDBTools,
   ];
 
   for (const factory of factories) {
@@ -85,6 +87,19 @@ export default function register(api: OpenClawPluginApi) {
     id: "mabos-bdi-heartbeat",
     start: async () => {
       api.logger.info(`[mabos-bdi] Heartbeat started (interval: ${bdiIntervalMinutes}min)`);
+
+      // Initialize TypeDB connection (lazy, non-blocking)
+      import("./src/knowledge/typedb-client.js")
+        .then(({ getTypeDBClient }) => {
+          const client = getTypeDBClient();
+          client
+            .connect()
+            .then((ok) => {
+              if (ok) api.logger.info("[mabos] TypeDB connected");
+            })
+            .catch(() => {});
+        })
+        .catch(() => {});
 
       const runCycle = async () => {
         try {

@@ -374,6 +374,9 @@ importers:
       '@sinclair/typebox':
         specifier: 0.34.48
         version: 0.34.48
+      typedb-driver-http:
+        specifier: ^3.0.0
+        version: 3.5.5
     devDependencies:
       openclaw:
         specifier: workspace:*
@@ -5506,6 +5509,9 @@ packages:
   type-is@2.0.1:
     resolution: {integrity: sha512-OZs6gsjF4vMp32qrCbiVSkrFmXtG/AZhY3t0iAMrMBiAZyV9oALtXO8hsrHbMXF9x6L3grlFuwW2oAz7cav+Gw==}
     engines: {node: '>= 0.6'}
+
+  typedb-driver-http@3.5.5:
+    resolution: {integrity: sha512-1OZTfabD63XlcZO9cdyuGgeYnXTcaxNFIFrmujav7vEGiXAfouOxyrLgvTfEgJuUsbQwHlfQbfNOCrwdFCRqvQ==}
 
   typescript@5.9.3:
     resolution: {integrity: sha512-jl1vZzPDinLr9eUt3J/t7V6FgNEw9QjvBPdysz9KfQDD41fQrC2Y4vKQdiaUpFT4bXlb1RHhLpp8wtm6M5TgSw==}
@@ -11413,6 +11419,8 @@ snapshots:
       content-type: 1.0.5
       media-typer: 1.1.0
       mime-types: 3.0.2
+
+  typedb-driver-http@3.5.5: {}
 
   typescript@5.9.3: {}
 

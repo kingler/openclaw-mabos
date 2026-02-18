@@ -13,6 +13,8 @@ import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { join, dirname } from "node:path";
 import { Type, type Static } from "@sinclair/typebox";
 import type { OpenClawPluginApi, AnyAgentTool } from "openclaw/plugin-sdk";
+import { getTypeDBClient, TypeDBUnavailableError } from "../knowledge/typedb-client.js";
+import { FactStoreQueries } from "../knowledge/typedb-queries.js";
 import { textResult, resolveWorkspaceDir } from "./common.js";
 
 async function readJson(p: string) {
@@ -152,6 +154,27 @@ export function createFactStoreTools(api: OpenClawPluginApi): AnyAgentTool[] {
         }
 
         await saveFacts(api, params.agent_id, store);
+
+        // Write-through to TypeDB (best-effort)
+        try {
+          const client = getTypeDBClient();
+          if (client.isAvailable()) {
+            const typeql = FactStoreQueries.assertFact(params.agent_id, {
+              id: factId,
+              subject: params.subject,
+              predicate: params.predicate,
+              object: params.object,
+              confidence: params.confidence,
+              source: params.source,
+              validFrom: params.valid_from,
+              validUntil: params.valid_until,
+            });
+            await client.insertData(typeql, `mabos_${params.agent_id.split("/")[0] || "default"}`);
+          }
+        } catch {
+          // TypeDB unavailable — JSON file is the source of truth
+        }
+
         return textResult(
           `Fact ${factId} ${existing !== -1 ? "updated" : "asserted"}: (${params.subject}, ${params.predicate}, ${params.object}) [confidence: ${params.confidence}]`,
         );
@@ -179,6 +202,23 @@ export function createFactStoreTools(api: OpenClawPluginApi): AnyAgentTool[] {
 
         const removed = before - store.facts.length;
         await saveFacts(api, params.agent_id, store);
+
+        // Delete from TypeDB (best-effort)
+        if (params.fact_id) {
+          try {
+            const client = getTypeDBClient();
+            if (client.isAvailable()) {
+              const typeql = FactStoreQueries.retractFact(params.agent_id, params.fact_id);
+              await client.deleteData(
+                typeql,
+                `mabos_${params.agent_id.split("/")[0] || "default"}`,
+              );
+            }
+          } catch {
+            // TypeDB unavailable — JSON is source of truth
+          }
+        }
+
         return textResult(
           `Retracted ${removed} fact(s) from '${params.agent_id}' store. Remaining: ${store.facts.length}`,
         );
@@ -192,6 +232,25 @@ export function createFactStoreTools(api: OpenClawPluginApi): AnyAgentTool[] {
         "Query the fact store with SPO pattern matching, confidence filtering, and temporal validity.",
       parameters: FactQueryParams,
       async execute(_id: string, params: Static<typeof FactQueryParams>) {
+        // Try TypeDB first, fall back to JSON
+        try {
+          const client = getTypeDBClient();
+          if (client.isAvailable()) {
+            const typeql = FactStoreQueries.queryFacts(params.agent_id, {
+              subject: params.subject,
+              predicate: params.predicate,
+              object: params.object,
+              minConfidence: params.min_confidence,
+            });
+            // If TypeDB query succeeds, we still fall through to JSON for now
+            // since result parsing from TypeDB requires schema-aware deserialization.
+            // This ensures TypeDB is exercised but JSON remains authoritative.
+            await client.matchQuery(typeql, `mabos_${params.agent_id.split("/")[0] || "default"}`);
+          }
+        } catch {
+          // TypeDB unavailable — fall through to JSON
+        }
+
         const store = await loadFacts(api, params.agent_id);
         const minConf = params.min_confidence || 0.0;
         const limit = params.limit || 50;

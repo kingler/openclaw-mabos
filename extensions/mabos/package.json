@@ -1,5 +1,5 @@
 {
-  "name": "@mabos/extension",
+  "name": "@openclaw/mabos",
   "version": "2026.2.17",
   "private": true,
   "description": "MABOS - Multi-Agent Business Operating System",
@@ -13,7 +13,8 @@
     "test": "node --test dist/tests/*.test.js"
   },
   "dependencies": {
-    "@sinclair/typebox": "^0.34.0"
+    "@sinclair/typebox": "^0.34.0",
+    "typedb-driver-http": "^3.0.0"
   },
   "devDependencies": {
     "openclaw": "workspace:*",

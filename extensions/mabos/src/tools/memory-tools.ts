@@ -11,6 +11,8 @@ import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { join, dirname } from "node:path";
 import { Type, type Static } from "@sinclair/typebox";
 import type { OpenClawPluginApi, AnyAgentTool } from "openclaw/plugin-sdk";
+import { getTypeDBClient } from "../knowledge/typedb-client.js";
+import { MemoryQueries } from "../knowledge/typedb-queries.js";
 import { textResult, resolveWorkspaceDir } from "./common.js";
 
 async function readJson(p: string) {
@@ -249,6 +251,25 @@ export function createMemoryTools(api: OpenClawPluginApi): AnyAgentTool[] {
           tags: params.tags,
         });
 
+        // Write-through to TypeDB (best-effort)
+        try {
+          const client = getTypeDBClient();
+          if (client.isAvailable()) {
+            const typeql = MemoryQueries.storeItem(params.agent_id, {
+              id: item.id,
+              content: params.content,
+              type: params.type,
+              importance: params.importance,
+              source: params.source || "manual",
+              store: targetStore,
+              tags: params.tags || [],
+            });
+            await client.insertData(typeql, `mabos_${params.agent_id.split("/")[0] || "default"}`);
+          }
+        } catch {
+          // TypeDB unavailable — JSON + Markdown are source of truth
+        }
+
         return textResult(
           `Memory ${item.id} stored in ${targetStore} (importance: ${params.importance}, type: ${params.type})`,
         );
@@ -261,6 +282,22 @@ export function createMemoryTools(api: OpenClawPluginApi): AnyAgentTool[] {
       description: "Search across memory stores for relevant items by query, type, or importance.",
       parameters: MemoryRecallParams,
       async execute(_id: string, params: Static<typeof MemoryRecallParams>) {
+        // Try TypeDB first (exercise connection), fall back to JSON
+        try {
+          const client = getTypeDBClient();
+          if (client.isAvailable()) {
+            const typeql = MemoryQueries.recallItems(params.agent_id, {
+              query: params.query,
+              type: params.type,
+              store: params.store,
+              minImportance: params.min_importance,
+            });
+            await client.matchQuery(typeql, `mabos_${params.agent_id.split("/")[0] || "default"}`);
+          }
+        } catch {
+          // Fall through to JSON
+        }
+
         const mem = await loadMemory(api, params.agent_id);
         const searchStore = params.store || "all";
         const limit = params.limit || 20;
@@ -392,6 +429,30 @@ ${allCandidates.map((i) => `- ${i.id}: [${i.type}] ${i.content.slice(0, 80)}... 
             tags: c.tags,
           })),
         );
+
+        // Promote in TypeDB too (best-effort)
+        try {
+          const client = getTypeDBClient();
+          if (client.isAvailable()) {
+            for (const c of allCandidates) {
+              const typeql = MemoryQueries.storeItem(params.agent_id, {
+                id: c.id,
+                content: c.content,
+                type: c.type,
+                importance: c.importance,
+                source: c.source,
+                store: "long_term",
+                tags: c.tags,
+              });
+              await client.insertData(
+                typeql,
+                `mabos_${params.agent_id.split("/")[0] || "default"}`,
+              );
+            }
+          }
+        } catch {
+          // TypeDB unavailable
+        }
 
         return textResult(`## Memory Consolidated — ${params.agent_id}
 

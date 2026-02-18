@@ -8,6 +8,8 @@ import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { join, dirname } from "node:path";
 import { Type, type Static } from "@sinclair/typebox";
 import type { OpenClawPluginApi, AnyAgentTool } from "openclaw/plugin-sdk";
+import { getTypeDBClient } from "../knowledge/typedb-client.js";
+import { InferenceQueries } from "../knowledge/typedb-queries.js";
 import { textResult, resolveWorkspaceDir } from "./common.js";
 
 async function readJson(p: string) {
@@ -256,6 +258,30 @@ export function createInferenceTools(api: OpenClawPluginApi): AnyAgentTool[] {
         const facts = await loadFacts(api, params.agent_id);
         const rules = await loadRules(api, params.agent_id);
 
+        // Use TypeDB for condition evaluation when available
+        try {
+          const client = getTypeDBClient();
+          if (client.isAvailable()) {
+            for (const rule of rules) {
+              if (!rule.enabled || rule.type !== "inference") continue;
+              for (const cond of rule.conditions) {
+                const typeql = InferenceQueries.findMatchingPatterns(
+                  params.agent_id,
+                  cond.predicate,
+                  cond.subject,
+                  cond.object,
+                );
+                await client.matchQuery(
+                  typeql,
+                  `mabos_${params.agent_id.split("/")[0] || "default"}`,
+                );
+              }
+            }
+          }
+        } catch {
+          // TypeDB unavailable — fall through to file-based inference
+        }
+
         if (facts.length === 0)
           return textResult(`No facts in store for '${params.agent_id}'. Assert facts first.`);
         if (rules.length === 0)
@@ -303,6 +329,22 @@ ${newFacts.map((f) => `- ${f.id}: (${f.subject}, ${f.predicate}, ${f.object}) [$
       async execute(_id: string, params: Static<typeof BackwardChainParams>) {
         const facts = await loadFacts(api, params.agent_id);
         const rules = await loadRules(api, params.agent_id);
+
+        // Try TypeDB for path-finding/derivation chain
+        try {
+          const client = getTypeDBClient();
+          if (client.isAvailable()) {
+            const typeql = InferenceQueries.proveGoal(
+              params.agent_id,
+              params.goal_predicate,
+              params.goal_subject,
+              params.goal_object,
+            );
+            await client.matchQuery(typeql, `mabos_${params.agent_id.split("/")[0] || "default"}`);
+          }
+        } catch {
+          // TypeDB unavailable — fall through to file-based reasoning
+        }
 
         const goalStr = `(${params.goal_subject || "?"}, ${params.goal_predicate}, ${params.goal_object || "?"})`;
 
