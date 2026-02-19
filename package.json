@@ -1,8 +1,25 @@
 {
   "name": "openclaw",
   "version": "2026.2.17",
-  "description": "Multi-Agent Business Operating System — BDI cognitive architecture with ontology-based reasoning",
-  "keywords": [],
+  "description": "Self-hosted multi-channel AI gateway and personal assistant — connect LLMs to WhatsApp, Telegram, Slack, Discord, Signal, iMessage, Teams & more with a unified control plane, BDI cognitive architecture (MABOS), voice support, and plugin-based extensibility",
+  "keywords": [
+    "ai-assistant",
+    "ai-gateway",
+    "multi-channel",
+    "chatbot",
+    "whatsapp",
+    "telegram",
+    "slack",
+    "discord",
+    "signal",
+    "imessage",
+    "self-hosted",
+    "llm",
+    "claude",
+    "bdi",
+    "multi-agent",
+    "mabos"
+  ],
   "homepage": "https://github.com/openclaw/openclaw#readme",
   "bugs": {
     "url": "https://github.com/openclaw/openclaw/issues"
