@@ -1,7 +1,7 @@
 {
   "name": "openclaw",
   "version": "2026.2.17",
-  "description": "MABOS (Multi-Agent Business Operating System) — configuration and orchestration wrapper for OpenClaw. Manages all OpenClaw gateway, channel, agent, and plugin configurations for connecting LLMs to WhatsApp, Telegram, Slack, Discord, Signal, iMessage, Teams & more",
+  "description": "OpenClaw with integrated MABOS (Multi-Agent Business Operating System) — self-hosted multi-channel AI gateway and personal assistant with integrated configuration management for all gateway, channel, agent, and plugin settings. Connects LLMs to WhatsApp, Telegram, Slack, Discord, Signal, iMessage, Teams & more",
   "keywords": [
     "ai-assistant",
     "ai-gateway",
