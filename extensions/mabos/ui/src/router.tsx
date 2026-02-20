@@ -6,6 +6,8 @@ import {
 } from "@tanstack/react-router";
 import { AppShell } from "@/components/layout/AppShell";
 import { OverviewPage } from "@/pages/OverviewPage";
+import { AgentsPage } from "@/pages/AgentsPage";
+import { AgentDetailPage } from "@/pages/AgentDetailPage";
 
 // Root layout
 const rootRoute = createRootRoute({
@@ -17,17 +19,6 @@ const rootRoute = createRootRoute({
 });
 
 // Page components (inline placeholders for now)
-
-function AgentsPage() {
-  return (
-    <div>
-      <h1 className="text-2xl font-bold mb-2">Agent Management</h1>
-      <p className="text-[var(--text-secondary)]">
-        17 agents across 12 departments
-      </p>
-    </div>
-  );
-}
 
 function TasksPage() {
   return (
@@ -102,11 +93,28 @@ const indexRoute = createRoute({
   path: "/",
   component: OverviewPage,
 });
-const agentsRoute = createRoute({
+
+// Agents layout route: renders Outlet for child routes
+const agentsLayoutRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/agents",
+  component: () => <Outlet />,
+});
+
+// Index route for /agents (the grid)
+const agentsIndexRoute = createRoute({
+  getParentRoute: () => agentsLayoutRoute,
+  path: "/",
   component: AgentsPage,
 });
+
+// Detail route for /agents/$agentId
+const agentDetailRoute = createRoute({
+  getParentRoute: () => agentsLayoutRoute,
+  path: "$agentId",
+  component: AgentDetailPage,
+});
+
 const tasksRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/tasks",
@@ -145,7 +153,7 @@ const onboardingRoute = createRoute({
 
 const routeTree = rootRoute.addChildren([
   indexRoute,
-  agentsRoute,
+  agentsLayoutRoute.addChildren([agentsIndexRoute, agentDetailRoute]),
   tasksRoute,
   performanceRoute,
   timelineRoute,

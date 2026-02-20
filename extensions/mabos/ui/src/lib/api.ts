@@ -33,6 +33,7 @@ export const api = {
     get<unknown[]>(`/businesses/${businessId}/agents`),
   getAgent: (businessId: string, agentId: string) =>
     get<unknown>(`/businesses/${businessId}/agents/${agentId}`),
+  getAgentDetail: (agentId: string) => get<unknown>(`/agents/${agentId}`),
   getTasks: (businessId: string) =>
     get<unknown[]>(`/businesses/${businessId}/tasks`),
   updateTask: (businessId: string, taskId: string, body: unknown) =>

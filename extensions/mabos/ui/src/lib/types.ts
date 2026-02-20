@@ -46,3 +46,32 @@ export type SystemStatus = {
   agents: { total: number; active: number; idle: number; error: number };
   bdiCycles: number;
 };
+
+export type AgentListItem = {
+  id: string;
+  name: string;
+  type: "core" | "domain";
+  beliefs: number;
+  goals: number;
+  intentions: number;
+  desires: number;
+  status: AgentStatus;
+  autonomy_level: "low" | "medium" | "high";
+  approval_threshold_usd: number;
+};
+
+export type AgentListResponse = {
+  agents: AgentListItem[];
+};
+
+export type AgentDetail = {
+  agentId: string;
+  beliefCount: number;
+  goalCount: number;
+  intentionCount: number;
+  desireCount: number;
+  beliefs: string[];
+  goals: string[];
+  intentions: string[];
+  desires: string[];
+};
