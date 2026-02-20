@@ -11,6 +11,7 @@ import { AgentDetailPage } from "@/pages/AgentDetailPage";
 import { TasksPage } from "@/pages/TasksPage";
 import { PerformancePage } from "@/pages/PerformancePage";
 import { TimelinePage } from "@/pages/TimelinePage";
+import { OnboardingPage } from "@/pages/OnboardingPage";
 
 // Root layout
 const rootRoute = createRootRoute({
@@ -46,15 +47,6 @@ function HRPage() {
     <div>
       <h1 className="text-2xl font-bold mb-2">HR</h1>
       <p className="text-[var(--text-secondary)]">Workforce management</p>
-    </div>
-  );
-}
-
-function OnboardingPage() {
-  return (
-    <div>
-      <h1 className="text-2xl font-bold mb-2">Onboarding</h1>
-      <p className="text-[var(--text-secondary)]">Set up a new business</p>
     </div>
   );
 }
