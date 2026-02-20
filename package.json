@@ -1,7 +1,7 @@
 {
   "name": "openclaw",
   "version": "2026.2.17",
-  "description": "Self-hosted multi-channel AI gateway and personal assistant — connect LLMs to WhatsApp, Telegram, Slack, Discord, Signal, iMessage, Teams & more with a unified control plane, BDI cognitive architecture (MABOS), voice support, and plugin-based extensibility",
+  "description": "MABOS (Multi-Agent Business Operating System) — configuration and orchestration wrapper for OpenClaw. Manages all OpenClaw gateway, channel, agent, and plugin configurations for connecting LLMs to WhatsApp, Telegram, Slack, Discord, Signal, iMessage, Teams & more",
   "keywords": [
     "ai-assistant",
     "ai-gateway",
