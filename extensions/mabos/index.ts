@@ -1563,29 +1563,35 @@ export default function register(api: OpenClawPluginApi) {
     path: "/mabos/dashboard",
     handler: async (_req, res) => {
       try {
-        const { readFile } = await import("node:fs/promises");
+        const { readFile, access } = await import("node:fs/promises");
         const { join } = await import("node:path");
         const { fileURLToPath } = await import("node:url");
         const thisDir = join(fileURLToPath(import.meta.url), "..");
-        const htmlPath = join(thisDir, "src", "dashboard", "index.html");
+        // Try Vite build output first, fall back to src/dashboard/
+        let htmlPath = join(thisDir, "ui", "dist", "index.html");
+        try {
+          await access(htmlPath);
+        } catch {
+          htmlPath = join(thisDir, "src", "dashboard", "index.html");
+        }
         const html = await readFile(htmlPath, "utf-8");
         res.setHeader("Content-Type", "text/html");
         res.end(html);
       } catch {
         res.setHeader("Content-Type", "text/html");
         res.end(
-          `<!DOCTYPE html><html><head><title>MABOS</title></head><body style="background:#0d1117;color:#c9d1d9;font-family:sans-serif;padding:40px"><h1 style="color:#58a6ff">MABOS Dashboard</h1><p>Dashboard files not found. Ensure src/dashboard/ exists.</p></body></html>`,
+          `<!DOCTYPE html><html><head><title>MABOS</title></head><body style="background:#0d1117;color:#c9d1d9;font-family:sans-serif;padding:40px"><h1 style="color:#58a6ff">MABOS Dashboard</h1><p>Dashboard files not found. Run <code>cd extensions/mabos/ui && npm run build</code> first.</p></body></html>`,
         );
       }
     },
   });
 
-  // Dashboard: wildcard static file server for all dashboard assets
+  // Dashboard: wildcard static file server for all dashboard assets + SPA fallback
   api.registerHttpRoute({
     path: "/mabos/dashboard/*",
     handler: async (req, res) => {
       try {
-        const { readFile } = await import("node:fs/promises");
+        const { readFile, access } = await import("node:fs/promises");
         const path = await import("node:path");
         const { join, extname } = path;
         const { fileURLToPath } = await import("node:url");
@@ -1600,16 +1606,6 @@ export default function register(api: OpenClawPluginApi) {
           return;
         }
 
-        const fullPath = join(thisDir, "src", "dashboard", filePath);
-        const baseDir = path.resolve(join(thisDir, "src", "dashboard"));
-        const resolved = path.resolve(fullPath);
-
-        // Block directory traversal via resolved path comparison
-        if (!resolved.startsWith(baseDir + path.sep) && resolved !== baseDir) {
-          res.statusCode = 403;
-          res.end("Forbidden");
-          return;
-        }
         const contentTypes: Record<string, string> = {
           ".html": "text/html",
           ".css": "text/css",
@@ -1618,17 +1614,70 @@ export default function register(api: OpenClawPluginApi) {
           ".svg": "image/svg+xml",
           ".png": "image/png",
           ".ico": "image/x-icon",
+          ".woff": "font/woff",
+          ".woff2": "font/woff2",
+          ".ttf": "font/ttf",
         };
 
         const ext = extname(filePath).toLowerCase();
-        const contentType = contentTypes[ext] || "application/octet-stream";
 
+        // Try Vite build output first, then fall back to src/dashboard/
+        const vitePath = join(thisDir, "ui", "dist", filePath);
+        const legacyPath = join(thisDir, "src", "dashboard", filePath);
+
+        // Determine which base directory to use
+        let fullPath: string;
+        let baseDir: string;
+        try {
+          await access(vitePath);
+          fullPath = vitePath;
+          baseDir = path.resolve(join(thisDir, "ui", "dist"));
+        } catch {
+          fullPath = legacyPath;
+          baseDir = path.resolve(join(thisDir, "src", "dashboard"));
+        }
+
+        const resolved = path.resolve(fullPath);
+
+        // Block directory traversal via resolved path comparison
+        if (!resolved.startsWith(baseDir + path.sep) && resolved !== baseDir) {
+          res.statusCode = 403;
+          res.end("Forbidden");
+          return;
+        }
+
+        // If no file extension or unknown extension, serve index.html for SPA routing
+        if (!ext || !contentTypes[ext]) {
+          const htmlPath = join(thisDir, "ui", "dist", "index.html");
+          try {
+            const html = await readFile(htmlPath, "utf-8");
+            res.setHeader("Content-Type", "text/html");
+            res.end(html);
+            return;
+          } catch {
+            // Fall through to 404
+          }
+        }
+
+        const contentType = contentTypes[ext] || "application/octet-stream";
         const content = await readFile(fullPath);
         res.setHeader("Content-Type", contentType);
         res.end(content);
       } catch {
-        res.statusCode = 404;
-        res.end("Not found");
+        // SPA fallback: serve index.html for any non-file route
+        try {
+          const { readFile } = await import("node:fs/promises");
+          const { join } = await import("node:path");
+          const { fileURLToPath } = await import("node:url");
+          const thisDir = join(fileURLToPath(import.meta.url), "..");
+          const htmlPath = join(thisDir, "ui", "dist", "index.html");
+          const html = await readFile(htmlPath, "utf-8");
+          res.setHeader("Content-Type", "text/html");
+          res.end(html);
+        } catch {
+          res.statusCode = 404;
+          res.end("Not found");
+        }
       }
     },
   });
