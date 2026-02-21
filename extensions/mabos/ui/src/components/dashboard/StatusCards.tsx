@@ -9,14 +9,28 @@ type StatusCardsProps = {
   isLoading: boolean;
 };
 
+// The API may return agents as an array or as a summary object.
+// Normalize to { total, active, idle, error } for display.
+function getAgentSummary(status: SystemStatus) {
+  const raw = status.agents as unknown;
+  if (Array.isArray(raw)) {
+    return { total: raw.length, active: raw.length, idle: 0, error: 0 };
+  }
+  if (raw && typeof raw === "object" && "total" in raw) {
+    const obj = raw as { total: number; active: number; idle: number; error: number };
+    return obj;
+  }
+  return { total: 0, active: 0, idle: 0, error: 0 };
+}
+
 const statusCards = [
   {
     key: "total-agents",
     label: "Total Agents",
     icon: Users,
     color: "var(--accent-blue)",
-    getValue: (s: SystemStatus) => s.agents.total,
-    getSubtitle: (s: SystemStatus) => `${s.agents.active} active`,
+    getValue: (s: SystemStatus) => getAgentSummary(s).total,
+    getSubtitle: (s: SystemStatus) => `${getAgentSummary(s).active} active`,
   },
   {
     key: "active-tasks",
@@ -36,21 +50,28 @@ const statusCards = [
     icon: Activity,
     color: "var(--accent-green)",
     getValue: (s: SystemStatus) => {
-      const total = s.agents.total || 1;
-      const healthy = s.agents.active + s.agents.idle;
+      const summary = getAgentSummary(s);
+      const total = summary.total || 1;
+      const healthy = summary.active + summary.idle;
       return `${Math.round((healthy / total) * 100)}%`;
     },
-    getSubtitle: (s: SystemStatus) =>
-      s.agents.error > 0
-        ? `${s.agents.error} agent${s.agents.error > 1 ? "s" : ""} with errors`
-        : "All systems nominal",
+    getSubtitle: (s: SystemStatus) => {
+      const summary = getAgentSummary(s);
+      return summary.error > 0
+        ? `${summary.error} agent${summary.error > 1 ? "s" : ""} with errors`
+        : "All systems nominal";
+    },
   },
   {
     key: "bdi-cycles",
     label: "BDI Cycles",
     icon: Cpu,
     color: "var(--accent-orange)",
-    getValue: (s: SystemStatus) => s.bdiCycles.toLocaleString(),
+    getValue: (s: SystemStatus) => {
+      // API may return agent array length instead of bdiCycles
+      const cycles = s.bdiCycles ?? (s as any).agents?.length ?? 0;
+      return cycles.toLocaleString();
+    },
     getSubtitle: () => "Belief-Desire-Intention",
   },
 ] as const;
@@ -60,10 +81,7 @@ export function StatusCards({ status, tasks, isLoading }: StatusCardsProps) {
     return (
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         {Array.from({ length: 4 }).map((_, i) => (
-          <Card
-            key={i}
-            className="bg-[var(--bg-card)] border-[var(--border-mabos)] py-4"
-          >
+          <Card key={i} className="bg-[var(--bg-card)] border-[var(--border-mabos)] py-4">
             <CardContent className="flex items-center gap-4">
               <Skeleton className="h-10 w-10 rounded-lg" />
               <div className="flex-1 space-y-2">
@@ -94,10 +112,7 @@ export function StatusCards({ status, tasks, isLoading }: StatusCardsProps) {
                 className="flex items-center justify-center w-10 h-10 rounded-lg"
                 style={{ backgroundColor: `color-mix(in srgb, ${card.color} 15%, transparent)` }}
               >
-                <Icon
-                  className="w-5 h-5"
-                  style={{ color: card.color }}
-                />
+                <Icon className="w-5 h-5" style={{ color: card.color }} />
               </div>
               <div className="flex-1 min-w-0">
                 <p className="text-xs font-medium text-[var(--text-muted)] uppercase tracking-wider">

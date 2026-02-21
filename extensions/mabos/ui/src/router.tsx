@@ -101,6 +101,11 @@ const knowledgeGraphRoute = createRoute({
   path: "/knowledge-graph",
   component: KnowledgeGraphPage,
 });
+const workflowsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/workflows",
+  component: BusinessGoalsPage,
+});
 
 const routeTree = rootRoute.addChildren([
   indexRoute,
@@ -115,6 +120,7 @@ const routeTree = rootRoute.addChildren([
   decisionsRoute,
   goalsRoute,
   knowledgeGraphRoute,
+  workflowsRoute,
 ]);
 
 export const router = createRouter({

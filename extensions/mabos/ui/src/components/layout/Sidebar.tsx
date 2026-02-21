@@ -40,7 +40,7 @@ const navSections: { title: string; items: NavItem[] }[] = [
     items: [
       { icon: ClipboardList, label: "Tasks", path: "/tasks" },
       { icon: Calendar, label: "Timeline", path: "/timeline" },
-      { icon: GitBranch, label: "Workflows", path: "/goals" },
+      { icon: GitBranch, label: "Workflows", path: "/workflows" },
     ],
   },
   {

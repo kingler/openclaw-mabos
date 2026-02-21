@@ -96,7 +96,7 @@ function ConfigurationTab({ agent }: { agent: AgentListItem | undefined }) {
           </div>
           <div className="pl-11">
             <p className="text-lg font-semibold text-[var(--accent-green)]">
-              ${agent.approval_threshold_usd.toLocaleString()}
+              ${(agent.approval_threshold_usd ?? 0).toLocaleString()}
             </p>
           </div>
         </CardContent>

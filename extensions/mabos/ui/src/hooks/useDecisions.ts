@@ -5,7 +5,11 @@ import type { DecisionResolution } from "@/lib/types";
 export function useDecisions() {
   return useQuery({
     queryKey: ["decisions"],
-    queryFn: () => api.getDecisions(),
+    queryFn: async () => {
+      const res = await api.getDecisions();
+      // API wraps decisions in { decisions: [...] }
+      return Array.isArray(res) ? res : ((res as any)?.decisions ?? []);
+    },
     refetchInterval: 30_000,
   });
 }
