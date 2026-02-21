@@ -45,6 +45,12 @@ export type SystemStatus = {
   businesses: number;
   agents: { total: number; active: number; idle: number; error: number };
   bdiCycles: number;
+  bdiHeartbeat?: {
+    active: boolean;
+    intervalMs: number;
+    lastCycle: string | null;
+    nextCycle: string | null;
+  };
 };
 
 export type AgentListItem = {
@@ -75,3 +81,100 @@ export type AgentDetail = {
   intentions: string[];
   desires: string[];
 };
+
+// --- Decisions ---
+
+export type DecisionUrgency = "critical" | "high" | "medium" | "low";
+
+export type DecisionOption = {
+  id: string;
+  label: string;
+  description: string;
+  recommended: boolean;
+};
+
+export type Decision = {
+  id: string;
+  title: string;
+  summary: string;
+  urgency: DecisionUrgency;
+  agentId: string;
+  agentName: string;
+  businessId: string;
+  businessName: string;
+  options: DecisionOption[];
+  agentRecommendation?: string;
+  createdAt: string;
+};
+
+export type DecisionsResponse = Decision[];
+
+export type DecisionResolution = {
+  optionId: string;
+  feedback?: string;
+  action: "approve" | "reject" | "defer";
+};
+
+// --- Goals / Workflows ---
+
+export type GoalLevel = "strategic" | "tactical" | "operational";
+export type GoalType = "hardgoal" | "softgoal" | "task" | "resource";
+export type WorkflowStatus = "active" | "completed" | "paused" | "pending";
+
+export type WorkflowStep = {
+  id: string;
+  name: string;
+  order: number;
+};
+
+export type Workflow = {
+  id: string;
+  name: string;
+  status: WorkflowStatus;
+  agents: string[];
+  steps: WorkflowStep[];
+};
+
+export type BusinessGoal = {
+  id: string;
+  name: string;
+  description: string;
+  level: GoalLevel;
+  type: GoalType;
+  priority: number;
+  desires: string[];
+  workflows: Workflow[];
+};
+
+export type TroposActor = {
+  id: string;
+  name: string;
+  type: "principal" | "agent";
+  goals: string[];
+};
+
+export type TroposDependency = {
+  from: string;
+  to: string;
+  type: "delegation" | "contribution";
+  goalId: string;
+};
+
+export type TroposGoalModel = {
+  actors: TroposActor[];
+  goals: BusinessGoal[];
+  dependencies: TroposDependency[];
+};
+
+// --- Contractors ---
+
+export type Contractor = {
+  id: string;
+  name: string;
+  role: string;
+  trustScore: number;
+  packages: number;
+  status: "active" | "inactive" | "pending";
+};
+
+export type ContractorsResponse = Contractor[];

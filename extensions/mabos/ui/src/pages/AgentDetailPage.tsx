@@ -1,12 +1,15 @@
 import { useNavigate, useParams } from "@tanstack/react-router";
-import { AlertCircle, ArrowLeft, Shield, Gauge } from "lucide-react";
-import { Card, CardContent } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { Skeleton } from "@/components/ui/skeleton";
-import { Separator } from "@/components/ui/separator";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Button } from "@/components/ui/button";
+import { AlertCircle, ArrowLeft, Shield, Gauge, Pencil, Trash2 } from "lucide-react";
+import { useState } from "react";
+import { AgentDeleteConfirmDialog } from "@/components/agents/AgentDeleteConfirmDialog";
+import { AgentFormDialog } from "@/components/agents/AgentFormDialog";
 import { BdiViewer } from "@/components/agents/BdiViewer";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import { Separator } from "@/components/ui/separator";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useAgentDetail } from "@/hooks/useAgentDetail";
 import { useAgents } from "@/hooks/useAgents";
 import { getAgentIcon, getAgentName } from "@/lib/agent-icons";
@@ -38,9 +41,7 @@ function DetailSkeleton() {
 function ConfigurationTab({ agent }: { agent: AgentListItem | undefined }) {
   if (!agent) {
     return (
-      <p className="text-sm text-[var(--text-muted)] italic">
-        Configuration data unavailable.
-      </p>
+      <p className="text-sm text-[var(--text-muted)] italic">Configuration data unavailable.</p>
     );
   }
 
@@ -58,9 +59,7 @@ function ConfigurationTab({ agent }: { agent: AgentListItem | undefined }) {
               <Gauge className="w-4 h-4 text-[var(--accent-blue)]" />
             </div>
             <div>
-              <p className="text-sm font-medium text-[var(--text-primary)]">
-                Autonomy Level
-              </p>
+              <p className="text-sm font-medium text-[var(--text-primary)]">Autonomy Level</p>
               <p className="text-xs text-[var(--text-muted)]">
                 Determines how independently the agent operates
               </p>
@@ -89,9 +88,7 @@ function ConfigurationTab({ agent }: { agent: AgentListItem | undefined }) {
               <Shield className="w-4 h-4 text-[var(--accent-green)]" />
             </div>
             <div>
-              <p className="text-sm font-medium text-[var(--text-primary)]">
-                Approval Threshold
-              </p>
+              <p className="text-sm font-medium text-[var(--text-primary)]">Approval Threshold</p>
               <p className="text-xs text-[var(--text-muted)]">
                 Maximum USD amount this agent can approve without escalation
               </p>
@@ -107,33 +104,23 @@ function ConfigurationTab({ agent }: { agent: AgentListItem | undefined }) {
 
       <Card className="bg-[var(--bg-card)] border-[var(--border-mabos)] py-4">
         <CardContent className="space-y-3">
-          <p className="text-sm font-medium text-[var(--text-primary)]">
-            Agent Properties
-          </p>
+          <p className="text-sm font-medium text-[var(--text-primary)]">Agent Properties</p>
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1">
               <p className="text-xs text-[var(--text-muted)]">ID</p>
-              <p className="text-sm text-[var(--text-secondary)] font-mono">
-                {agent.id}
-              </p>
+              <p className="text-sm text-[var(--text-secondary)] font-mono">{agent.id}</p>
             </div>
             <div className="space-y-1">
               <p className="text-xs text-[var(--text-muted)]">Type</p>
-              <p className="text-sm text-[var(--text-secondary)] capitalize">
-                {agent.type}
-              </p>
+              <p className="text-sm text-[var(--text-secondary)] capitalize">{agent.type}</p>
             </div>
             <div className="space-y-1">
               <p className="text-xs text-[var(--text-muted)]">Status</p>
-              <p className="text-sm text-[var(--text-secondary)] capitalize">
-                {agent.status}
-              </p>
+              <p className="text-sm text-[var(--text-secondary)] capitalize">{agent.status}</p>
             </div>
             <div className="space-y-1">
               <p className="text-xs text-[var(--text-muted)]">Name</p>
-              <p className="text-sm text-[var(--text-secondary)]">
-                {agent.name}
-              </p>
+              <p className="text-sm text-[var(--text-secondary)]">{agent.name}</p>
             </div>
           </div>
         </CardContent>
@@ -145,20 +132,16 @@ function ConfigurationTab({ agent }: { agent: AgentListItem | undefined }) {
 export function AgentDetailPage() {
   const navigate = useNavigate();
   const { agentId } = useParams({ strict: false }) as { agentId: string };
+  const [showEditDialog, setShowEditDialog] = useState(false);
+  const [showArchiveDialog, setShowArchiveDialog] = useState(false);
 
-  const {
-    data: detailRaw,
-    isLoading: detailLoading,
-    error: detailError,
-  } = useAgentDetail(agentId);
+  const { data: detailRaw, isLoading: detailLoading, error: detailError } = useAgentDetail(agentId);
 
   const { data: agentsRaw } = useAgents(BUSINESS_ID);
 
   const detail = detailRaw as AgentDetail | undefined;
   const agentsResponse = agentsRaw as AgentListResponse | undefined;
-  const agentListItem = agentsResponse?.agents?.find(
-    (a) => a.id === agentId
-  );
+  const agentListItem = agentsResponse?.agents?.find((a) => a.id === agentId);
 
   const Icon = getAgentIcon(agentId);
   const displayName = getAgentName(agentId);
@@ -195,49 +178,68 @@ export function AgentDetailPage() {
               Failed to load agent detail
             </p>
             <p className="text-xs text-[var(--text-secondary)]">
-              Unable to fetch data for agent &quot;{agentId}&quot;. Please try
-              again later.
+              Unable to fetch data for agent &quot;{agentId}&quot;. Please try again later.
             </p>
           </div>
         </div>
       ) : (
         <>
           {/* Agent Header */}
-          <div className="flex items-center gap-4">
-            <div
-              className="flex items-center justify-center w-14 h-14 rounded-xl"
-              style={{
-                backgroundColor: `color-mix(in srgb, var(--accent-purple) 15%, transparent)`,
-              }}
-            >
-              <Icon className="w-7 h-7 text-[var(--accent-purple)]" />
-            </div>
-            <div className="min-w-0">
-              <div className="flex items-center gap-3">
-                <h1 className="text-xl font-bold text-[var(--text-primary)]">
-                  {displayName}
-                </h1>
-                {agentListItem && (
-                  <Badge
-                    variant="outline"
-                    className="border-[var(--border-mabos)] text-[var(--text-secondary)] text-[10px] px-1.5 py-0 gap-1.5 shrink-0"
-                  >
-                    <span
-                      className="inline-block w-1.5 h-1.5 rounded-full shrink-0"
-                      style={{ backgroundColor: statusColor }}
-                    />
-                    {agentListItem.status}
-                  </Badge>
-                )}
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              <div
+                className="flex items-center justify-center w-14 h-14 rounded-xl"
+                style={{
+                  backgroundColor: `color-mix(in srgb, var(--accent-purple) 15%, transparent)`,
+                }}
+              >
+                <Icon className="w-7 h-7 text-[var(--accent-purple)]" />
               </div>
-              <p className="text-sm text-[var(--text-muted)]">
-                Agent ID: <span className="font-mono">{agentId}</span>
-                {agentListItem && (
-                  <span className="ml-3 capitalize">
-                    {agentListItem.type} agent
-                  </span>
-                )}
-              </p>
+              <div className="min-w-0">
+                <div className="flex items-center gap-3">
+                  <h1 className="text-xl font-bold text-[var(--text-primary)]">{displayName}</h1>
+                  {agentListItem && (
+                    <Badge
+                      variant="outline"
+                      className="border-[var(--border-mabos)] text-[var(--text-secondary)] text-[10px] px-1.5 py-0 gap-1.5 shrink-0"
+                    >
+                      <span
+                        className="inline-block w-1.5 h-1.5 rounded-full shrink-0"
+                        style={{ backgroundColor: statusColor }}
+                      />
+                      {agentListItem.status}
+                    </Badge>
+                  )}
+                </div>
+                <p className="text-sm text-[var(--text-muted)]">
+                  Agent ID: <span className="font-mono">{agentId}</span>
+                  {agentListItem && (
+                    <span className="ml-3 capitalize">{agentListItem.type} agent</span>
+                  )}
+                </p>
+              </div>
+            </div>
+
+            {/* Edit / Archive buttons */}
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setShowEditDialog(true)}
+                className="border-[var(--border-mabos)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] gap-1.5"
+              >
+                <Pencil className="w-3.5 h-3.5" />
+                Edit
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setShowArchiveDialog(true)}
+                className="border-[var(--accent-red)]/30 text-[var(--accent-red)] hover:bg-[var(--accent-red)]/10 gap-1.5"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                Archive
+              </Button>
             </div>
           </div>
 
@@ -264,9 +266,7 @@ export function AgentDetailPage() {
               {detail ? (
                 <BdiViewer agent={detail} />
               ) : (
-                <p className="text-sm text-[var(--text-muted)] italic">
-                  BDI data unavailable.
-                </p>
+                <p className="text-sm text-[var(--text-muted)] italic">BDI data unavailable.</p>
               )}
             </TabsContent>
 
@@ -276,6 +276,22 @@ export function AgentDetailPage() {
           </Tabs>
         </>
       )}
+
+      {/* Dialogs */}
+      <AgentFormDialog
+        open={showEditDialog}
+        onOpenChange={setShowEditDialog}
+        businessId={BUSINESS_ID}
+        agent={agentListItem}
+      />
+      <AgentDeleteConfirmDialog
+        open={showArchiveDialog}
+        onOpenChange={setShowArchiveDialog}
+        businessId={BUSINESS_ID}
+        agentId={agentId}
+        agentName={displayName}
+        onArchived={() => navigate({ to: "/agents" })}
+      />
     </div>
   );
 }

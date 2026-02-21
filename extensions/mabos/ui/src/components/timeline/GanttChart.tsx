@@ -1,10 +1,5 @@
 import { useMemo, useState } from "react";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
 // --- Types ---
 
@@ -91,7 +86,7 @@ const defaultMilestones: Milestone[] = [
   { id: "m3", label: "Break Even", week: 20, color: "var(--accent-purple)" },
 ];
 
-const TOTAL_WEEKS = 26;
+const DEFAULT_TOTAL_WEEKS = 26;
 const LABEL_WIDTH = 200;
 
 // --- Helpers ---
@@ -112,7 +107,7 @@ function getMonthLabels(totalWeeks: number): { label: string; offsetPct: number 
   for (let i = 0; i < Math.ceil(totalWeeks / 4); i++) {
     labels.push({
       label: months[i] ?? `Month ${i + 1}`,
-      offsetPct: (i * 4 / totalWeeks) * 100,
+      offsetPct: ((i * 4) / totalWeeks) * 100,
     });
   }
   return labels;
@@ -124,17 +119,20 @@ type GanttChartProps = {
   phases?: Phase[];
   milestones?: Milestone[];
   currentWeek?: number;
+  totalWeeks?: number;
 };
 
 export function GanttChart({
   phases = defaultPhases,
   milestones = defaultMilestones,
   currentWeek = 8,
+  totalWeeks = DEFAULT_TOTAL_WEEKS,
 }: GanttChartProps) {
   const [hoveredId, setHoveredId] = useState<string | null>(null);
+  const TOTAL_WEEKS = totalWeeks;
 
   const grouped = useMemo(() => groupByPhase(phases), [phases]);
-  const monthLabels = useMemo(() => getMonthLabels(TOTAL_WEEKS), []);
+  const monthLabels = useMemo(() => getMonthLabels(TOTAL_WEEKS), [TOTAL_WEEKS]);
 
   // Build flat rows for rendering, with phase group headers
   const rows = useMemo(() => {
@@ -266,9 +264,7 @@ export function GanttChart({
                               left: `calc(${leftPct}% - 6px)`,
                               backgroundColor: m.color,
                               transform: `rotate(45deg) ${isHovered ? "scale(1.4)" : "scale(1)"}`,
-                              boxShadow: isHovered
-                                ? `0 0 8px ${m.color}`
-                                : "none",
+                              boxShadow: isHovered ? `0 0 8px ${m.color}` : "none",
                             }}
                           />
                         </TooltipTrigger>
@@ -277,9 +273,7 @@ export function GanttChart({
                           className="bg-[var(--bg-secondary)] text-[var(--text-primary)] border border-[var(--border-mabos)]"
                         >
                           <p className="font-medium">{m.label}</p>
-                          <p className="text-[var(--text-muted)] text-[10px]">
-                            Week {m.week}
-                          </p>
+                          <p className="text-[var(--text-muted)] text-[10px]">Week {m.week}</p>
                         </TooltipContent>
                       </Tooltip>
                     </div>
@@ -296,10 +290,7 @@ export function GanttChart({
               // Calculate progress based on current week
               const progressPct = Math.min(
                 100,
-                Math.max(
-                  0,
-                  ((currentWeek - p.startWeek) / p.durationWeeks) * 100
-                )
+                Math.max(0, ((currentWeek - p.startWeek) / p.durationWeeks) * 100),
               );
 
               return (
@@ -353,13 +344,10 @@ export function GanttChart({
                       >
                         <div className="space-y-1">
                           <p className="font-medium">{p.label}</p>
+                          <p className="text-[var(--text-muted)] text-[10px]">Phase: {p.phase}</p>
                           <p className="text-[var(--text-muted)] text-[10px]">
-                            Phase: {p.phase}
-                          </p>
-                          <p className="text-[var(--text-muted)] text-[10px]">
-                            Week {p.startWeek} - Week{" "}
-                            {p.startWeek + p.durationWeeks} ({p.durationWeeks}{" "}
-                            weeks)
+                            Week {p.startWeek} - Week {p.startWeek + p.durationWeeks} (
+                            {p.durationWeeks} weeks)
                           </p>
                           <p className="text-[var(--text-muted)] text-[10px]">
                             Progress: {Math.round(progressPct)}%

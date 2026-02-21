@@ -12,7 +12,12 @@ import {
   Rocket,
   Palette,
   ChevronDown,
+  Bell,
+  Target,
+  GitBranch,
+  Network,
 } from "lucide-react";
+import { ThemeToggle } from "./ThemeToggle";
 
 type NavItem = {
   icon: React.ComponentType<{ className?: string }>;
@@ -22,30 +27,39 @@ type NavItem = {
 
 const navSections: { title: string; items: NavItem[] }[] = [
   {
-    title: "Dashboard",
+    title: "Strategy",
     items: [
       { icon: LayoutDashboard, label: "Overview", path: "/" },
       { icon: BarChart3, label: "Performance", path: "/performance" },
+      { icon: Bell, label: "Decisions", path: "/decisions" },
+      { icon: Target, label: "Goals", path: "/goals" },
     ],
   },
   {
-    title: "Operations",
+    title: "Process",
     items: [
-      { icon: Users, label: "Agents", path: "/agents" },
       { icon: ClipboardList, label: "Tasks", path: "/tasks" },
       { icon: Calendar, label: "Timeline", path: "/timeline" },
+      { icon: GitBranch, label: "Workflows", path: "/goals" },
     ],
   },
   {
-    title: "Business",
+    title: "Agents",
+    items: [
+      { icon: Users, label: "Agents", path: "/agents" },
+      { icon: Network, label: "Knowledge Graph", path: "/knowledge-graph" },
+    ],
+  },
+  {
+    title: "Resources",
     items: [
       { icon: Package, label: "Inventory", path: "/inventory" },
       { icon: DollarSign, label: "Accounting", path: "/accounting" },
-      { icon: Heart, label: "HR", path: "/hr" },
+      { icon: Heart, label: "HR & Workforce", path: "/hr" },
     ],
   },
   {
-    title: "Setup",
+    title: "Governance",
     items: [{ icon: Rocket, label: "Onboarding", path: "/onboarding" }],
   },
 ];
@@ -85,13 +99,11 @@ export function Sidebar() {
             <div className="space-y-1">
               {section.items.map((item) => {
                 const isActive =
-                  item.path === "/"
-                    ? relativePath === "/"
-                    : relativePath.startsWith(item.path);
+                  item.path === "/" ? relativePath === "/" : relativePath.startsWith(item.path);
 
                 return (
                   <Link
-                    key={item.path}
+                    key={item.path + item.label}
                     to={item.path}
                     className={`flex items-center gap-3 w-full px-3 py-2 rounded-lg text-sm transition-colors ${
                       isActive
@@ -108,6 +120,11 @@ export function Sidebar() {
           </div>
         ))}
       </nav>
+
+      {/* Theme Toggle */}
+      <div className="pt-4 border-t border-[var(--border-mabos)]">
+        <ThemeToggle />
+      </div>
     </aside>
   );
 }

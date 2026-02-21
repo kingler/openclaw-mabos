@@ -1510,12 +1510,18 @@ export default function register(api: OpenClawPluginApi) {
     },
   });
 
-  // API: Get agents for a business
+  // API: Get/Create agents for a business
   api.registerHttpRoute({
     path: "/mabos/api/businesses/:id/agents",
     handler: async (req, res) => {
       try {
-        const { readFile, readdir, stat: fsStat } = await import("node:fs/promises");
+        const {
+          readFile,
+          readdir,
+          stat: fsStat,
+          writeFile: wf,
+          mkdir: mk,
+        } = await import("node:fs/promises");
         const { join } = await import("node:path");
         const { existsSync } = await import("node:fs");
 
@@ -1533,6 +1539,88 @@ export default function register(api: OpenClawPluginApi) {
         const bizDir = join(workspaceDir, "businesses", businessId);
         const agentsDir = join(bizDir, "agents");
 
+        // POST: Create a new agent
+        if (req.method === "POST") {
+          let body = "";
+          for await (const chunk of req as any) body += chunk;
+          let params: any;
+          try {
+            params = JSON.parse(body);
+          } catch {
+            res.statusCode = 400;
+            res.setHeader("Content-Type", "application/json");
+            res.end(JSON.stringify({ error: "Invalid JSON" }));
+            return;
+          }
+
+          const newId = sanitizeId(params.id);
+          if (!newId) {
+            res.statusCode = 400;
+            res.setHeader("Content-Type", "application/json");
+            res.end(JSON.stringify({ error: "Invalid agent ID" }));
+            return;
+          }
+
+          const agentPath = join(agentsDir, newId);
+          if (existsSync(agentPath)) {
+            res.statusCode = 409;
+            res.setHeader("Content-Type", "application/json");
+            res.end(JSON.stringify({ error: `Agent '${newId}' already exists` }));
+            return;
+          }
+
+          const now = new Date().toISOString();
+          await mk(agentPath, { recursive: true });
+
+          // Create cognitive files
+          for (const f of [
+            "Beliefs.md",
+            "Desires.md",
+            "Goals.md",
+            "Intentions.md",
+            "Plans.md",
+            "Playbooks.md",
+            "Knowledge.md",
+            "Memory.md",
+          ]) {
+            await wf(
+              join(agentPath, f),
+              `# ${f.replace(".md", "")} — ${params.name || newId}\n\nInitialized: ${now.split("T")[0]}\n`,
+              "utf-8",
+            );
+          }
+          await wf(
+            join(agentPath, "Persona.md"),
+            `# Persona — ${params.name || newId}\n\n**Role:** ${params.name || newId}\n**Agent ID:** ${newId}\n**Type:** ${params.type || "domain"}\n`,
+            "utf-8",
+          );
+          await wf(join(agentPath, "inbox.json"), "[]", "utf-8");
+          await wf(join(agentPath, "cases.json"), "[]", "utf-8");
+
+          // Write config
+          const config = {
+            status: "active",
+            autonomy_level: params.autonomy_level || "medium",
+            approval_threshold_usd: params.approval_threshold_usd || 100,
+            created_at: now,
+          };
+          await wf(join(agentPath, "config.json"), JSON.stringify(config, null, 2), "utf-8");
+
+          // Update manifest
+          const manifest = (await readJsonSafe(join(bizDir, "manifest.json"))) || {};
+          if (params.type === "core") {
+            manifest.agents = [...(manifest.agents || []), newId];
+          } else {
+            manifest.domain_agents = [...(manifest.domain_agents || []), newId];
+          }
+          await wf(join(bizDir, "manifest.json"), JSON.stringify(manifest, null, 2), "utf-8");
+
+          res.setHeader("Content-Type", "application/json");
+          res.end(JSON.stringify({ ok: true, agentId: newId }));
+          return;
+        }
+
+        // GET: List agents
         const manifest = await readJsonSafe(join(bizDir, "manifest.json"));
         const agentEntries = await readdir(agentsDir).catch(() => []);
         const agents: any[] = [];
@@ -1576,6 +1664,118 @@ export default function register(api: OpenClawPluginApi) {
 
         res.setHeader("Content-Type", "application/json");
         res.end(JSON.stringify({ agents }));
+      } catch (err) {
+        res.setHeader("Content-Type", "application/json");
+        res.statusCode = 500;
+        res.end(JSON.stringify({ error: String(err) }));
+      }
+    },
+  });
+
+  // API: Archive an agent
+  api.registerHttpRoute({
+    path: "/mabos/api/businesses/:id/agents/:agentId/archive",
+    handler: async (req, res) => {
+      if (req.method !== "POST") {
+        res.statusCode = 405;
+        res.setHeader("Content-Type", "application/json");
+        res.end(JSON.stringify({ error: "Method not allowed" }));
+        return;
+      }
+      try {
+        const { rename, writeFile, mkdir } = await import("node:fs/promises");
+        const { join, dirname } = await import("node:path");
+        const { existsSync } = await import("node:fs");
+
+        const url = new URL(req.url || "", "http://localhost");
+        const segments = url.pathname.split("/");
+        const bizIdx = segments.indexOf("businesses");
+        const rawBizId = segments[bizIdx + 1] || "";
+        const businessId = sanitizeId(rawBizId);
+        // agentId is before "archive"
+        const archiveIdx = segments.indexOf("archive");
+        const rawAgentId = archiveIdx > 0 ? segments[archiveIdx - 1] : "";
+        const agentId = sanitizeId(rawAgentId);
+
+        if (!businessId || !agentId) {
+          res.statusCode = 400;
+          res.setHeader("Content-Type", "application/json");
+          res.end(JSON.stringify({ error: "Invalid business or agent ID" }));
+          return;
+        }
+
+        const bizDir = join(workspaceDir, "businesses", businessId);
+        const agentDir = join(bizDir, "agents", agentId);
+        const archivedDir = join(bizDir, "agents", `_archived_${agentId}`);
+
+        if (!existsSync(agentDir)) {
+          res.statusCode = 404;
+          res.setHeader("Content-Type", "application/json");
+          res.end(JSON.stringify({ error: `Agent '${agentId}' not found` }));
+          return;
+        }
+
+        await rename(agentDir, archivedDir);
+
+        // Update manifest
+        const manifest = (await readJsonSafe(join(bizDir, "manifest.json"))) || {};
+        manifest.agents = (manifest.agents || []).filter((a: string) => a !== agentId);
+        manifest.domain_agents = (manifest.domain_agents || []).filter(
+          (a: string) => a !== agentId,
+        );
+        await writeFile(join(bizDir, "manifest.json"), JSON.stringify(manifest, null, 2), "utf-8");
+
+        res.setHeader("Content-Type", "application/json");
+        res.end(JSON.stringify({ ok: true, archived: agentId }));
+      } catch (err) {
+        res.setHeader("Content-Type", "application/json");
+        res.statusCode = 500;
+        res.end(JSON.stringify({ error: String(err) }));
+      }
+    },
+  });
+
+  // API: Trigger manual BDI cycle
+  api.registerHttpRoute({
+    path: "/mabos/api/bdi/cycle",
+    handler: async (req, res) => {
+      if (req.method !== "POST") {
+        res.statusCode = 405;
+        res.setHeader("Content-Type", "application/json");
+        res.end(JSON.stringify({ error: "Method not allowed" }));
+        return;
+      }
+      try {
+        let body = "";
+        for await (const chunk of req as any) body += chunk;
+        let params: any;
+        try {
+          params = JSON.parse(body);
+        } catch {
+          res.statusCode = 400;
+          res.setHeader("Content-Type", "application/json");
+          res.end(JSON.stringify({ error: "Invalid JSON" }));
+          return;
+        }
+
+        const agentId = sanitizeId(params.agentId);
+        if (!agentId) {
+          res.statusCode = 400;
+          res.setHeader("Content-Type", "application/json");
+          res.end(JSON.stringify({ error: "Invalid agent ID" }));
+          return;
+        }
+
+        const { join } = await import("node:path");
+        const { readAgentCognitiveState, runMaintenanceCycle } = (await import(
+          /* webpackIgnore: true */ BDI_RUNTIME_PATH
+        )) as any;
+        const agentDir = join(workspaceDir, "agents", agentId);
+        const state = await readAgentCognitiveState(agentDir, agentId);
+        const result = await runMaintenanceCycle(state);
+
+        res.setHeader("Content-Type", "application/json");
+        res.end(JSON.stringify({ ok: true, agentId, result }));
       } catch (err) {
         res.setHeader("Content-Type", "application/json");
         res.statusCode = 500;

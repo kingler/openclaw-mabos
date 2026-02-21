@@ -1,20 +1,18 @@
-import {
-  createRouter,
-  createRootRoute,
-  createRoute,
-  Outlet,
-} from "@tanstack/react-router";
+import { createRouter, createRootRoute, createRoute, Outlet } from "@tanstack/react-router";
 import { AppShell } from "@/components/layout/AppShell";
-import { OverviewPage } from "@/pages/OverviewPage";
-import { AgentsPage } from "@/pages/AgentsPage";
-import { AgentDetailPage } from "@/pages/AgentDetailPage";
-import { TasksPage } from "@/pages/TasksPage";
-import { PerformancePage } from "@/pages/PerformancePage";
-import { TimelinePage } from "@/pages/TimelinePage";
-import { InventoryPage } from "@/pages/InventoryPage";
 import { AccountingPage } from "@/pages/AccountingPage";
+import { AgentDetailPage } from "@/pages/AgentDetailPage";
+import { AgentsPage } from "@/pages/AgentsPage";
+import { BusinessGoalsPage } from "@/pages/BusinessGoalsPage";
+import { DecisionsPage } from "@/pages/DecisionsPage";
 import { HRPage } from "@/pages/HRPage";
+import { InventoryPage } from "@/pages/InventoryPage";
+import { KnowledgeGraphPage } from "@/pages/KnowledgeGraphPage";
 import { OnboardingPage } from "@/pages/OnboardingPage";
+import { OverviewPage } from "@/pages/OverviewPage";
+import { PerformancePage } from "@/pages/PerformancePage";
+import { TasksPage } from "@/pages/TasksPage";
+import { TimelinePage } from "@/pages/TimelinePage";
 
 // Root layout
 const rootRoute = createRootRoute({
@@ -88,6 +86,21 @@ const onboardingRoute = createRoute({
   path: "/onboarding",
   component: OnboardingPage,
 });
+const decisionsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/decisions",
+  component: DecisionsPage,
+});
+const goalsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/goals",
+  component: BusinessGoalsPage,
+});
+const knowledgeGraphRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/knowledge-graph",
+  component: KnowledgeGraphPage,
+});
 
 const routeTree = rootRoute.addChildren([
   indexRoute,
@@ -99,6 +112,9 @@ const routeTree = rootRoute.addChildren([
   accountingRoute,
   hrRoute,
   onboardingRoute,
+  decisionsRoute,
+  goalsRoute,
+  knowledgeGraphRoute,
 ]);
 
 export const router = createRouter({
