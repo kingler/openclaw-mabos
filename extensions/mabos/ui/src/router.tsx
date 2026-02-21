@@ -13,6 +13,7 @@ import { OverviewPage } from "@/pages/OverviewPage";
 import { PerformancePage } from "@/pages/PerformancePage";
 import { TasksPage } from "@/pages/TasksPage";
 import { TimelinePage } from "@/pages/TimelinePage";
+import { WorkflowsPage } from "@/pages/WorkflowsPage";
 
 // Root layout
 const rootRoute = createRootRoute({
@@ -104,7 +105,7 @@ const knowledgeGraphRoute = createRoute({
 const workflowsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/workflows",
-  component: BusinessGoalsPage,
+  component: WorkflowsPage,
 });
 
 const routeTree = rootRoute.addChildren([

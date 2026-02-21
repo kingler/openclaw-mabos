@@ -437,145 +437,159 @@ export default function register(api: OpenClawPluginApi) {
     },
   });
 
+  // Helper: register parameterized routes via registerHttpHandler
+  // (registerHttpRoute only supports exact path matching)
+  const registerParamRoute = (
+    pattern: string,
+    handler: (
+      req: import("node:http").IncomingMessage,
+      res: import("node:http").ServerResponse,
+    ) => Promise<void>,
+  ) => {
+    const regex = new RegExp("^" + pattern.replace(/:[^/]+/g, "[^/]+") + "$");
+    api.registerHttpHandler(async (req, res) => {
+      const url = new URL(req.url || "/", "http://localhost");
+      if (regex.test(url.pathname)) {
+        await handler(req, res);
+        return true;
+      }
+      return false;
+    });
+  };
+
   // API: Resolve a decision
-  api.registerHttpRoute({
-    path: "/mabos/api/decisions/:id/resolve",
-    handler: async (req, res) => {
-      if (req.method !== "POST") {
-        res.statusCode = 405;
+  registerParamRoute("/mabos/api/decisions/:id/resolve", async (req, res) => {
+    if (req.method !== "POST") {
+      res.statusCode = 405;
+      res.setHeader("Content-Type", "application/json");
+      res.end(JSON.stringify({ error: "Method not allowed" }));
+      return;
+    }
+    try {
+      const { readFile, writeFile, mkdir } = await import("node:fs/promises");
+      const { join, dirname } = await import("node:path");
+
+      let body = "";
+      for await (const chunk of req as any) body += chunk;
+      let params: any;
+      try {
+        params = JSON.parse(body);
+      } catch {
+        res.statusCode = 400;
         res.setHeader("Content-Type", "application/json");
-        res.end(JSON.stringify({ error: "Method not allowed" }));
+        res.end(JSON.stringify({ error: "Invalid JSON" }));
         return;
       }
-      try {
-        const { readFile, writeFile, mkdir } = await import("node:fs/promises");
-        const { join, dirname } = await import("node:path");
 
-        let body = "";
-        for await (const chunk of req as any) body += chunk;
-        let params: any;
-        try {
-          params = JSON.parse(body);
-        } catch {
-          res.statusCode = 400;
-          res.setHeader("Content-Type", "application/json");
-          res.end(JSON.stringify({ error: "Invalid JSON" }));
-          return;
-        }
-
-        const bizId = sanitizeId(params.business_id);
-        if (!bizId) {
-          res.statusCode = 400;
-          res.setHeader("Content-Type", "application/json");
-          res.end(JSON.stringify({ error: "Invalid business_id" }));
-          return;
-        }
-
-        const queuePath = join(workspaceDir, "businesses", bizId, "decision-queue.json");
-        const queue = await readJsonSafe(queuePath);
-        if (!Array.isArray(queue)) {
-          res.statusCode = 404;
-          res.end(JSON.stringify({ error: "Decision queue not found" }));
-          return;
-        }
-
-        const idx = queue.findIndex((d: any) => d.id === params.decision_id);
-        if (idx === -1) {
-          res.statusCode = 404;
-          res.end(JSON.stringify({ error: "Decision not found" }));
-          return;
-        }
-
-        const decision = queue[idx];
-        decision.status = params.resolution;
-        decision.feedback = params.feedback;
-        decision.resolved_at = new Date().toISOString();
-
-        await mkdir(dirname(queuePath), { recursive: true });
-        await writeFile(queuePath, JSON.stringify(queue, null, 2), "utf-8");
-
-        // Notify agent
-        if (decision.agent) {
-          const inboxPath = join(
-            workspaceDir,
-            "businesses",
-            bizId,
-            "agents",
-            decision.agent,
-            "inbox.json",
-          );
-          const inbox = (await readJsonSafe(inboxPath)) || [];
-          inbox.push({
-            id: `DEC-${params.decision_id}-resolved`,
-            from: "stakeholder",
-            to: decision.agent,
-            performative:
-              params.resolution === "approved"
-                ? "ACCEPT"
-                : params.resolution === "rejected"
-                  ? "REJECT"
-                  : "INFORM",
-            content: `Decision ${params.decision_id} ${params.resolution}${params.feedback ? `. Feedback: ${params.feedback}` : ""}`,
-            priority: "high",
-            timestamp: new Date().toISOString(),
-            read: false,
-          });
-          await mkdir(dirname(inboxPath), { recursive: true });
-          await writeFile(inboxPath, JSON.stringify(inbox, null, 2), "utf-8");
-        }
-
+      const bizId = sanitizeId(params.business_id);
+      if (!bizId) {
+        res.statusCode = 400;
         res.setHeader("Content-Type", "application/json");
-        res.end(JSON.stringify({ ok: true, decision }));
-      } catch (err) {
-        res.setHeader("Content-Type", "application/json");
-        res.statusCode = 500;
-        res.end(JSON.stringify({ error: String(err) }));
+        res.end(JSON.stringify({ error: "Invalid business_id" }));
+        return;
       }
-    },
+
+      const queuePath = join(workspaceDir, "businesses", bizId, "decision-queue.json");
+      const queue = await readJsonSafe(queuePath);
+      if (!Array.isArray(queue)) {
+        res.statusCode = 404;
+        res.end(JSON.stringify({ error: "Decision queue not found" }));
+        return;
+      }
+
+      const idx = queue.findIndex((d: any) => d.id === params.decision_id);
+      if (idx === -1) {
+        res.statusCode = 404;
+        res.end(JSON.stringify({ error: "Decision not found" }));
+        return;
+      }
+
+      const decision = queue[idx];
+      decision.status = params.resolution;
+      decision.feedback = params.feedback;
+      decision.resolved_at = new Date().toISOString();
+
+      await mkdir(dirname(queuePath), { recursive: true });
+      await writeFile(queuePath, JSON.stringify(queue, null, 2), "utf-8");
+
+      // Notify agent
+      if (decision.agent) {
+        const inboxPath = join(
+          workspaceDir,
+          "businesses",
+          bizId,
+          "agents",
+          decision.agent,
+          "inbox.json",
+        );
+        const inbox = (await readJsonSafe(inboxPath)) || [];
+        inbox.push({
+          id: `DEC-${params.decision_id}-resolved`,
+          from: "stakeholder",
+          to: decision.agent,
+          performative:
+            params.resolution === "approved"
+              ? "ACCEPT"
+              : params.resolution === "rejected"
+                ? "REJECT"
+                : "INFORM",
+          content: `Decision ${params.decision_id} ${params.resolution}${params.feedback ? `. Feedback: ${params.feedback}` : ""}`,
+          priority: "high",
+          timestamp: new Date().toISOString(),
+          read: false,
+        });
+        await mkdir(dirname(inboxPath), { recursive: true });
+        await writeFile(inboxPath, JSON.stringify(inbox, null, 2), "utf-8");
+      }
+
+      res.setHeader("Content-Type", "application/json");
+      res.end(JSON.stringify({ ok: true, decision }));
+    } catch (err) {
+      res.setHeader("Content-Type", "application/json");
+      res.statusCode = 500;
+      res.end(JSON.stringify({ error: String(err) }));
+    }
   });
 
   // API: Agent detail
-  api.registerHttpRoute({
-    path: "/mabos/api/agents/:id",
-    handler: async (req, res) => {
-      try {
-        const { join } = await import("node:path");
-        const url = new URL(req.url || "", "http://localhost");
-        const rawId = url.pathname.split("/").pop() || "";
-        const agentId = sanitizeId(rawId);
-        if (!agentId) {
-          res.statusCode = 400;
-          res.setHeader("Content-Type", "application/json");
-          res.end(JSON.stringify({ error: "Invalid agent ID" }));
-          return;
-        }
-        const agentDir = join(workspaceDir, "agents", agentId);
-
-        const beliefs = await readMdLines(join(agentDir, "Beliefs.md"));
-        const goals = await readMdLines(join(agentDir, "Goals.md"));
-        const intentions = await readMdLines(join(agentDir, "Intentions.md"));
-        const desires = await readMdLines(join(agentDir, "Desires.md"));
-
+  registerParamRoute("/mabos/api/agents/:id", async (req, res) => {
+    try {
+      const { join } = await import("node:path");
+      const url = new URL(req.url || "", "http://localhost");
+      const rawId = url.pathname.split("/").pop() || "";
+      const agentId = sanitizeId(rawId);
+      if (!agentId) {
+        res.statusCode = 400;
         res.setHeader("Content-Type", "application/json");
-        res.end(
-          JSON.stringify({
-            agentId,
-            beliefCount: beliefs.length,
-            goalCount: goals.length,
-            intentionCount: intentions.length,
-            desireCount: desires.length,
-            beliefs,
-            goals,
-            intentions,
-            desires,
-          }),
-        );
-      } catch (err) {
-        res.setHeader("Content-Type", "application/json");
-        res.statusCode = 500;
-        res.end(JSON.stringify({ error: String(err) }));
+        res.end(JSON.stringify({ error: "Invalid agent ID" }));
+        return;
       }
-    },
+      const agentDir = join(workspaceDir, "agents", agentId);
+
+      const beliefs = await readMdLines(join(agentDir, "Beliefs.md"));
+      const goals = await readMdLines(join(agentDir, "Goals.md"));
+      const intentions = await readMdLines(join(agentDir, "Intentions.md"));
+      const desires = await readMdLines(join(agentDir, "Desires.md"));
+
+      res.setHeader("Content-Type", "application/json");
+      res.end(
+        JSON.stringify({
+          agentId,
+          beliefCount: beliefs.length,
+          goalCount: goals.length,
+          intentionCount: intentions.length,
+          desireCount: desires.length,
+          beliefs,
+          goals,
+          intentions,
+          desires,
+        }),
+      );
+    } catch (err) {
+      res.setHeader("Content-Type", "application/json");
+      res.statusCode = 500;
+      res.end(JSON.stringify({ error: String(err) }));
+    }
   });
 
   // API: Business list
@@ -615,31 +629,28 @@ export default function register(api: OpenClawPluginApi) {
   });
 
   // API: Metrics for a business
-  api.registerHttpRoute({
-    path: "/mabos/api/metrics/:business",
-    handler: async (req, res) => {
-      try {
-        const { join } = await import("node:path");
-        const url = new URL(req.url || "", "http://localhost");
-        const rawId = url.pathname.split("/").pop() || "";
-        const businessId = sanitizeId(rawId);
-        if (!businessId) {
-          res.statusCode = 400;
-          res.setHeader("Content-Type", "application/json");
-          res.end(JSON.stringify({ error: "Invalid business ID" }));
-          return;
-        }
-        const metricsPath = join(workspaceDir, "businesses", businessId, "metrics.json");
-        const metrics = await readJsonSafe(metricsPath);
-
+  registerParamRoute("/mabos/api/metrics/:business", async (req, res) => {
+    try {
+      const { join } = await import("node:path");
+      const url = new URL(req.url || "", "http://localhost");
+      const rawId = url.pathname.split("/").pop() || "";
+      const businessId = sanitizeId(rawId);
+      if (!businessId) {
+        res.statusCode = 400;
         res.setHeader("Content-Type", "application/json");
-        res.end(JSON.stringify({ business: businessId, metrics: metrics || {} }));
-      } catch (err) {
-        res.setHeader("Content-Type", "application/json");
-        res.statusCode = 500;
-        res.end(JSON.stringify({ error: String(err) }));
+        res.end(JSON.stringify({ error: "Invalid business ID" }));
+        return;
       }
-    },
+      const metricsPath = join(workspaceDir, "businesses", businessId, "metrics.json");
+      const metrics = await readJsonSafe(metricsPath);
+
+      res.setHeader("Content-Type", "application/json");
+      res.end(JSON.stringify({ business: businessId, metrics: metrics || {} }));
+    } catch (err) {
+      res.setHeader("Content-Type", "application/json");
+      res.statusCode = 500;
+      res.end(JSON.stringify({ error: String(err) }));
+    }
   });
 
   // API: Contractors
@@ -1214,236 +1225,320 @@ export default function register(api: OpenClawPluginApi) {
   });
 
   // API: Get goal model for a business
-  api.registerHttpRoute({
-    path: "/mabos/api/businesses/:id/goals",
-    handler: async (req, res) => {
-      try {
-        const { readFile, readdir } = await import("node:fs/promises");
-        const { join } = await import("node:path");
-        const { existsSync } = await import("node:fs");
+  registerParamRoute("/mabos/api/businesses/:id/goals", async (req, res) => {
+    try {
+      const { readFile, readdir } = await import("node:fs/promises");
+      const { join } = await import("node:path");
+      const { existsSync } = await import("node:fs");
 
-        const url = new URL(req.url || "", "http://localhost");
-        const segments = url.pathname.split("/");
-        const bizIdx = segments.indexOf("businesses");
-        const rawBizId = segments[bizIdx + 1] || "";
-        const businessId = sanitizeId(rawBizId);
-        if (!businessId) {
+      const url = new URL(req.url || "", "http://localhost");
+      const segments = url.pathname.split("/");
+      const bizIdx = segments.indexOf("businesses");
+      const rawBizId = segments[bizIdx + 1] || "";
+      const businessId = sanitizeId(rawBizId);
+      if (!businessId) {
+        res.statusCode = 400;
+        res.setHeader("Content-Type", "application/json");
+        res.end(JSON.stringify({ error: "Invalid business ID" }));
+        return;
+      }
+      const bizDir = join(workspaceDir, "businesses", businessId);
+
+      if (req.method === "PUT") {
+        // Update goal model
+        let body = "";
+        for await (const chunk of req as any) body += chunk;
+        let goalModel: any;
+        try {
+          goalModel = JSON.parse(body);
+        } catch {
           res.statusCode = 400;
           res.setHeader("Content-Type", "application/json");
-          res.end(JSON.stringify({ error: "Invalid business ID" }));
+          res.end(JSON.stringify({ error: "Invalid JSON" }));
           return;
         }
-        const bizDir = join(workspaceDir, "businesses", businessId);
+        const { writeFile, mkdir } = await import("node:fs/promises");
+        await mkdir(bizDir, { recursive: true });
+        await writeFile(
+          join(bizDir, "tropos-goal-model.json"),
+          JSON.stringify(goalModel, null, 2),
+          "utf-8",
+        );
 
-        if (req.method === "PUT") {
-          // Update goal model
-          let body = "";
-          for await (const chunk of req as any) body += chunk;
-          let goalModel: any;
-          try {
-            goalModel = JSON.parse(body);
-          } catch {
-            res.statusCode = 400;
-            res.setHeader("Content-Type", "application/json");
-            res.end(JSON.stringify({ error: "Invalid JSON" }));
-            return;
-          }
-          const { writeFile, mkdir } = await import("node:fs/promises");
-          await mkdir(bizDir, { recursive: true });
-          await writeFile(
-            join(bizDir, "tropos-goal-model.json"),
-            JSON.stringify(goalModel, null, 2),
-            "utf-8",
-          );
-
-          // Cascade: update agent Goals.md files
-          if (goalModel.goals && goalModel.actors) {
-            for (const actor of goalModel.actors) {
-              if (actor.type === "agent") {
-                const agentGoals = goalModel.goals.filter((g: any) => g.actor === actor.id);
-                if (agentGoals.length > 0) {
-                  const goalsContent = `# Goals — ${actor.id.toUpperCase()}\n\nUpdated: ${new Date().toISOString().split("T")[0]}\n\n${agentGoals.map((g: any) => `## ${g.id}: ${g.text}\n- **Type:** ${g.type}\n- **Priority:** ${g.priority}\n- **Status:** active\n`).join("\n")}`;
-                  const agentDir = join(bizDir, "agents", actor.id);
-                  if (existsSync(agentDir)) {
-                    await writeFile(join(agentDir, "Goals.md"), goalsContent, "utf-8");
-                  }
+        // Cascade: update agent Goals.md files
+        if (goalModel.goals && goalModel.actors) {
+          for (const actor of goalModel.actors) {
+            if (actor.type === "agent") {
+              const agentGoals = goalModel.goals.filter((g: any) => g.actor === actor.id);
+              if (agentGoals.length > 0) {
+                const goalsContent = `# Goals — ${actor.id.toUpperCase()}\n\nUpdated: ${new Date().toISOString().split("T")[0]}\n\n${agentGoals.map((g: any) => `## ${g.id}: ${g.text}\n- **Type:** ${g.type}\n- **Priority:** ${g.priority}\n- **Status:** active\n`).join("\n")}`;
+                const agentDir = join(bizDir, "agents", actor.id);
+                if (existsSync(agentDir)) {
+                  await writeFile(join(agentDir, "Goals.md"), goalsContent, "utf-8");
                 }
               }
             }
           }
-
-          res.setHeader("Content-Type", "application/json");
-          res.end(JSON.stringify({ ok: true, goals: goalModel }));
-          return;
-        }
-
-        // GET: Read goal model
-        const troposPath = join(bizDir, "tropos-goal-model.json");
-        let goalModel = await readJsonSafe(troposPath);
-
-        if (!goalModel) {
-          // Build from manifest + agent Goals.md
-          const manifest = await readJsonSafe(join(bizDir, "manifest.json"));
-          const goals: any[] = [];
-          const actors: any[] = [
-            { id: "stakeholder", type: "principal", goals: [], x: 400, y: 50 },
-          ];
-
-          if (manifest?.agents) {
-            for (const agentId of manifest.agents) {
-              const goalsPath = join(bizDir, "agents", agentId, "Goals.md");
-              const agentGoals = await readMdLines(goalsPath);
-              actors.push({ id: agentId, type: "agent", delegated_goals: agentGoals, x: 0, y: 0 });
-              agentGoals.forEach((g: string, i: number) => {
-                goals.push({
-                  id: `G-${agentId}-${i}`,
-                  text: g,
-                  type: "hard",
-                  priority: 0.5,
-                  actor: agentId,
-                  parent_goal: null,
-                  decomposition: "AND",
-                  linked_tasks: [],
-                  contributions: [],
-                });
-              });
-            }
-          }
-
-          goalModel = { actors, goals, goal_mapping: [], dependencies: [], constraints: [] };
         }
 
         res.setHeader("Content-Type", "application/json");
-        res.end(JSON.stringify(goalModel));
-      } catch (err) {
-        res.setHeader("Content-Type", "application/json");
-        res.statusCode = 500;
-        res.end(JSON.stringify({ error: String(err) }));
+        res.end(JSON.stringify({ ok: true, goals: goalModel }));
+        return;
       }
-    },
+
+      // GET: Read goal model
+      const troposPath = join(bizDir, "tropos-goal-model.json");
+      let goalModel = await readJsonSafe(troposPath);
+
+      if (!goalModel) {
+        // Build from manifest + agent Goals.md
+        const manifest = await readJsonSafe(join(bizDir, "manifest.json"));
+        const goals: any[] = [];
+        const actors: any[] = [{ id: "stakeholder", type: "principal", goals: [], x: 400, y: 50 }];
+
+        if (manifest?.agents) {
+          for (const agentId of manifest.agents) {
+            const goalsPath = join(bizDir, "agents", agentId, "Goals.md");
+            const agentGoals = await readMdLines(goalsPath);
+            actors.push({ id: agentId, type: "agent", delegated_goals: agentGoals, x: 0, y: 0 });
+            agentGoals.forEach((g: string, i: number) => {
+              goals.push({
+                id: `G-${agentId}-${i}`,
+                text: g,
+                type: "hard",
+                priority: 0.5,
+                actor: agentId,
+                parent_goal: null,
+                decomposition: "AND",
+                linked_tasks: [],
+                contributions: [],
+              });
+            });
+          }
+        }
+
+        goalModel = { actors, goals, goal_mapping: [], dependencies: [], constraints: [] };
+      }
+
+      res.setHeader("Content-Type", "application/json");
+      res.end(JSON.stringify(goalModel));
+    } catch (err) {
+      res.setHeader("Content-Type", "application/json");
+      res.statusCode = 500;
+      res.end(JSON.stringify({ error: String(err) }));
+    }
   });
 
   // API: Get tasks for a business (parsed from agent Plans.md)
-  api.registerHttpRoute({
-    path: "/mabos/api/businesses/:id/tasks",
-    handler: async (req, res) => {
-      try {
-        const { readFile, readdir } = await import("node:fs/promises");
-        const { join } = await import("node:path");
-        const { existsSync } = await import("node:fs");
+  registerParamRoute("/mabos/api/businesses/:id/tasks", async (req, res) => {
+    try {
+      const { readFile, readdir } = await import("node:fs/promises");
+      const { join } = await import("node:path");
+      const { existsSync } = await import("node:fs");
 
-        const url = new URL(req.url || "", "http://localhost");
-        const segments = url.pathname.split("/");
-        const bizIdx = segments.indexOf("businesses");
-        const rawBizId = segments[bizIdx + 1] || "";
-        const businessId = sanitizeId(rawBizId);
-        if (!businessId) {
-          res.statusCode = 400;
-          res.setHeader("Content-Type", "application/json");
-          res.end(JSON.stringify({ error: "Invalid business ID" }));
-          return;
-        }
-        const bizDir = join(workspaceDir, "businesses", businessId);
-        const agentsDir = join(bizDir, "agents");
+      const url = new URL(req.url || "", "http://localhost");
+      const segments = url.pathname.split("/");
+      const bizIdx = segments.indexOf("businesses");
+      const rawBizId = segments[bizIdx + 1] || "";
+      const businessId = sanitizeId(rawBizId);
+      if (!businessId) {
+        res.statusCode = 400;
+        res.setHeader("Content-Type", "application/json");
+        res.end(JSON.stringify({ error: "Invalid business ID" }));
+        return;
+      }
+      const bizDir = join(workspaceDir, "businesses", businessId);
+      const agentsDir = join(bizDir, "agents");
 
-        const tasks: any[] = [];
-        const agentEntries = await readdir(agentsDir).catch(() => []);
+      const tasks: any[] = [];
+      const agentEntries = await readdir(agentsDir).catch(() => []);
 
-        for (const agentId of agentEntries) {
-          const plansPath = join(agentsDir, agentId, "Plans.md");
-          if (!existsSync(plansPath)) continue;
+      for (const agentId of agentEntries) {
+        const plansPath = join(agentsDir, agentId, "Plans.md");
+        if (!existsSync(plansPath)) continue;
 
-          const content = await readFile(plansPath, "utf-8");
-          const lines = content.split("\n");
-          let currentPlan = "";
-          let currentPlanId = "";
+        const content = await readFile(plansPath, "utf-8");
+        const lines = content.split("\n");
+        let currentPlan = "";
+        let currentPlanId = "";
 
-          for (const line of lines) {
-            // Match plan headers: ### P-001: Plan Name
-            const planMatch = line.match(/^###\s+(P-\d+):\s*(.+)/);
-            if (planMatch) {
-              currentPlanId = planMatch[1];
-              currentPlan = planMatch[2].trim();
-              continue;
-            }
-
-            // Match table rows: | S-1 | description | type | assigned | depends | status | duration |
-            const rowMatch = line.match(
-              /^\|\s*(S-\d+)\s*\|\s*(.+?)\s*\|\s*(.+?)\s*\|\s*(.+?)\s*\|\s*(.+?)\s*\|\s*(.+?)\s*\|\s*(.+?)\s*\|/,
-            );
-            if (rowMatch && currentPlanId) {
-              tasks.push({
-                id: `${currentPlanId}-${rowMatch[1]}`,
-                plan_id: currentPlanId,
-                plan_name: currentPlan,
-                step_id: rowMatch[1],
-                description: rowMatch[2].trim(),
-                type: rowMatch[3].trim(),
-                assigned_to: rowMatch[4].trim() || agentId,
-                depends_on:
-                  rowMatch[5].trim() === "-"
-                    ? []
-                    : rowMatch[5]
-                        .trim()
-                        .split(",")
-                        .map((s: string) => s.trim()),
-                status: rowMatch[6].trim().toLowerCase() || "proposed",
-                estimated_duration: rowMatch[7].trim(),
-                agent_id: agentId,
-              });
-            }
+        for (const line of lines) {
+          // Match plan headers: ### P-001: Plan Name
+          const planMatch = line.match(/^###\s+(P-\d+):\s*(.+)/);
+          if (planMatch) {
+            currentPlanId = planMatch[1];
+            currentPlan = planMatch[2].trim();
+            continue;
           }
 
-          // Also check for plans.json
-          const plansJsonPath = join(agentsDir, agentId, "plans.json");
-          const plansJson = await readJsonSafe(plansJsonPath);
-          if (plansJson && Array.isArray(plansJson.plans)) {
-            for (const plan of plansJson.plans) {
-              if (plan.steps) {
-                for (const step of plan.steps) {
-                  tasks.push({
-                    id: `${plan.id}-${step.id}`,
-                    plan_id: plan.id,
-                    plan_name: plan.name || plan.id,
-                    step_id: step.id,
-                    description: step.description || step.name || "",
-                    type: step.type || "task",
-                    assigned_to: step.assigned_to || agentId,
-                    depends_on: step.depends_on || [],
-                    status: step.status || "proposed",
-                    estimated_duration: step.estimated_duration || "",
-                    agent_id: agentId,
-                  });
-                }
+          // Match table rows: | S-1 | description | type | assigned | depends | status | duration |
+          const rowMatch = line.match(
+            /^\|\s*(S-\d+)\s*\|\s*(.+?)\s*\|\s*(.+?)\s*\|\s*(.+?)\s*\|\s*(.+?)\s*\|\s*(.+?)\s*\|\s*(.+?)\s*\|/,
+          );
+          if (rowMatch && currentPlanId) {
+            tasks.push({
+              id: `${currentPlanId}-${rowMatch[1]}`,
+              plan_id: currentPlanId,
+              plan_name: currentPlan,
+              step_id: rowMatch[1],
+              description: rowMatch[2].trim(),
+              type: rowMatch[3].trim(),
+              assigned_to: rowMatch[4].trim() || agentId,
+              depends_on:
+                rowMatch[5].trim() === "-"
+                  ? []
+                  : rowMatch[5]
+                      .trim()
+                      .split(",")
+                      .map((s: string) => s.trim()),
+              status: rowMatch[6].trim().toLowerCase() || "proposed",
+              estimated_duration: rowMatch[7].trim(),
+              agent_id: agentId,
+            });
+          }
+        }
+
+        // Also check for plans.json
+        const plansJsonPath = join(agentsDir, agentId, "plans.json");
+        const plansJson = await readJsonSafe(plansJsonPath);
+        if (plansJson && Array.isArray(plansJson.plans)) {
+          for (const plan of plansJson.plans) {
+            if (plan.steps) {
+              for (const step of plan.steps) {
+                tasks.push({
+                  id: `${plan.id}-${step.id}`,
+                  plan_id: plan.id,
+                  plan_name: plan.name || plan.id,
+                  step_id: step.id,
+                  description: step.description || step.name || "",
+                  type: step.type || "task",
+                  assigned_to: step.assigned_to || agentId,
+                  depends_on: step.depends_on || [],
+                  status: step.status || "proposed",
+                  estimated_duration: step.estimated_duration || "",
+                  agent_id: agentId,
+                });
               }
             }
           }
         }
-
-        res.setHeader("Content-Type", "application/json");
-        res.end(JSON.stringify({ tasks }));
-      } catch (err) {
-        res.setHeader("Content-Type", "application/json");
-        res.statusCode = 500;
-        res.end(JSON.stringify({ error: String(err) }));
       }
-    },
+
+      res.setHeader("Content-Type", "application/json");
+      res.end(JSON.stringify({ tasks }));
+    } catch (err) {
+      res.setHeader("Content-Type", "application/json");
+      res.statusCode = 500;
+      res.end(JSON.stringify({ error: String(err) }));
+    }
   });
 
   // API: Update task status
-  api.registerHttpRoute({
-    path: "/mabos/api/businesses/:id/tasks/:taskId",
-    handler: async (req, res) => {
-      if (req.method !== "POST" && req.method !== "PUT") {
-        res.statusCode = 405;
+  registerParamRoute("/mabos/api/businesses/:id/tasks/:taskId", async (req, res) => {
+    if (req.method !== "POST" && req.method !== "PUT") {
+      res.statusCode = 405;
+      res.setHeader("Content-Type", "application/json");
+      res.end(JSON.stringify({ error: "Method not allowed" }));
+      return;
+    }
+    try {
+      const { readFile, writeFile } = await import("node:fs/promises");
+      const { join } = await import("node:path");
+
+      let body = "";
+      for await (const chunk of req as any) body += chunk;
+      let params: any;
+      try {
+        params = JSON.parse(body);
+      } catch {
+        res.statusCode = 400;
         res.setHeader("Content-Type", "application/json");
-        res.end(JSON.stringify({ error: "Method not allowed" }));
+        res.end(JSON.stringify({ error: "Invalid JSON" }));
         return;
       }
-      try {
-        const { readFile, writeFile } = await import("node:fs/promises");
-        const { join } = await import("node:path");
 
+      const url = new URL(req.url || "", "http://localhost");
+      const segments = url.pathname.split("/");
+      const bizIdx = segments.indexOf("businesses");
+      const rawBizId = segments[bizIdx + 1] || "";
+      const businessId = sanitizeId(rawBizId);
+      if (!businessId) {
+        res.statusCode = 400;
+        res.setHeader("Content-Type", "application/json");
+        res.end(JSON.stringify({ error: "Invalid business ID" }));
+        return;
+      }
+      const agentsDir = join(workspaceDir, "businesses", businessId, "agents");
+
+      // Find the task in agent Plans.md files and update status
+      const { readdir } = await import("node:fs/promises");
+      const { existsSync } = await import("node:fs");
+      const agentEntries = await readdir(agentsDir).catch(() => []);
+      let updated = false;
+
+      for (const agentId of agentEntries) {
+        const plansPath = join(agentsDir, agentId, "Plans.md");
+        if (!existsSync(plansPath)) continue;
+
+        let content = await readFile(plansPath, "utf-8");
+        const taskId = segments[segments.length - 1] || "";
+        // Try to find and update the step row with matching ID
+        const lines = content.split("\n");
+        for (let i = 0; i < lines.length; i++) {
+          if (lines[i].includes(taskId.split("-").pop() || "") && lines[i].startsWith("|")) {
+            // Replace status in the row
+            const parts = lines[i].split("|");
+            if (parts.length >= 7 && params.status) {
+              parts[6] = ` ${params.status} `;
+              lines[i] = parts.join("|");
+              updated = true;
+            }
+          }
+        }
+        if (updated) {
+          await writeFile(plansPath, lines.join("\n"), "utf-8");
+          break;
+        }
+      }
+
+      res.setHeader("Content-Type", "application/json");
+      res.end(JSON.stringify({ ok: true, updated }));
+    } catch (err) {
+      res.setHeader("Content-Type", "application/json");
+      res.statusCode = 500;
+      res.end(JSON.stringify({ error: String(err) }));
+    }
+  });
+
+  // API: Get/Create agents for a business
+  registerParamRoute("/mabos/api/businesses/:id/agents", async (req, res) => {
+    try {
+      const {
+        readFile,
+        readdir,
+        stat: fsStat,
+        writeFile: wf,
+        mkdir: mk,
+      } = await import("node:fs/promises");
+      const { join } = await import("node:path");
+      const { existsSync } = await import("node:fs");
+
+      const url = new URL(req.url || "", "http://localhost");
+      const segments = url.pathname.split("/");
+      const bizIdx = segments.indexOf("businesses");
+      const rawBizId = segments[bizIdx + 1] || "";
+      const businessId = sanitizeId(rawBizId);
+      if (!businessId) {
+        res.statusCode = 400;
+        res.setHeader("Content-Type", "application/json");
+        res.end(JSON.stringify({ error: "Invalid business ID" }));
+        return;
+      }
+      const bizDir = join(workspaceDir, "businesses", businessId);
+      const agentsDir = join(bizDir, "agents");
+
+      // POST: Create a new agent
+      if (req.method === "POST") {
         let body = "";
         for await (const chunk of req as any) body += chunk;
         let params: any;
@@ -1456,283 +1551,179 @@ export default function register(api: OpenClawPluginApi) {
           return;
         }
 
-        const url = new URL(req.url || "", "http://localhost");
-        const segments = url.pathname.split("/");
-        const bizIdx = segments.indexOf("businesses");
-        const rawBizId = segments[bizIdx + 1] || "";
-        const businessId = sanitizeId(rawBizId);
-        if (!businessId) {
+        const newId = sanitizeId(params.id);
+        if (!newId) {
           res.statusCode = 400;
           res.setHeader("Content-Type", "application/json");
-          res.end(JSON.stringify({ error: "Invalid business ID" }));
+          res.end(JSON.stringify({ error: "Invalid agent ID" }));
           return;
         }
-        const agentsDir = join(workspaceDir, "businesses", businessId, "agents");
 
-        // Find the task in agent Plans.md files and update status
-        const { readdir } = await import("node:fs/promises");
-        const { existsSync } = await import("node:fs");
-        const agentEntries = await readdir(agentsDir).catch(() => []);
-        let updated = false;
-
-        for (const agentId of agentEntries) {
-          const plansPath = join(agentsDir, agentId, "Plans.md");
-          if (!existsSync(plansPath)) continue;
-
-          let content = await readFile(plansPath, "utf-8");
-          const taskId = segments[segments.length - 1] || "";
-          // Try to find and update the step row with matching ID
-          const lines = content.split("\n");
-          for (let i = 0; i < lines.length; i++) {
-            if (lines[i].includes(taskId.split("-").pop() || "") && lines[i].startsWith("|")) {
-              // Replace status in the row
-              const parts = lines[i].split("|");
-              if (parts.length >= 7 && params.status) {
-                parts[6] = ` ${params.status} `;
-                lines[i] = parts.join("|");
-                updated = true;
-              }
-            }
-          }
-          if (updated) {
-            await writeFile(plansPath, lines.join("\n"), "utf-8");
-            break;
-          }
-        }
-
-        res.setHeader("Content-Type", "application/json");
-        res.end(JSON.stringify({ ok: true, updated }));
-      } catch (err) {
-        res.setHeader("Content-Type", "application/json");
-        res.statusCode = 500;
-        res.end(JSON.stringify({ error: String(err) }));
-      }
-    },
-  });
-
-  // API: Get/Create agents for a business
-  api.registerHttpRoute({
-    path: "/mabos/api/businesses/:id/agents",
-    handler: async (req, res) => {
-      try {
-        const {
-          readFile,
-          readdir,
-          stat: fsStat,
-          writeFile: wf,
-          mkdir: mk,
-        } = await import("node:fs/promises");
-        const { join } = await import("node:path");
-        const { existsSync } = await import("node:fs");
-
-        const url = new URL(req.url || "", "http://localhost");
-        const segments = url.pathname.split("/");
-        const bizIdx = segments.indexOf("businesses");
-        const rawBizId = segments[bizIdx + 1] || "";
-        const businessId = sanitizeId(rawBizId);
-        if (!businessId) {
-          res.statusCode = 400;
+        const agentPath = join(agentsDir, newId);
+        if (existsSync(agentPath)) {
+          res.statusCode = 409;
           res.setHeader("Content-Type", "application/json");
-          res.end(JSON.stringify({ error: "Invalid business ID" }));
+          res.end(JSON.stringify({ error: `Agent '${newId}' already exists` }));
           return;
         }
-        const bizDir = join(workspaceDir, "businesses", businessId);
-        const agentsDir = join(bizDir, "agents");
 
-        // POST: Create a new agent
-        if (req.method === "POST") {
-          let body = "";
-          for await (const chunk of req as any) body += chunk;
-          let params: any;
-          try {
-            params = JSON.parse(body);
-          } catch {
-            res.statusCode = 400;
-            res.setHeader("Content-Type", "application/json");
-            res.end(JSON.stringify({ error: "Invalid JSON" }));
-            return;
-          }
+        const now = new Date().toISOString();
+        await mk(agentPath, { recursive: true });
 
-          const newId = sanitizeId(params.id);
-          if (!newId) {
-            res.statusCode = 400;
-            res.setHeader("Content-Type", "application/json");
-            res.end(JSON.stringify({ error: "Invalid agent ID" }));
-            return;
-          }
-
-          const agentPath = join(agentsDir, newId);
-          if (existsSync(agentPath)) {
-            res.statusCode = 409;
-            res.setHeader("Content-Type", "application/json");
-            res.end(JSON.stringify({ error: `Agent '${newId}' already exists` }));
-            return;
-          }
-
-          const now = new Date().toISOString();
-          await mk(agentPath, { recursive: true });
-
-          // Create cognitive files
-          for (const f of [
-            "Beliefs.md",
-            "Desires.md",
-            "Goals.md",
-            "Intentions.md",
-            "Plans.md",
-            "Playbooks.md",
-            "Knowledge.md",
-            "Memory.md",
-          ]) {
-            await wf(
-              join(agentPath, f),
-              `# ${f.replace(".md", "")} — ${params.name || newId}\n\nInitialized: ${now.split("T")[0]}\n`,
-              "utf-8",
-            );
-          }
+        // Create cognitive files
+        for (const f of [
+          "Beliefs.md",
+          "Desires.md",
+          "Goals.md",
+          "Intentions.md",
+          "Plans.md",
+          "Playbooks.md",
+          "Knowledge.md",
+          "Memory.md",
+        ]) {
           await wf(
-            join(agentPath, "Persona.md"),
-            `# Persona — ${params.name || newId}\n\n**Role:** ${params.name || newId}\n**Agent ID:** ${newId}\n**Type:** ${params.type || "domain"}\n`,
+            join(agentPath, f),
+            `# ${f.replace(".md", "")} — ${params.name || newId}\n\nInitialized: ${now.split("T")[0]}\n`,
             "utf-8",
           );
-          await wf(join(agentPath, "inbox.json"), "[]", "utf-8");
-          await wf(join(agentPath, "cases.json"), "[]", "utf-8");
-
-          // Write config
-          const config = {
-            status: "active",
-            autonomy_level: params.autonomy_level || "medium",
-            approval_threshold_usd: params.approval_threshold_usd || 100,
-            created_at: now,
-          };
-          await wf(join(agentPath, "config.json"), JSON.stringify(config, null, 2), "utf-8");
-
-          // Update manifest
-          const manifest = (await readJsonSafe(join(bizDir, "manifest.json"))) || {};
-          if (params.type === "core") {
-            manifest.agents = [...(manifest.agents || []), newId];
-          } else {
-            manifest.domain_agents = [...(manifest.domain_agents || []), newId];
-          }
-          await wf(join(bizDir, "manifest.json"), JSON.stringify(manifest, null, 2), "utf-8");
-
-          res.setHeader("Content-Type", "application/json");
-          res.end(JSON.stringify({ ok: true, agentId: newId }));
-          return;
         }
+        await wf(
+          join(agentPath, "Persona.md"),
+          `# Persona — ${params.name || newId}\n\n**Role:** ${params.name || newId}\n**Agent ID:** ${newId}\n**Type:** ${params.type || "domain"}\n`,
+          "utf-8",
+        );
+        await wf(join(agentPath, "inbox.json"), "[]", "utf-8");
+        await wf(join(agentPath, "cases.json"), "[]", "utf-8");
 
-        // GET: List agents
-        const manifest = await readJsonSafe(join(bizDir, "manifest.json"));
-        const agentEntries = await readdir(agentsDir).catch(() => []);
-        const agents: any[] = [];
-
-        for (const agentId of agentEntries) {
-          const agentPath = join(agentsDir, agentId);
-          const s = await fsStat(agentPath).catch(() => null);
-          if (!s?.isDirectory()) continue;
-
-          const countLines = async (file: string) => {
-            try {
-              const content = await readFile(file, "utf-8");
-              return content.split("\n").filter((l: string) => l.trim() && !l.startsWith("#"))
-                .length;
-            } catch {
-              return 0;
-            }
-          };
-
-          const beliefs = await countLines(join(agentPath, "Beliefs.md"));
-          const goals = await countLines(join(agentPath, "Goals.md"));
-          const intentions = await countLines(join(agentPath, "Intentions.md"));
-          const desires = await countLines(join(agentPath, "Desires.md"));
-
-          const config = await readJsonSafe(join(agentPath, "config.json"));
-          const isCoreAgent = manifest?.agents?.includes(agentId);
-
-          agents.push({
-            id: agentId,
-            name: agentId.replace(/-/g, " ").replace(/\b\w/g, (c: string) => c.toUpperCase()),
-            type: isCoreAgent ? "core" : "domain",
-            beliefs,
-            goals,
-            intentions,
-            desires,
-            status: config?.status || "active",
-            autonomy_level: config?.autonomy_level || "medium",
-            approval_threshold_usd: config?.approval_threshold_usd || 100,
-          });
-        }
-
-        res.setHeader("Content-Type", "application/json");
-        res.end(JSON.stringify({ agents }));
-      } catch (err) {
-        res.setHeader("Content-Type", "application/json");
-        res.statusCode = 500;
-        res.end(JSON.stringify({ error: String(err) }));
-      }
-    },
-  });
-
-  // API: Archive an agent
-  api.registerHttpRoute({
-    path: "/mabos/api/businesses/:id/agents/:agentId/archive",
-    handler: async (req, res) => {
-      if (req.method !== "POST") {
-        res.statusCode = 405;
-        res.setHeader("Content-Type", "application/json");
-        res.end(JSON.stringify({ error: "Method not allowed" }));
-        return;
-      }
-      try {
-        const { rename, writeFile, mkdir } = await import("node:fs/promises");
-        const { join, dirname } = await import("node:path");
-        const { existsSync } = await import("node:fs");
-
-        const url = new URL(req.url || "", "http://localhost");
-        const segments = url.pathname.split("/");
-        const bizIdx = segments.indexOf("businesses");
-        const rawBizId = segments[bizIdx + 1] || "";
-        const businessId = sanitizeId(rawBizId);
-        // agentId is before "archive"
-        const archiveIdx = segments.indexOf("archive");
-        const rawAgentId = archiveIdx > 0 ? segments[archiveIdx - 1] : "";
-        const agentId = sanitizeId(rawAgentId);
-
-        if (!businessId || !agentId) {
-          res.statusCode = 400;
-          res.setHeader("Content-Type", "application/json");
-          res.end(JSON.stringify({ error: "Invalid business or agent ID" }));
-          return;
-        }
-
-        const bizDir = join(workspaceDir, "businesses", businessId);
-        const agentDir = join(bizDir, "agents", agentId);
-        const archivedDir = join(bizDir, "agents", `_archived_${agentId}`);
-
-        if (!existsSync(agentDir)) {
-          res.statusCode = 404;
-          res.setHeader("Content-Type", "application/json");
-          res.end(JSON.stringify({ error: `Agent '${agentId}' not found` }));
-          return;
-        }
-
-        await rename(agentDir, archivedDir);
+        // Write config
+        const config = {
+          status: "active",
+          autonomy_level: params.autonomy_level || "medium",
+          approval_threshold_usd: params.approval_threshold_usd || 100,
+          created_at: now,
+        };
+        await wf(join(agentPath, "config.json"), JSON.stringify(config, null, 2), "utf-8");
 
         // Update manifest
         const manifest = (await readJsonSafe(join(bizDir, "manifest.json"))) || {};
-        manifest.agents = (manifest.agents || []).filter((a: string) => a !== agentId);
-        manifest.domain_agents = (manifest.domain_agents || []).filter(
-          (a: string) => a !== agentId,
-        );
-        await writeFile(join(bizDir, "manifest.json"), JSON.stringify(manifest, null, 2), "utf-8");
+        if (params.type === "core") {
+          manifest.agents = [...(manifest.agents || []), newId];
+        } else {
+          manifest.domain_agents = [...(manifest.domain_agents || []), newId];
+        }
+        await wf(join(bizDir, "manifest.json"), JSON.stringify(manifest, null, 2), "utf-8");
 
         res.setHeader("Content-Type", "application/json");
-        res.end(JSON.stringify({ ok: true, archived: agentId }));
-      } catch (err) {
-        res.setHeader("Content-Type", "application/json");
-        res.statusCode = 500;
-        res.end(JSON.stringify({ error: String(err) }));
+        res.end(JSON.stringify({ ok: true, agentId: newId }));
+        return;
       }
-    },
+
+      // GET: List agents
+      const manifest = await readJsonSafe(join(bizDir, "manifest.json"));
+      const agentEntries = await readdir(agentsDir).catch(() => []);
+      const agents: any[] = [];
+
+      for (const agentId of agentEntries) {
+        const agentPath = join(agentsDir, agentId);
+        const s = await fsStat(agentPath).catch(() => null);
+        if (!s?.isDirectory()) continue;
+
+        const countLines = async (file: string) => {
+          try {
+            const content = await readFile(file, "utf-8");
+            return content.split("\n").filter((l: string) => l.trim() && !l.startsWith("#")).length;
+          } catch {
+            return 0;
+          }
+        };
+
+        const beliefs = await countLines(join(agentPath, "Beliefs.md"));
+        const goals = await countLines(join(agentPath, "Goals.md"));
+        const intentions = await countLines(join(agentPath, "Intentions.md"));
+        const desires = await countLines(join(agentPath, "Desires.md"));
+
+        const config = await readJsonSafe(join(agentPath, "config.json"));
+        const isCoreAgent = manifest?.agents?.includes(agentId);
+
+        agents.push({
+          id: agentId,
+          name: agentId.replace(/-/g, " ").replace(/\b\w/g, (c: string) => c.toUpperCase()),
+          type: isCoreAgent ? "core" : "domain",
+          beliefs,
+          goals,
+          intentions,
+          desires,
+          status: config?.status || "active",
+          autonomy_level: config?.autonomy_level || "medium",
+          approval_threshold_usd: config?.approval_threshold_usd || 100,
+        });
+      }
+
+      res.setHeader("Content-Type", "application/json");
+      res.end(JSON.stringify({ agents }));
+    } catch (err) {
+      res.setHeader("Content-Type", "application/json");
+      res.statusCode = 500;
+      res.end(JSON.stringify({ error: String(err) }));
+    }
+  });
+
+  // API: Archive an agent
+  registerParamRoute("/mabos/api/businesses/:id/agents/:agentId/archive", async (req, res) => {
+    if (req.method !== "POST") {
+      res.statusCode = 405;
+      res.setHeader("Content-Type", "application/json");
+      res.end(JSON.stringify({ error: "Method not allowed" }));
+      return;
+    }
+    try {
+      const { rename, writeFile, mkdir } = await import("node:fs/promises");
+      const { join, dirname } = await import("node:path");
+      const { existsSync } = await import("node:fs");
+
+      const url = new URL(req.url || "", "http://localhost");
+      const segments = url.pathname.split("/");
+      const bizIdx = segments.indexOf("businesses");
+      const rawBizId = segments[bizIdx + 1] || "";
+      const businessId = sanitizeId(rawBizId);
+      // agentId is before "archive"
+      const archiveIdx = segments.indexOf("archive");
+      const rawAgentId = archiveIdx > 0 ? segments[archiveIdx - 1] : "";
+      const agentId = sanitizeId(rawAgentId);
+
+      if (!businessId || !agentId) {
+        res.statusCode = 400;
+        res.setHeader("Content-Type", "application/json");
+        res.end(JSON.stringify({ error: "Invalid business or agent ID" }));
+        return;
+      }
+
+      const bizDir = join(workspaceDir, "businesses", businessId);
+      const agentDir = join(bizDir, "agents", agentId);
+      const archivedDir = join(bizDir, "agents", `_archived_${agentId}`);
+
+      if (!existsSync(agentDir)) {
+        res.statusCode = 404;
+        res.setHeader("Content-Type", "application/json");
+        res.end(JSON.stringify({ error: `Agent '${agentId}' not found` }));
+        return;
+      }
+
+      await rename(agentDir, archivedDir);
+
+      // Update manifest
+      const manifest = (await readJsonSafe(join(bizDir, "manifest.json"))) || {};
+      manifest.agents = (manifest.agents || []).filter((a: string) => a !== agentId);
+      manifest.domain_agents = (manifest.domain_agents || []).filter((a: string) => a !== agentId);
+      await writeFile(join(bizDir, "manifest.json"), JSON.stringify(manifest, null, 2), "utf-8");
+
+      res.setHeader("Content-Type", "application/json");
+      res.end(JSON.stringify({ ok: true, archived: agentId }));
+    } catch (err) {
+      res.setHeader("Content-Type", "application/json");
+      res.statusCode = 500;
+      res.end(JSON.stringify({ error: String(err) }));
+    }
   });
 
   // API: Trigger manual BDI cycle
@@ -1785,96 +1776,90 @@ export default function register(api: OpenClawPluginApi) {
   });
 
   // API: Update agent config
-  api.registerHttpRoute({
-    path: "/mabos/api/businesses/:id/agents/:agentId",
-    handler: async (req, res) => {
-      if (req.method !== "PUT" && req.method !== "POST") {
-        res.statusCode = 405;
+  registerParamRoute("/mabos/api/businesses/:id/agents/:agentId", async (req, res) => {
+    if (req.method !== "PUT" && req.method !== "POST") {
+      res.statusCode = 405;
+      res.setHeader("Content-Type", "application/json");
+      res.end(JSON.stringify({ error: "Method not allowed" }));
+      return;
+    }
+    try {
+      const { readFile, writeFile, mkdir } = await import("node:fs/promises");
+      const { join, dirname } = await import("node:path");
+
+      let body = "";
+      for await (const chunk of req as any) body += chunk;
+      let params: any;
+      try {
+        params = JSON.parse(body);
+      } catch {
+        res.statusCode = 400;
         res.setHeader("Content-Type", "application/json");
-        res.end(JSON.stringify({ error: "Method not allowed" }));
+        res.end(JSON.stringify({ error: "Invalid JSON" }));
         return;
       }
-      try {
-        const { readFile, writeFile, mkdir } = await import("node:fs/promises");
-        const { join, dirname } = await import("node:path");
 
-        let body = "";
-        for await (const chunk of req as any) body += chunk;
-        let params: any;
-        try {
-          params = JSON.parse(body);
-        } catch {
-          res.statusCode = 400;
-          res.setHeader("Content-Type", "application/json");
-          res.end(JSON.stringify({ error: "Invalid JSON" }));
-          return;
-        }
-
-        const url = new URL(req.url || "", "http://localhost");
-        const segments = url.pathname.split("/");
-        const bizIdx = segments.indexOf("businesses");
-        const rawBizId = segments[bizIdx + 1] || "";
-        const businessId = sanitizeId(rawBizId);
-        const rawAgentId = segments[segments.length - 1] || "";
-        const agentId = sanitizeId(rawAgentId);
-        if (!businessId || !agentId) {
-          res.statusCode = 400;
-          res.setHeader("Content-Type", "application/json");
-          res.end(JSON.stringify({ error: "Invalid business or agent ID" }));
-          return;
-        }
-        const agentDir = join(workspaceDir, "businesses", businessId, "agents", agentId);
-        const configPath = join(agentDir, "config.json");
-
-        const config = (await readJsonSafe(configPath)) || {};
-        if (params.status !== undefined) config.status = params.status;
-        if (params.autonomy_level !== undefined) config.autonomy_level = params.autonomy_level;
-        if (params.approval_threshold_usd !== undefined)
-          config.approval_threshold_usd = params.approval_threshold_usd;
-        config.updated_at = new Date().toISOString();
-
-        await mkdir(dirname(configPath), { recursive: true });
-        await writeFile(configPath, JSON.stringify(config, null, 2), "utf-8");
-
+      const url = new URL(req.url || "", "http://localhost");
+      const segments = url.pathname.split("/");
+      const bizIdx = segments.indexOf("businesses");
+      const rawBizId = segments[bizIdx + 1] || "";
+      const businessId = sanitizeId(rawBizId);
+      const rawAgentId = segments[segments.length - 1] || "";
+      const agentId = sanitizeId(rawAgentId);
+      if (!businessId || !agentId) {
+        res.statusCode = 400;
         res.setHeader("Content-Type", "application/json");
-        res.end(JSON.stringify({ ok: true, config }));
-      } catch (err) {
-        res.setHeader("Content-Type", "application/json");
-        res.statusCode = 500;
-        res.end(JSON.stringify({ error: String(err) }));
+        res.end(JSON.stringify({ error: "Invalid business or agent ID" }));
+        return;
       }
-    },
+      const agentDir = join(workspaceDir, "businesses", businessId, "agents", agentId);
+      const configPath = join(agentDir, "config.json");
+
+      const config = (await readJsonSafe(configPath)) || {};
+      if (params.status !== undefined) config.status = params.status;
+      if (params.autonomy_level !== undefined) config.autonomy_level = params.autonomy_level;
+      if (params.approval_threshold_usd !== undefined)
+        config.approval_threshold_usd = params.approval_threshold_usd;
+      config.updated_at = new Date().toISOString();
+
+      await mkdir(dirname(configPath), { recursive: true });
+      await writeFile(configPath, JSON.stringify(config, null, 2), "utf-8");
+
+      res.setHeader("Content-Type", "application/json");
+      res.end(JSON.stringify({ ok: true, config }));
+    } catch (err) {
+      res.setHeader("Content-Type", "application/json");
+      res.statusCode = 500;
+      res.end(JSON.stringify({ error: String(err) }));
+    }
   });
 
   // API: Get campaigns for a business
-  api.registerHttpRoute({
-    path: "/mabos/api/businesses/:id/campaigns",
-    handler: async (req, res) => {
-      try {
-        const { join } = await import("node:path");
+  registerParamRoute("/mabos/api/businesses/:id/campaigns", async (req, res) => {
+    try {
+      const { join } = await import("node:path");
 
-        const url = new URL(req.url || "", "http://localhost");
-        const segments = url.pathname.split("/");
-        const bizIdx = segments.indexOf("businesses");
-        const rawBizId = segments[bizIdx + 1] || "";
-        const businessId = sanitizeId(rawBizId);
-        if (!businessId) {
-          res.statusCode = 400;
-          res.setHeader("Content-Type", "application/json");
-          res.end(JSON.stringify({ error: "Invalid business ID" }));
-          return;
-        }
-        const marketingPath = join(workspaceDir, "businesses", businessId, "marketing.json");
-        const marketing = await readJsonSafe(marketingPath);
-
+      const url = new URL(req.url || "", "http://localhost");
+      const segments = url.pathname.split("/");
+      const bizIdx = segments.indexOf("businesses");
+      const rawBizId = segments[bizIdx + 1] || "";
+      const businessId = sanitizeId(rawBizId);
+      if (!businessId) {
+        res.statusCode = 400;
         res.setHeader("Content-Type", "application/json");
-        res.end(JSON.stringify({ campaigns: marketing?.campaigns || [] }));
-      } catch (err) {
-        res.setHeader("Content-Type", "application/json");
-        res.statusCode = 500;
-        res.end(JSON.stringify({ error: String(err) }));
+        res.end(JSON.stringify({ error: "Invalid business ID" }));
+        return;
       }
-    },
+      const marketingPath = join(workspaceDir, "businesses", businessId, "marketing.json");
+      const marketing = await readJsonSafe(marketingPath);
+
+      res.setHeader("Content-Type", "application/json");
+      res.end(JSON.stringify({ campaigns: marketing?.campaigns || [] }));
+    } catch (err) {
+      res.setHeader("Content-Type", "application/json");
+      res.statusCode = 500;
+      res.end(JSON.stringify({ error: String(err) }));
+    }
   });
 
   // Dashboard: serve SPA HTML (no trailing slash)

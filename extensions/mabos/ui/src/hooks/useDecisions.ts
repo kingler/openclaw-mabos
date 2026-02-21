@@ -1,14 +1,15 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
-import type { DecisionResolution } from "@/lib/types";
+import type { Decision, DecisionResolution } from "@/lib/types";
 
 export function useDecisions() {
-  return useQuery({
+  return useQuery<Decision[]>({
     queryKey: ["decisions"],
     queryFn: async () => {
       const res = await api.getDecisions();
       // API wraps decisions in { decisions: [...] }
-      return Array.isArray(res) ? res : ((res as any)?.decisions ?? []);
+      const arr = Array.isArray(res) ? res : ((res as any)?.decisions ?? []);
+      return arr as Decision[];
     },
     refetchInterval: 30_000,
   });

@@ -16,6 +16,10 @@ const BASE = "/mabos/api";
 async function get<T>(path: string): Promise<T> {
   const res = await fetch(`${BASE}${path}`);
   if (!res.ok) throw new Error(`API ${res.status}: ${path}`);
+  const ct = res.headers.get("content-type") || "";
+  if (!ct.includes("application/json")) {
+    throw new Error(`API returned non-JSON (${ct || "no content-type"}): ${path}`);
+  }
   return res.json();
 }
 
