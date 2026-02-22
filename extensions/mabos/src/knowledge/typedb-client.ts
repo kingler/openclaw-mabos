@@ -45,7 +45,7 @@ export class TypeDBClient {
     this.driverParams = {
       username: params?.username ?? "admin",
       password: params?.password ?? "password",
-      addresses: params?.addresses ?? ["http://localhost:8000"],
+      addresses: params?.addresses ?? ["http://localhost:8729"],
     };
   }
 
