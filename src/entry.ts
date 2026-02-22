@@ -13,6 +13,7 @@ import { attachChildProcessBridge } from "./process/child-process-bridge.js";
 const ENTRY_WRAPPER_PAIRS = [
   { wrapperBasename: "openclaw.mjs", entryBasename: "entry.js" },
   { wrapperBasename: "openclaw.js", entryBasename: "entry.js" },
+  { wrapperBasename: "mabos.mjs", entryBasename: "entry.js" },
 ] as const;
 
 // Guard: only run entry-point logic when this file is the main module.
@@ -28,7 +29,7 @@ if (
 ) {
   // Imported as a dependency — skip all entry-point side effects.
 } else {
-  process.title = "openclaw";
+  process.title = process.env.MABOS_PRODUCT === "1" ? "mabos" : "openclaw";
   installProcessWarningFilter();
   normalizeEnv();
 
