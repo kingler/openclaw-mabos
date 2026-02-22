@@ -1,11 +1,11 @@
-import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { getAgentIcon, getAgentName } from "@/lib/agent-icons";
-import type { Agent, AgentStatus } from "@/lib/types";
+import type { AgentListItem, AgentStatus } from "@/lib/types";
 
 type AgentStatusGridProps = {
-  agents: Agent[] | undefined;
+  agents: AgentListItem[] | undefined;
   isLoading: boolean;
 };
 
@@ -23,7 +23,7 @@ const statusLabels: Record<AgentStatus, string> = {
   paused: "Paused",
 };
 
-function AgentCard({ agent }: { agent: Agent }) {
+function AgentCard({ agent }: { agent: AgentListItem }) {
   const Icon = getAgentIcon(agent.id);
   const displayName = getAgentName(agent.id);
   const dotColor = statusColors[agent.status];
@@ -45,9 +45,7 @@ function AgentCard({ agent }: { agent: Agent }) {
               <p className="text-sm font-medium text-[var(--text-primary)] truncate">
                 {displayName}
               </p>
-              <p className="text-xs text-[var(--text-muted)] truncate">
-                {agent.role}
-              </p>
+              <p className="text-xs text-[var(--text-muted)] truncate capitalize">{agent.type}</p>
             </div>
           </div>
           <Badge
@@ -61,15 +59,9 @@ function AgentCard({ agent }: { agent: Agent }) {
             {statusLabels[agent.status]}
           </Badge>
         </div>
-        {agent.currentTask ? (
-          <p className="text-xs text-[var(--text-secondary)] truncate pl-11">
-            {agent.currentTask}
-          </p>
-        ) : (
-          <p className="text-xs text-[var(--text-muted)] italic truncate pl-11">
-            No active task
-          </p>
-        )}
+        <p className="text-xs text-[var(--text-muted)] truncate pl-11">
+          {agent.goals} goals · {agent.intentions} intentions
+        </p>
       </CardContent>
     </Card>
   );
@@ -99,24 +91,17 @@ export function AgentStatusGrid({ agents, isLoading }: AgentStatusGridProps) {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h2 className="text-lg font-semibold text-[var(--text-primary)]">
-          Agent Status
-        </h2>
+        <h2 className="text-lg font-semibold text-[var(--text-primary)]">Agent Status</h2>
         {agents && (
           <p className="text-sm text-[var(--text-muted)]">
-            {agents.filter((a) => a.status === "active").length} of{" "}
-            {agents.length} active
+            {agents.filter((a) => a.status === "active").length} of {agents.length} active
           </p>
         )}
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
         {isLoading
-          ? Array.from({ length: 8 }).map((_, i) => (
-              <AgentCardSkeleton key={i} />
-            ))
-          : agents?.map((agent) => (
-              <AgentCard key={agent.id} agent={agent} />
-            ))}
+          ? Array.from({ length: 8 }).map((_, i) => <AgentCardSkeleton key={i} />)
+          : agents?.map((agent) => <AgentCard key={agent.id} agent={agent} />)}
       </div>
     </div>
   );

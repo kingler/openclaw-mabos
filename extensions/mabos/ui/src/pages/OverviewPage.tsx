@@ -6,7 +6,7 @@ import { StatusCards } from "@/components/dashboard/StatusCards";
 import { useAgents } from "@/hooks/useAgents";
 import { useStatus } from "@/hooks/useStatus";
 import { useTasks } from "@/hooks/useTasks";
-import type { SystemStatus, Agent, Task, AgentListResponse } from "@/lib/types";
+import type { SystemStatus, Task, AgentListResponse } from "@/lib/types";
 
 const BUSINESS_ID = "vividwalls";
 
@@ -16,11 +16,9 @@ export function OverviewPage() {
   const { data: tasksRaw, isLoading: tasksLoading } = useTasks(BUSINESS_ID);
 
   const status = statusRaw as SystemStatus | undefined;
-  const agents = agentsRaw as Agent[] | undefined;
+  const agentsResponse = agentsRaw as AgentListResponse | undefined;
+  const agents = agentsResponse?.agents;
   const tasks = tasksRaw as Task[] | undefined;
-
-  // Extract agent list items for BDI panel
-  const agentListItems = (agentsRaw as AgentListResponse | undefined)?.agents;
 
   const hasError = statusError || agentsError;
 
@@ -51,7 +49,7 @@ export function OverviewPage() {
       <StatusCards status={status} tasks={tasks} isLoading={statusLoading || tasksLoading} />
 
       {/* BDI Status Panel */}
-      <BdiStatusPanel status={status} agents={agentListItems} />
+      <BdiStatusPanel status={status} agents={agents} />
 
       {/* Agent Status Grid */}
       <AgentStatusGrid agents={agents} isLoading={agentsLoading} />
