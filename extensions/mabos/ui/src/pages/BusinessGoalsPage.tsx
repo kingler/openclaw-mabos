@@ -1,6 +1,7 @@
 import { Target, AlertCircle } from "lucide-react";
 import { useState, useMemo } from "react";
 import { GoalCard } from "@/components/goals/GoalCard";
+import { GoalDetailPanel } from "@/components/goals/GoalDetailPanel";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useGoalModel } from "@/hooks/useGoalModel";
@@ -31,6 +32,7 @@ export function BusinessGoalsPage() {
   const { data: goalModel, isLoading, error } = useGoalModel(BUSINESS_ID);
   const [levelFilter, setLevelFilter] = useState<GoalLevel | "all">("all");
   const [typeFilter, setTypeFilter] = useState<GoalType | "all">("all");
+  const [selectedGoal, setSelectedGoal] = useState<BusinessGoal | null>(null);
 
   // Transform the raw goal model into BusinessGoal objects
   const goals: BusinessGoal[] = useMemo(() => {
@@ -148,7 +150,16 @@ export function BusinessGoalsPage() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {isLoading
           ? Array.from({ length: 4 }).map((_, i) => <GoalCardSkeleton key={i} />)
-          : filtered.map((goal) => <GoalCard key={goal.id} goal={goal} />)}
+          : filtered.map((goal) => (
+              <GoalCard
+                key={goal.id}
+                goal={goal}
+                onSelect={(id) => {
+                  const found = goals.find((g) => g.id === id);
+                  if (found) setSelectedGoal(found);
+                }}
+              />
+            ))}
       </div>
 
       {/* Empty state */}
@@ -162,6 +173,15 @@ export function BusinessGoalsPage() {
           </p>
         </div>
       )}
+
+      {/* Goal Detail Panel */}
+      <GoalDetailPanel
+        goal={selectedGoal}
+        open={selectedGoal !== null}
+        onOpenChange={(open) => {
+          if (!open) setSelectedGoal(null);
+        }}
+      />
     </div>
   );
 }

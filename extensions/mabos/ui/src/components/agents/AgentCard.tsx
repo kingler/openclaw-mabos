@@ -1,12 +1,13 @@
 import { useNavigate } from "@tanstack/react-router";
-import { Card, CardContent } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Brain, Target, Zap, Sparkles } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { Card, CardContent } from "@/components/ui/card";
 import { getAgentIcon, getAgentName } from "@/lib/agent-icons";
 import type { AgentListItem, AgentStatus } from "@/lib/types";
 
 type AgentCardProps = {
   agent: AgentListItem;
+  onSelect?: (agentId: string) => void;
 };
 
 const statusColors: Record<AgentStatus, string> = {
@@ -29,7 +30,7 @@ const autonomyColors: Record<string, string> = {
   high: "var(--accent-red)",
 };
 
-export function AgentCard({ agent }: AgentCardProps) {
+export function AgentCard({ agent, onSelect }: AgentCardProps) {
   const navigate = useNavigate();
   const Icon = getAgentIcon(agent.id);
   const displayName = getAgentName(agent.id);
@@ -38,7 +39,11 @@ export function AgentCard({ agent }: AgentCardProps) {
   return (
     <Card
       className="bg-[var(--bg-card)] border-[var(--border-mabos)] hover:border-[var(--border-hover)] hover:bg-[var(--bg-hover)] transition-colors cursor-pointer py-4"
-      onClick={() => navigate({ to: "/agents/$agentId", params: { agentId: agent.id } })}
+      onClick={() =>
+        onSelect
+          ? onSelect(agent.id)
+          : navigate({ to: "/agents/$agentId", params: { agentId: agent.id } })
+      }
     >
       <CardContent className="flex flex-col gap-4">
         {/* Header: icon, name, status */}
@@ -56,9 +61,7 @@ export function AgentCard({ agent }: AgentCardProps) {
               <p className="text-sm font-medium text-[var(--text-primary)] truncate">
                 {displayName}
               </p>
-              <p className="text-xs text-[var(--text-muted)] capitalize">
-                {agent.type}
-              </p>
+              <p className="text-xs text-[var(--text-muted)] capitalize">{agent.type}</p>
             </div>
           </div>
           <Badge

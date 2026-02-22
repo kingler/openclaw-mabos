@@ -31,12 +31,29 @@ export type Business = {
 
 export type Task = {
   id: string;
+  plan_id: string;
+  plan_name: string;
+  step_id: string;
   title: string;
+  description?: string;
   status: "backlog" | "todo" | "in_progress" | "review" | "done";
   priority: "low" | "medium" | "high";
+  type: string;
   assignedAgents: string[];
   department: string;
-  description?: string;
+  depends_on: string[];
+  estimated_duration: string;
+  agent_id: string;
+};
+
+export type ProjectSLA = "critical" | "standard" | "relaxed";
+
+export type Project = {
+  id: string;
+  name: string;
+  sla: ProjectSLA;
+  taskCount: number;
+  completedCount: number;
 };
 
 export type SystemStatus = {

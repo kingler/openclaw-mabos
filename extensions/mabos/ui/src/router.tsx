@@ -11,7 +11,7 @@ import { KnowledgeGraphPage } from "@/pages/KnowledgeGraphPage";
 import { OnboardingPage } from "@/pages/OnboardingPage";
 import { OverviewPage } from "@/pages/OverviewPage";
 import { PerformancePage } from "@/pages/PerformancePage";
-import { TasksPage } from "@/pages/TasksPage";
+import { ProjectsPage } from "@/pages/ProjectsPage";
 import { TimelinePage } from "@/pages/TimelinePage";
 import { WorkflowsPage } from "@/pages/WorkflowsPage";
 
@@ -52,10 +52,10 @@ const agentDetailRoute = createRoute({
   component: AgentDetailPage,
 });
 
-const tasksRoute = createRoute({
+const projectsRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: "/tasks",
-  component: TasksPage,
+  path: "/projects",
+  component: ProjectsPage,
 });
 const performanceRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -111,7 +111,7 @@ const workflowsRoute = createRoute({
 const routeTree = rootRoute.addChildren([
   indexRoute,
   agentsLayoutRoute.addChildren([agentsIndexRoute, agentDetailRoute]),
-  tasksRoute,
+  projectsRoute,
   performanceRoute,
   timelineRoute,
   inventoryRoute,

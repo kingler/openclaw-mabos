@@ -1,7 +1,7 @@
 import { Bell, AlertCircle } from "lucide-react";
 import { useState, useMemo } from "react";
 import { DecisionCard } from "@/components/decisions/DecisionCard";
-import { DecisionDetailDialog } from "@/components/decisions/DecisionDetailDialog";
+import { DecisionDetailPanel } from "@/components/decisions/DecisionDetailPanel";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useDecisions } from "@/hooks/useDecisions";
@@ -142,8 +142,8 @@ export function DecisionsPage() {
         </div>
       )}
 
-      {/* Detail Dialog */}
-      <DecisionDetailDialog
+      {/* Detail Panel */}
+      <DecisionDetailPanel
         decision={selectedDecision}
         open={selectedDecision !== null}
         onOpenChange={(open) => {

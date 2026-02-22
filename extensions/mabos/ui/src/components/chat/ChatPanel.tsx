@@ -1,14 +1,15 @@
+import { Send, X } from "lucide-react";
 import { useState, useRef, useEffect } from "react";
-import { Send } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { usePanels } from "@/contexts/PanelContext";
 import { useChat } from "@/hooks/useChat";
-import { ChatMessage } from "./ChatMessage";
-import { AgentSelector } from "./AgentSelector";
 import { getAgentName } from "@/lib/agent-icons";
+import { AgentSelector } from "./AgentSelector";
+import { ChatMessage } from "./ChatMessage";
 
 export function ChatPanel() {
-  const { messages, status, activeAgent, setActiveAgent, sendMessage } =
-    useChat();
+  const { chatOpen, closeChat } = usePanels();
+  const { messages, status, activeAgent, setActiveAgent, sendMessage } = useChat();
   const [input, setInput] = useState("");
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -37,16 +38,24 @@ export function ChatPanel() {
   }[status];
 
   return (
-    <aside className="w-[400px] h-screen fixed right-0 top-0 bg-[var(--bg-secondary)] border-l border-[var(--border-mabos)] flex flex-col z-50">
+    <aside
+      className={`w-[400px] h-screen fixed right-0 top-0 bg-[var(--bg-secondary)] border-l border-[var(--border-mabos)] flex flex-col z-50 transition-transform duration-300 ease-in-out ${
+        chatOpen ? "translate-x-0" : "translate-x-full"
+      }`}
+    >
       {/* Header */}
       <div className="px-4 py-3 border-b border-[var(--border-mabos)] flex items-center gap-3">
         <AgentSelector activeAgent={activeAgent} onSelect={setActiveAgent} />
         <div className="ml-auto flex items-center gap-1.5">
           <div className={`w-2 h-2 rounded-full ${statusColor}`} />
-          <span className="text-xs text-[var(--text-muted)] capitalize">
-            {status}
-          </span>
+          <span className="text-xs text-[var(--text-muted)] capitalize">{status}</span>
         </div>
+        <button
+          onClick={closeChat}
+          className="p-1 rounded-md text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)] transition-colors"
+        >
+          <X className="w-4 h-4" />
+        </button>
       </div>
 
       {/* Messages */}

@@ -25,8 +25,10 @@ const FuzzyParams = Type.Object({
       sets: Type.Array(
         Type.Object({
           name: Type.String(),
-          points: Type.Tuple([Type.Number(), Type.Number(), Type.Number()], {
+          points: Type.Array(Type.Number(), {
             description: "Triangular membership [left, peak, right]",
+            minItems: 3,
+            maxItems: 3,
           }),
         }),
       ),

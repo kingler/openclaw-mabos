@@ -11,15 +11,17 @@ const levelColors: Record<GoalLevel, string> = {
 
 type GoalCardProps = {
   goal: BusinessGoal;
+  onSelect?: (goalId: string) => void;
 };
 
-export function GoalCard({ goal }: GoalCardProps) {
+export function GoalCard({ goal, onSelect }: GoalCardProps) {
   const borderColor = levelColors[goal.level];
 
   return (
     <Card
-      className="bg-[var(--bg-card)] border-[var(--border-mabos)] py-4"
+      className="bg-[var(--bg-card)] border-[var(--border-mabos)] py-4 cursor-pointer hover:border-[var(--border-hover)] transition-colors"
       style={{ borderLeftWidth: 3, borderLeftColor: borderColor }}
+      onClick={() => onSelect?.(goal.id)}
     >
       <CardContent className="space-y-3">
         {/* Header */}

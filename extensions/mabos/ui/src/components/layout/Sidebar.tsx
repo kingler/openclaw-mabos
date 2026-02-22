@@ -3,7 +3,7 @@ import {
   Cpu,
   LayoutDashboard,
   Users,
-  ClipboardList,
+  FolderKanban,
   Calendar,
   BarChart3,
   Package,
@@ -16,7 +16,9 @@ import {
   Target,
   GitBranch,
   Network,
+  X,
 } from "lucide-react";
+import { usePanels } from "@/contexts/PanelContext";
 import { ThemeToggle } from "./ThemeToggle";
 
 type NavItem = {
@@ -38,7 +40,7 @@ const navSections: { title: string; items: NavItem[] }[] = [
   {
     title: "Process",
     items: [
-      { icon: ClipboardList, label: "Tasks", path: "/tasks" },
+      { icon: FolderKanban, label: "Projects", path: "/projects" },
       { icon: Calendar, label: "Timeline", path: "/timeline" },
       { icon: GitBranch, label: "Workflows", path: "/workflows" },
     ],
@@ -65,6 +67,7 @@ const navSections: { title: string; items: NavItem[] }[] = [
 ];
 
 export function Sidebar() {
+  const { sidebarOpen, closeSidebar } = usePanels();
   const routerState = useRouterState();
   const currentPath = routerState.location.pathname;
 
@@ -75,11 +78,21 @@ export function Sidebar() {
     : currentPath;
 
   return (
-    <aside className="w-[280px] h-screen bg-[var(--bg-secondary)] border-r border-[var(--border-mabos)] p-4 flex flex-col fixed left-0 top-0 z-50">
-      {/* Logo */}
+    <aside
+      className={`w-[280px] h-screen bg-[var(--bg-secondary)] border-r border-[var(--border-mabos)] p-4 flex flex-col fixed left-0 top-0 z-50 transition-transform duration-300 ease-in-out ${
+        sidebarOpen ? "translate-x-0" : "-translate-x-full"
+      }`}
+    >
+      {/* Logo + Close */}
       <div className="flex items-center gap-3 mb-8 px-3 text-xl font-bold">
         <Cpu className="w-5 h-5 text-[var(--accent-green)]" />
-        <span>MABOS</span>
+        <span className="flex-1">MABOS</span>
+        <button
+          onClick={closeSidebar}
+          className="p-1 rounded-md text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)] transition-colors"
+        >
+          <X className="w-4 h-4" />
+        </button>
       </div>
 
       {/* Business Switcher */}

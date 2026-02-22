@@ -1,6 +1,7 @@
 import { Link } from "@tanstack/react-router";
 import { GitBranch, AlertCircle } from "lucide-react";
 import { useState, useMemo } from "react";
+import { WorkflowDetailPanel } from "@/components/goals/WorkflowDetailPanel";
 import { WorkflowSteps } from "@/components/goals/WorkflowSteps";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
@@ -30,6 +31,9 @@ function WorkflowSkeleton() {
 export function WorkflowsPage() {
   const { data: goalModel, isLoading, error } = useGoalModel(BUSINESS_ID);
   const [statusFilter, setStatusFilter] = useState<WorkflowStatus | "all">("all");
+  const [selectedWorkflow, setSelectedWorkflow] = useState<
+    (Workflow & { goalName: string }) | null
+  >(null);
 
   // Extract all workflows from goals
   const workflows: (Workflow & { goalName: string })[] = useMemo(() => {
@@ -112,7 +116,11 @@ export function WorkflowsPage() {
         {isLoading
           ? Array.from({ length: 3 }).map((_, i) => <WorkflowSkeleton key={i} />)
           : filtered.map((workflow) => (
-              <Card key={workflow.id} className="bg-[var(--bg-card)] border-[var(--border-mabos)]">
+              <Card
+                key={workflow.id}
+                className="bg-[var(--bg-card)] border-[var(--border-mabos)] cursor-pointer hover:border-[var(--border-hover)] transition-colors"
+                onClick={() => setSelectedWorkflow(workflow)}
+              >
                 <CardContent className="py-4 space-y-3">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
@@ -148,6 +156,15 @@ export function WorkflowsPage() {
           </p>
         </div>
       )}
+
+      {/* Workflow Detail Panel */}
+      <WorkflowDetailPanel
+        workflow={selectedWorkflow}
+        open={selectedWorkflow !== null}
+        onOpenChange={(open) => {
+          if (!open) setSelectedWorkflow(null);
+        }}
+      />
     </div>
   );
 }
