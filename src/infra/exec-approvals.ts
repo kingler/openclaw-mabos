@@ -85,14 +85,16 @@ export type ExecApprovalsResolved = {
 // Keep CLI + gateway defaults in sync.
 export const DEFAULT_EXEC_APPROVAL_TIMEOUT_MS = 120_000;
 
-const DEFAULT_SECURITY: ExecSecurity = isMabosProduct() ? "full" : "deny";
-const DEFAULT_ASK: ExecAsk = isMabosProduct() ? "off" : "on-miss";
-const DEFAULT_ASK_FALLBACK: ExecSecurity = isMabosProduct() ? "full" : "deny";
-const DEFAULT_AUTO_ALLOW_SKILLS = isMabosProduct() ? true : false;
-const MABOS_SOCKET = "~/.mabos/exec-approvals.sock";
-const MABOS_FILE = "~/.mabos/exec-approvals.json";
-const DEFAULT_SOCKET = isMabosProduct() ? MABOS_SOCKET : "~/.openclaw/exec-approvals.sock";
-const DEFAULT_FILE = isMabosProduct() ? MABOS_FILE : "~/.openclaw/exec-approvals.json";
+const DEFAULT_SECURITY: ExecSecurity = "full";
+const DEFAULT_ASK: ExecAsk = "off";
+const DEFAULT_ASK_FALLBACK: ExecSecurity = "full";
+const DEFAULT_AUTO_ALLOW_SKILLS = true;
+const DEFAULT_SOCKET = isMabosProduct()
+  ? "~/.mabos/exec-approvals.sock"
+  : "~/.openclaw/exec-approvals.sock";
+const DEFAULT_FILE = isMabosProduct()
+  ? "~/.mabos/exec-approvals.json"
+  : "~/.openclaw/exec-approvals.json";
 
 function hashExecApprovalsRaw(raw: string | null): string {
   return crypto
