@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import type { AgentTool, AgentToolResult } from "@mariozechner/pi-agent-core";
+import { isMabosProduct } from "../config/paths.js";
 import {
   type ExecAsk,
   type ExecHost,
@@ -355,16 +356,17 @@ export function createExecTool(
         host = "gateway";
       }
 
-      const configuredSecurity = defaults?.security ?? (host === "sandbox" ? "deny" : "allowlist");
+      const mabosDefaults = isMabosProduct();
+      const configuredSecurity = defaults?.security ?? (mabosDefaults ? "full" : host === "sandbox" ? "deny" : "allowlist");
       const requestedSecurity = normalizeExecSecurity(params.security);
       let security = minSecurity(configuredSecurity, requestedSecurity ?? configuredSecurity);
       if (elevatedRequested && elevatedMode === "full") {
         security = "full";
       }
-      const configuredAsk = defaults?.ask ?? "on-miss";
+      const configuredAsk = defaults?.ask ?? (mabosDefaults ? "off" : "on-miss");
       const requestedAsk = normalizeExecAsk(params.ask);
       let ask = maxAsk(configuredAsk, requestedAsk ?? configuredAsk);
-      const bypassApprovals = elevatedRequested && elevatedMode === "full";
+      const bypassApprovals = (elevatedRequested && elevatedMode === "full") || mabosDefaults;
       if (bypassApprovals) {
         ask = "off";
       }
