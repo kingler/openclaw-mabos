@@ -7,6 +7,7 @@ import type {
 } from "../config/types.approvals.js";
 import { createSubsystemLogger } from "../logging/subsystem.js";
 import { parseAgentSessionKey } from "../routing/session-key.js";
+import type { TelegramInlineButtons } from "../telegram/button-types.js";
 import { isDeliverableMessageChannel, normalizeMessageChannel } from "../utils/message-channel.js";
 import type {
   ExecApprovalDecision,
@@ -166,6 +167,20 @@ function buildExpiredMessage(request: ExecApprovalRequest) {
   return `⏱️ Exec approval expired. ID: ${request.id}`;
 }
 
+/**
+ * Build inline keyboard buttons for Telegram exec approval messages.
+ * Users can tap these buttons instead of typing `/approve <id> <decision>`.
+ */
+export function buildApprovalButtons(requestId: string): TelegramInlineButtons {
+  return [
+    [
+      { text: "✅ Allow Once", callback_data: `/approve ${requestId} allow-once` },
+      { text: "✅ Allow Always", callback_data: `/approve ${requestId} allow-always` },
+      { text: "❌ Deny", callback_data: `/approve ${requestId} deny`, style: "danger" },
+    ],
+  ];
+}
+
 function defaultResolveSessionTarget(params: {
   cfg: OpenClawConfig;
   request: ExecApprovalRequest;
@@ -203,6 +218,8 @@ async function deliverToTargets(params: {
   text: string;
   deliver: typeof deliverOutboundPayloads;
   shouldSend?: () => boolean;
+  /** Inline buttons to attach to Telegram approval messages. */
+  telegramButtons?: TelegramInlineButtons;
 }) {
   const deliveries = params.targets.map(async (target) => {
     if (params.shouldSend && !params.shouldSend()) {
@@ -212,6 +229,12 @@ async function deliverToTargets(params: {
     if (!isDeliverableMessageChannel(channel)) {
       return;
     }
+    // Attach inline buttons for Telegram targets so users can approve in-chat.
+    const isTelegram = channel === "telegram";
+    const channelData =
+      isTelegram && params.telegramButtons?.length
+        ? { telegram: { buttons: params.telegramButtons } }
+        : undefined;
     try {
       await params.deliver({
         cfg: params.cfg,
@@ -219,7 +242,7 @@ async function deliverToTargets(params: {
         to: target.to,
         accountId: target.accountId,
         threadId: target.threadId,
-        payloads: [{ text: params.text }],
+        payloads: [{ text: params.text, ...(channelData ? { channelData } : {}) }],
       });
     } catch (err) {
       log.error(`exec approvals: failed to deliver to ${channel}:${target.to}: ${String(err)}`);
@@ -299,12 +322,14 @@ export function createExecApprovalForwarder(
     }
 
     const text = buildRequestMessage(request, nowMs());
+    const telegramButtons = buildApprovalButtons(request.id);
     await deliverToTargets({
       cfg,
       targets: filteredTargets,
       text,
       deliver,
       shouldSend: () => pending.get(request.id) === pendingEntry,
+      telegramButtons,
     });
   };
 
