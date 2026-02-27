@@ -10,13 +10,13 @@ const levelColors: Record<GoalLevel, string> = {
 };
 
 const stateColors: Record<GoalState, string> = {
-  pending: "var(--text-muted, #6b7280)",
-  active: "var(--accent-green, #22c55e)",
-  in_progress: "var(--accent-blue, #3b82f6)",
-  achieved: "var(--accent-green, #22c55e)",
-  failed: "var(--accent-red, #ef4444)",
-  suspended: "var(--accent-orange, #f59e0b)",
-  abandoned: "var(--text-muted, #6b7280)",
+  pending: "var(--text-muted)",
+  active: "var(--accent-green)",
+  in_progress: "var(--accent-blue)",
+  achieved: "var(--accent-green)",
+  failed: "var(--accent-red)",
+  suspended: "var(--accent-orange)",
+  abandoned: "var(--text-muted)",
 };
 
 const stateLabels: Record<GoalState, string> = {
@@ -50,8 +50,8 @@ function PriorityRing({ value, size = 52 }: { value: number; size?: number }) {
       <svg width={size} height={size} className="block -rotate-90">
         <defs>
           <linearGradient id={gradientId} x1="0%" y1="0%" x2="100%" y2="0%">
-            <stop offset="0%" stopColor="#3B82F6" />
-            <stop offset="100%" stopColor="#10B981" />
+            <stop offset="0%" stopColor="var(--accent-blue)" />
+            <stop offset="100%" stopColor="var(--accent-green)" />
           </linearGradient>
         </defs>
         <circle
@@ -59,7 +59,7 @@ function PriorityRing({ value, size = 52 }: { value: number; size?: number }) {
           cy={size / 2}
           r={radius}
           fill="none"
-          stroke="#E5E7EB"
+          stroke="var(--border-mabos)"
           strokeWidth={strokeWidth}
         />
         <circle
@@ -164,12 +164,10 @@ export function GoalCard({ goal, onSelect }: GoalCardProps) {
                 key={pc.id}
                 className="px-2 py-0.5 text-[10px] rounded-full inline-flex items-center gap-1"
                 style={{
-                  color: pc.satisfied
-                    ? "var(--accent-green, #22c55e)"
-                    : "var(--accent-orange, #f59e0b)",
+                  color: pc.satisfied ? "var(--accent-green)" : "var(--accent-orange)",
                   backgroundColor: pc.satisfied
-                    ? "color-mix(in srgb, var(--accent-green, #22c55e) 10%, transparent)"
-                    : "color-mix(in srgb, var(--accent-orange, #f59e0b) 10%, transparent)",
+                    ? "color-mix(in srgb, var(--accent-green) 10%, transparent)"
+                    : "color-mix(in srgb, var(--accent-orange) 10%, transparent)",
                 }}
               >
                 <span>{pc.satisfied ? "\u2713" : "\u25CB"}</span>

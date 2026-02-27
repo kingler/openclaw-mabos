@@ -5,7 +5,7 @@ import { useAgents } from "@/hooks/useAgents";
 import type { AgentListResponse } from "@/lib/types";
 
 const BUSINESS_ID = "vividwalls";
-const ACCENT = "#6366f1";
+const ACCENT = "var(--accent-indigo)";
 
 const upcomingFeatures = [
   "Shipment tracking and status updates",

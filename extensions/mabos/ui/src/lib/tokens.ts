@@ -24,6 +24,10 @@ export const tokens = {
     blue: "--accent-blue",
     orange: "--accent-orange",
     red: "--accent-red",
+    slate: "--accent-slate",
+    cyan: "--accent-cyan",
+    pink: "--accent-pink",
+    indigo: "--accent-indigo",
   },
   border: {
     default: "--border-mabos",

@@ -28,8 +28,8 @@ function BannerRingChart({ value, size = 120 }: { value: number; size?: number }
       <svg width={size} height={size} className="block -rotate-90">
         <defs>
           <linearGradient id="banner-ring-grad" x1="0%" y1="0%" x2="100%" y2="0%">
-            <stop offset="0%" stopColor="#3B82F6" />
-            <stop offset="100%" stopColor="#10B981" />
+            <stop offset="0%" stopColor="var(--accent-blue)" />
+            <stop offset="100%" stopColor="var(--accent-green)" />
           </linearGradient>
         </defs>
         <circle
@@ -37,7 +37,7 @@ function BannerRingChart({ value, size = 120 }: { value: number; size?: number }
           cy={size / 2}
           r={radius}
           fill="none"
-          stroke="#E5E7EB"
+          stroke="var(--border-mabos)"
           strokeWidth={strokeWidth}
           opacity={0.3}
         />
