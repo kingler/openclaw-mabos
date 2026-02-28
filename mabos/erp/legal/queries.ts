@@ -180,3 +180,163 @@ export async function updateCase(
   );
   return result.rows[0] ?? null;
 }
+
+// ── New Legal Queries (Redesign) ─────────────────────────────
+
+// Partnership Contracts
+export async function listPartnershipContracts(
+  pg: PgClient,
+  params: { status?: string; limit?: number },
+) {
+  const conditions: string[] = [];
+  const values: unknown[] = [];
+  let idx = 1;
+  if (params.status) {
+    conditions.push(`status = $${idx++}`);
+    values.push(params.status);
+  }
+  const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+  const result = await pg.query(
+    `SELECT * FROM erp.partnership_contracts ${where} ORDER BY created_at DESC LIMIT $${idx}`,
+    [...values, params.limit ?? 50],
+  );
+  return result.rows;
+}
+
+export async function createPartnershipContract(
+  pg: PgClient,
+  params: {
+    partner_name: string;
+    partner_type?: string;
+    ownership_pct?: number;
+    revenue_share_pct?: number;
+    start_date?: string;
+    end_date?: string;
+    terms?: string;
+    document_url?: string;
+  },
+) {
+  const result = await pg.query(
+    `INSERT INTO erp.partnership_contracts (id, partner_name, partner_type, ownership_pct, revenue_share_pct, status, start_date, end_date, terms, document_url)
+     VALUES (gen_random_uuid(), $1, $2, $3, $4, 'draft', $5, $6, $7, $8) RETURNING *`,
+    [
+      params.partner_name,
+      params.partner_type ?? null,
+      params.ownership_pct ?? null,
+      params.revenue_share_pct ?? null,
+      params.start_date ?? null,
+      params.end_date ?? null,
+      params.terms ?? null,
+      params.document_url ?? null,
+    ],
+  );
+  return result.rows[0];
+}
+
+// Freelancer Contracts
+export async function listFreelancerContracts(
+  pg: PgClient,
+  params: { status?: string; limit?: number },
+) {
+  const conditions: string[] = [];
+  const values: unknown[] = [];
+  let idx = 1;
+  if (params.status) {
+    conditions.push(`status = $${idx++}`);
+    values.push(params.status);
+  }
+  const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+  const result = await pg.query(
+    `SELECT * FROM erp.freelancer_contracts ${where} ORDER BY created_at DESC LIMIT $${idx}`,
+    [...values, params.limit ?? 50],
+  );
+  return result.rows;
+}
+
+export async function createFreelancerContract(
+  pg: PgClient,
+  params: {
+    contractor_name: string;
+    scope_of_work?: string;
+    rate_type?: string;
+    rate_amount: number;
+    currency?: string;
+    start_date?: string;
+    end_date?: string;
+    deliverables?: unknown[];
+    document_url?: string;
+  },
+) {
+  const result = await pg.query(
+    `INSERT INTO erp.freelancer_contracts (id, contractor_name, scope_of_work, rate_type, rate_amount, currency, status, start_date, end_date, deliverables, document_url)
+     VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, 'draft', $6, $7, $8, $9) RETURNING *`,
+    [
+      params.contractor_name,
+      params.scope_of_work ?? null,
+      params.rate_type ?? "hourly",
+      params.rate_amount,
+      params.currency ?? "USD",
+      params.start_date ?? null,
+      params.end_date ?? null,
+      JSON.stringify(params.deliverables ?? []),
+      params.document_url ?? null,
+    ],
+  );
+  return result.rows[0];
+}
+
+// Corporate Documents
+export async function listCorporateDocuments(
+  pg: PgClient,
+  params: { doc_type?: string; status?: string; limit?: number },
+) {
+  const conditions: string[] = [];
+  const values: unknown[] = [];
+  let idx = 1;
+  if (params.doc_type) {
+    conditions.push(`doc_type = $${idx++}`);
+    values.push(params.doc_type);
+  }
+  if (params.status) {
+    conditions.push(`status = $${idx++}`);
+    values.push(params.status);
+  }
+  const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+  const result = await pg.query(
+    `SELECT * FROM erp.corporate_documents ${where} ORDER BY filing_date DESC NULLS LAST LIMIT $${idx}`,
+    [...values, params.limit ?? 50],
+  );
+  return result.rows;
+}
+
+// Legal Structure
+export async function getLegalStructure(pg: PgClient) {
+  const result = await pg.query(
+    "SELECT * FROM erp.legal_structure ORDER BY created_at ASC LIMIT 1",
+  );
+  return result.rows[0] ?? null;
+}
+
+// Compliance Guardrails
+export async function listComplianceGuardrails(
+  pg: PgClient,
+  params: { active?: boolean; category?: string; limit?: number },
+) {
+  const conditions: string[] = [];
+  const values: unknown[] = [];
+  let idx = 1;
+  if (params.active !== undefined) {
+    conditions.push(`active = $${idx++}`);
+    values.push(params.active);
+  }
+  if (params.category) {
+    conditions.push(`category = $${idx++}`);
+    values.push(params.category);
+  }
+  const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+  const result = await pg.query(
+    `SELECT * FROM erp.compliance_guardrails ${where} ORDER BY severity DESC, name ASC LIMIT $${idx}`,
+    [...values, params.limit ?? 50],
+  );
+  return result.rows;
+}

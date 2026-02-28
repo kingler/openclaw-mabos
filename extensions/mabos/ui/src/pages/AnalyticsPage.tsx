@@ -1,26 +1,35 @@
-import { LineChart, MessageSquare, ChevronRight, Users } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { useAgents } from "@/hooks/useAgents";
-import type { AgentListResponse } from "@/lib/types";
+import { LineChart } from "lucide-react";
+import { useState } from "react";
+import { AnalyticsStatsRow } from "@/components/analytics/AnalyticsStatsRow";
+import { DashboardList } from "@/components/analytics/DashboardList";
+import { ReportGrid } from "@/components/analytics/ReportGrid";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import { useReports, useDashboards, useRunReport, useReportSnapshots } from "@/hooks/useAnalytics";
+import type { AnalyticsReport } from "@/lib/types";
 
-const BUSINESS_ID = "vividwalls";
-const ACCENT = "var(--accent-cyan)";
+const ACCENT = "var(--accent-blue)";
 
-const upcomingFeatures = [
-  "Real-time KPI dashboards",
-  "Custom report builder",
-  "Trend analysis and forecasting",
-  "Cross-module analytics",
+type Tab = "reports" | "dashboards";
+const TABS: { key: Tab; label: string }[] = [
+  { key: "reports", label: "Reports" },
+  { key: "dashboards", label: "Dashboards" },
 ];
 
 export function AnalyticsPage() {
-  const { data: agentsRaw } = useAgents(BUSINESS_ID);
+  const [tab, setTab] = useState<Tab>("reports");
+  const [typeFilter, setTypeFilter] = useState("");
+  const [selectedReport, setSelectedReport] = useState<AnalyticsReport | null>(null);
 
-  const agentsResponse = agentsRaw as AgentListResponse | undefined;
-  const relatedAgents = agentsResponse?.agents?.filter(
-    (a) => a.id.includes("analytics") || a.id.includes("cto"),
+  const { data: reportsData, isLoading: reportsLoading } = useReports(
+    typeFilter ? { type: typeFilter } : undefined,
   );
+  const { data: dashboardsData, isLoading: dashboardsLoading } = useDashboards();
+  const runReport = useRunReport();
+  const { data: snapshotsData } = useReportSnapshots(selectedReport?.id ?? "");
+
+  const reports = (reportsData as any)?.reports ?? [];
+  const dashboards = (dashboardsData as any)?.dashboards ?? [];
+  const snapshots = (snapshotsData as any)?.snapshots ?? [];
 
   return (
     <div className="space-y-6">
@@ -34,131 +43,124 @@ export function AnalyticsPage() {
         >
           <LineChart className="w-5 h-5" style={{ color: ACCENT }} />
         </div>
-        <div className="flex-1">
-          <div className="flex items-center gap-2">
-            <h1 className="text-2xl font-bold text-[var(--text-primary)]">Analytics</h1>
-            <Badge
-              variant="outline"
-              className="text-[10px]"
-              style={{
-                borderColor: `color-mix(in srgb, ${ACCENT} 30%, transparent)`,
-                color: ACCENT,
-              }}
-            >
-              Coming Soon
-            </Badge>
-          </div>
+        <div>
+          <h1 className="text-2xl font-bold text-[var(--text-primary)]">Analytics</h1>
           <p className="text-sm text-[var(--text-secondary)] mt-0.5">
             KPI tracking, reports, and business intelligence dashboards
           </p>
         </div>
       </div>
 
-      {/* Relevant Agent Status */}
-      {relatedAgents && relatedAgents.length > 0 && (
-        <Card className="border-[var(--border-mabos)] bg-[var(--bg-card)] shadow-none">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-[var(--text-secondary)] flex items-center gap-2">
-              <Users className="w-4 h-4" />
-              Related Agents
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              {relatedAgents.map((agent) => (
-                <div
-                  key={agent.id}
-                  className="flex items-center gap-3 p-3 rounded-lg bg-[var(--bg-secondary)] border border-[var(--border-mabos)]"
-                >
-                  <span
-                    className="w-2 h-2 rounded-full shrink-0"
-                    style={{
-                      backgroundColor:
-                        agent.status === "active"
-                          ? "var(--accent-green)"
-                          : agent.status === "error"
-                            ? "var(--accent-red)"
-                            : "var(--accent-orange)",
-                    }}
-                  />
-                  <div className="min-w-0">
-                    <p className="text-sm text-[var(--text-primary)] truncate">{agent.name}</p>
-                    <p className="text-[10px] text-[var(--text-muted)] capitalize">
-                      {agent.status} - {agent.beliefs} beliefs, {agent.goals} goals
-                    </p>
-                  </div>
+      {/* Stats */}
+      <AnalyticsStatsRow
+        reports={reports}
+        dashboards={dashboards}
+        isLoading={reportsLoading || dashboardsLoading}
+      />
+
+      {/* Tabs */}
+      <div className="flex gap-1 border-b border-[var(--border-mabos)]">
+        {TABS.map((t) => (
+          <button
+            key={t.key}
+            className="px-4 py-2 text-sm font-medium transition-colors relative"
+            style={{
+              color: tab === t.key ? ACCENT : "var(--text-muted)",
+            }}
+            onClick={() => {
+              setTab(t.key);
+              setSelectedReport(null);
+            }}
+          >
+            {t.label}
+            {tab === t.key && (
+              <div
+                className="absolute bottom-0 left-0 right-0 h-0.5"
+                style={{ backgroundColor: ACCENT }}
+              />
+            )}
+          </button>
+        ))}
+      </div>
+
+      {/* Reports tab */}
+      {tab === "reports" && (
+        <div className="space-y-4">
+          {/* Type filter */}
+          <div className="flex gap-2">
+            <select
+              className="px-3 py-1.5 rounded-md border border-[var(--border-mabos)] bg-[var(--bg-card)] text-sm text-[var(--text-primary)]"
+              value={typeFilter}
+              onChange={(e) => setTypeFilter(e.target.value)}
+            >
+              <option value="">All Types</option>
+              <option value="kpi">KPI</option>
+              <option value="financial">Financial</option>
+              <option value="operational">Operational</option>
+              <option value="custom">Custom</option>
+            </select>
+          </div>
+
+          <ReportGrid
+            reports={reports}
+            onRun={(id) => runReport.mutate(id)}
+            runningId={runReport.isPending ? (runReport.variables as string) : null}
+            onReportClick={setSelectedReport}
+          />
+
+          {/* Snapshot detail */}
+          {selectedReport && (
+            <Card className="border-[var(--border-mabos)] bg-[var(--bg-card)] shadow-none">
+              <CardHeader className="pb-2">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-medium text-[var(--text-primary)]">
+                    Snapshots: {selectedReport.name}
+                  </h3>
+                  <button
+                    className="text-xs text-[var(--text-muted)] hover:text-[var(--text-primary)]"
+                    onClick={() => setSelectedReport(null)}
+                  >
+                    Close
+                  </button>
                 </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
+              </CardHeader>
+              <CardContent>
+                {snapshots.length === 0 ? (
+                  <p className="text-sm text-[var(--text-muted)] py-4 text-center">
+                    No snapshots yet. Run the report to generate one.
+                  </p>
+                ) : (
+                  <div className="space-y-2">
+                    {snapshots.map((snap: any) => (
+                      <div
+                        key={snap.id}
+                        className="flex items-center justify-between p-3 rounded-lg bg-[var(--bg-secondary)] border border-[var(--border-mabos)]"
+                      >
+                        <div>
+                          <p className="text-sm text-[var(--text-primary)]">
+                            Snapshot {new Date(snap.created_at).toLocaleString()}
+                          </p>
+                          <p className="text-[10px] text-[var(--text-muted)]">
+                            {snap.row_count ?? 0} rows
+                          </p>
+                        </div>
+                        <span className="text-xs text-[var(--text-muted)]">
+                          {snap.format ?? "json"}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          )}
+        </div>
       )}
 
-      <div className="max-w-2xl space-y-6">
-        {/* Description card */}
-        <Card className="border-[var(--border-mabos)] bg-[var(--bg-card)] shadow-none">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-[var(--text-secondary)]">
-              About this Module
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-sm text-[var(--text-primary)] leading-relaxed">
-              Track KPIs, build custom reports, and gain actionable insights across all business
-              modules.
-            </p>
-            <p className="text-sm text-[var(--text-muted)] mt-3 leading-relaxed">
-              While this module is under development, you can interact with the{" "}
-              <span className="font-medium" style={{ color: ACCENT }}>
-                Analytics
-              </span>{" "}
-              agent through the chat panel for data queries and reporting.
-            </p>
-          </CardContent>
-        </Card>
-
-        {/* Upcoming features */}
-        <Card className="border-[var(--border-mabos)] bg-[var(--bg-card)] shadow-none">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-[var(--text-secondary)]">
-              Upcoming Features
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <ul className="space-y-3">
-              {upcomingFeatures.map((feature) => (
-                <li key={feature} className="flex items-center gap-3">
-                  <ChevronRight className="w-4 h-4 shrink-0" style={{ color: ACCENT }} />
-                  <span className="text-sm text-[var(--text-primary)]">{feature}</span>
-                </li>
-              ))}
-            </ul>
-          </CardContent>
-        </Card>
-
-        {/* Chat CTA */}
-        <Card className="border-[var(--border-mabos)] bg-[var(--bg-card)] shadow-none">
-          <CardContent className="py-4">
-            <div className="flex items-center gap-3">
-              <div
-                className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0"
-                style={{
-                  backgroundColor: "color-mix(in srgb, var(--accent-green) 15%, var(--bg-card))",
-                }}
-              >
-                <MessageSquare className="w-4 h-4 text-[var(--accent-green)]" />
-              </div>
-              <div>
-                <p className="text-sm font-medium text-[var(--text-primary)]">Use the Chat Panel</p>
-                <p className="text-xs text-[var(--text-muted)] mt-0.5">
-                  Open the chat panel and ask the Analytics agent about KPIs, reports, or business
-                  trends.
-                </p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
+      {/* Dashboards tab */}
+      {tab === "dashboards" && (
+        <DashboardList dashboards={dashboards} isLoading={dashboardsLoading} />
+      )}
     </div>
   );
 }

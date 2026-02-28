@@ -145,6 +145,22 @@ export async function profitLoss(pg: PgClient, from: string, to: string) {
   return { from, to, net: revenue.rows[0]?.total ?? 0 };
 }
 
+export async function listAccounts(pg: PgClient, params: { type?: string; limit?: number }) {
+  const conditions: string[] = [];
+  const values: unknown[] = [];
+  let idx = 1;
+  if (params.type) {
+    conditions.push(`type = $${idx++}`);
+    values.push(params.type);
+  }
+  const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+  const result = await pg.query(
+    `SELECT * FROM erp.accounts ${where} ORDER BY name ASC LIMIT $${idx}`,
+    [...values, params.limit ?? 50],
+  );
+  return result.rows;
+}
+
 export async function createAccount(
   pg: PgClient,
   params: { name: string; type: string; currency?: string; parent_id?: string },

@@ -1,27 +1,25 @@
-import { Truck, MessageSquare, ChevronRight, Users } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { useAgents } from "@/hooks/useAgents";
-import type { AgentListResponse } from "@/lib/types";
+import { Truck } from "lucide-react";
+import { useState } from "react";
+import { RouteList } from "@/components/supply-chain/RouteList";
+import { ShipmentTable } from "@/components/supply-chain/ShipmentTable";
+import { SupplyChainStatsRow } from "@/components/supply-chain/SupplyChainStatsRow";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import { useShipments, useRoutes } from "@/hooks/useSupplyChain";
 
-const BUSINESS_ID = "vividwalls";
-const ACCENT = "var(--accent-indigo)";
-
-const upcomingFeatures = [
-  "Shipment tracking and status updates",
-  "Logistics route optimization",
-  "Supply node management",
-  "Demand forecasting and planning",
-];
+const statusOptions = ["all", "pending", "in_transit", "delivered", "delayed"] as const;
+const tabs = ["Shipments", "Routes"] as const;
 
 export function SupplyChainPage() {
-  const { data: agentsRaw } = useAgents(BUSINESS_ID);
+  const [activeTab, setActiveTab] = useState<(typeof tabs)[number]>("Shipments");
+  const [statusFilter, setStatusFilter] = useState("all");
 
-  const agentsResponse = agentsRaw as AgentListResponse | undefined;
-  const relatedAgents = agentsResponse?.agents?.filter(
-    (a) =>
-      a.id.includes("supply-chain") || a.id.includes("fulfillment") || a.id.includes("inventory"),
+  const { data: shipmentsData, isLoading: shipmentsLoading } = useShipments(
+    statusFilter !== "all" ? { status: statusFilter } : undefined,
   );
+  const { data: routesData, isLoading: routesLoading } = useRoutes();
+
+  const shipments = shipmentsData?.shipments ?? [];
+  const routes = routesData?.routes ?? [];
 
   return (
     <div className="space-y-6">
@@ -30,135 +28,68 @@ export function SupplyChainPage() {
         <div
           className="w-10 h-10 rounded-lg flex items-center justify-center"
           style={{
-            backgroundColor: `color-mix(in srgb, ${ACCENT} 15%, var(--bg-card))`,
+            backgroundColor: "color-mix(in srgb, var(--accent-orange) 15%, var(--bg-card))",
           }}
         >
-          <Truck className="w-5 h-5" style={{ color: ACCENT }} />
+          <Truck className="w-5 h-5 text-[var(--accent-orange)]" />
         </div>
-        <div className="flex-1">
-          <div className="flex items-center gap-2">
-            <h1 className="text-2xl font-bold text-[var(--text-primary)]">Supply Chain</h1>
-            <Badge
-              variant="outline"
-              className="text-[10px]"
-              style={{
-                borderColor: `color-mix(in srgb, ${ACCENT} 30%, transparent)`,
-                color: ACCENT,
-              }}
-            >
-              Coming Soon
-            </Badge>
-          </div>
-          <p className="text-sm text-[var(--text-secondary)] mt-0.5">
-            Shipments, logistics, and supply network tracking
-          </p>
+        <div>
+          <h1 className="text-2xl font-bold text-[var(--text-primary)]">Supply Chain</h1>
+          <p className="text-sm text-[var(--text-secondary)]">Shipments, routes, and logistics</p>
         </div>
       </div>
 
-      {/* Relevant Agent Status */}
-      {relatedAgents && relatedAgents.length > 0 && (
-        <Card className="border-[var(--border-mabos)] bg-[var(--bg-card)] shadow-none">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-[var(--text-secondary)] flex items-center gap-2">
-              <Users className="w-4 h-4" />
-              Related Agents
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              {relatedAgents.map((agent) => (
-                <div
-                  key={agent.id}
-                  className="flex items-center gap-3 p-3 rounded-lg bg-[var(--bg-secondary)] border border-[var(--border-mabos)]"
+      {/* Stats */}
+      <SupplyChainStatsRow
+        shipments={shipments}
+        routes={routes}
+        isLoading={shipmentsLoading || routesLoading}
+      />
+
+      {/* Tabs + Content */}
+      <Card className="border-[var(--border-mabos)] bg-[var(--bg-card)] shadow-none">
+        <CardHeader className="pb-2">
+          <div className="flex items-center justify-between">
+            <div className="flex gap-1">
+              {tabs.map((tab) => (
+                <button
+                  key={tab}
+                  className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
+                    activeTab === tab
+                      ? "bg-[var(--accent-orange)] text-white"
+                      : "text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]"
+                  }`}
+                  onClick={() => setActiveTab(tab)}
                 >
-                  <span
-                    className="w-2 h-2 rounded-full shrink-0"
-                    style={{
-                      backgroundColor:
-                        agent.status === "active"
-                          ? "var(--accent-green)"
-                          : agent.status === "error"
-                            ? "var(--accent-red)"
-                            : "var(--accent-orange)",
-                    }}
-                  />
-                  <div className="min-w-0">
-                    <p className="text-sm text-[var(--text-primary)] truncate">{agent.name}</p>
-                    <p className="text-[10px] text-[var(--text-muted)] capitalize">
-                      {agent.status} - {agent.beliefs} beliefs, {agent.goals} goals
-                    </p>
-                  </div>
-                </div>
+                  {tab}
+                </button>
               ))}
             </div>
-          </CardContent>
-        </Card>
-      )}
-
-      <div className="max-w-2xl space-y-6">
-        {/* Description card */}
-        <Card className="border-[var(--border-mabos)] bg-[var(--bg-card)] shadow-none">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-[var(--text-secondary)]">
-              About this Module
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-sm text-[var(--text-primary)] leading-relaxed">
-              Monitor shipments, optimize logistics, and manage your end-to-end supply network.
-            </p>
-            <p className="text-sm text-[var(--text-muted)] mt-3 leading-relaxed">
-              While this module is under development, you can interact with the{" "}
-              <span className="font-medium" style={{ color: ACCENT }}>
-                Supply Chain
-              </span>{" "}
-              agent through the chat panel for logistics queries and operations.
-            </p>
-          </CardContent>
-        </Card>
-
-        {/* Upcoming features */}
-        <Card className="border-[var(--border-mabos)] bg-[var(--bg-card)] shadow-none">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-[var(--text-secondary)]">
-              Upcoming Features
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <ul className="space-y-3">
-              {upcomingFeatures.map((feature) => (
-                <li key={feature} className="flex items-center gap-3">
-                  <ChevronRight className="w-4 h-4 shrink-0" style={{ color: ACCENT }} />
-                  <span className="text-sm text-[var(--text-primary)]">{feature}</span>
-                </li>
-              ))}
-            </ul>
-          </CardContent>
-        </Card>
-
-        {/* Chat CTA */}
-        <Card className="border-[var(--border-mabos)] bg-[var(--bg-card)] shadow-none">
-          <CardContent className="py-4">
-            <div className="flex items-center gap-3">
-              <div
-                className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0"
-                style={{
-                  backgroundColor: "color-mix(in srgb, var(--accent-green) 15%, var(--bg-card))",
-                }}
+            {activeTab === "Shipments" && (
+              <select
+                className="text-xs px-2 py-1 rounded border border-[var(--border-mabos)] bg-[var(--bg-secondary)] text-[var(--text-primary)]"
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value)}
               >
-                <MessageSquare className="w-4 h-4 text-[var(--accent-green)]" />
-              </div>
-              <div>
-                <p className="text-sm font-medium text-[var(--text-primary)]">Use the Chat Panel</p>
-                <p className="text-xs text-[var(--text-muted)] mt-0.5">
-                  Open the chat panel and ask the Supply Chain agent about shipments, logistics, or
-                  supply network status.
-                </p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
+                {statusOptions.map((s) => (
+                  <option key={s} value={s}>
+                    {s === "all"
+                      ? "All Statuses"
+                      : s.replace("_", " ").replace(/\b\w/g, (c) => c.toUpperCase())}
+                  </option>
+                ))}
+              </select>
+            )}
+          </div>
+        </CardHeader>
+        <CardContent>
+          {activeTab === "Shipments" ? (
+            <ShipmentTable shipments={shipments} isLoading={shipmentsLoading} />
+          ) : (
+            <RouteList routes={routes} isLoading={routesLoading} />
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }

@@ -120,6 +120,86 @@ const actions: ErpAction[] = [
       return { success: true, data: legalCase };
     },
   },
+
+  // ── New Legal Redesign Actions ─────────────────────────────
+
+  {
+    name: "list_partnership_contracts",
+    description: "List partnership contracts with optional status filter",
+    params: {},
+    handler: async (params, ctx) => {
+      return { success: true, data: await q.listPartnershipContracts(ctx.pg, params as any) };
+    },
+  },
+  {
+    name: "create_partnership_contract",
+    description: "Create a new partnership contract",
+    params: {},
+    handler: async (params, ctx) => {
+      const contract = await q.createPartnershipContract(ctx.pg, params as any);
+      await writeAuditLog(ctx.pg, {
+        domain: "legal",
+        entityType: "partnership_contract",
+        entityId: contract.id,
+        action: "create",
+        agentId: ctx.agentId,
+        payload: params as any,
+      });
+      return { success: true, data: contract };
+    },
+  },
+  {
+    name: "list_freelancer_contracts",
+    description: "List freelancer contracts with optional status filter",
+    params: {},
+    handler: async (params, ctx) => {
+      return { success: true, data: await q.listFreelancerContracts(ctx.pg, params as any) };
+    },
+  },
+  {
+    name: "create_freelancer_contract",
+    description: "Create a new freelancer contract",
+    params: {},
+    handler: async (params, ctx) => {
+      const contract = await q.createFreelancerContract(ctx.pg, params as any);
+      await writeAuditLog(ctx.pg, {
+        domain: "legal",
+        entityType: "freelancer_contract",
+        entityId: contract.id,
+        action: "create",
+        agentId: ctx.agentId,
+        payload: params as any,
+      });
+      return { success: true, data: contract };
+    },
+  },
+  {
+    name: "list_corporate_documents",
+    description: "List corporate documents with optional doc_type and status filters",
+    params: {},
+    handler: async (params, ctx) => {
+      return { success: true, data: await q.listCorporateDocuments(ctx.pg, params as any) };
+    },
+  },
+  {
+    name: "get_legal_structure",
+    description: "Get the business legal structure (entity type, EIN, etc.)",
+    params: {},
+    handler: async (_params, ctx) => {
+      const structure = await q.getLegalStructure(ctx.pg);
+      return structure
+        ? { success: true, data: structure }
+        : { error: "No legal structure configured" };
+    },
+  },
+  {
+    name: "list_compliance_guardrails",
+    description: "List compliance guardrails with optional active and category filters",
+    params: {},
+    handler: async (params, ctx) => {
+      return { success: true, data: await q.listComplianceGuardrails(ctx.pg, params as any) };
+    },
+  },
 ];
 
 export const legalTool = createErpDomainTool({

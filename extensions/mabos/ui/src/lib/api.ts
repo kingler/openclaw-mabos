@@ -13,6 +13,30 @@ import type {
   TroposGoalModel,
   CronJob,
   CronJobsResponse,
+  StockItem,
+  Contact,
+  Invoice,
+  Account,
+  ProfitLoss,
+  Product,
+  Order,
+  Supplier,
+  PurchaseOrder,
+  Campaign,
+  CampaignMetric,
+  MarketingKpi,
+  Shipment,
+  Route,
+  CompliancePolicy,
+  Violation,
+  AnalyticsReport,
+  ReportSnapshot,
+  AnalyticsDashboard,
+  PartnershipContract,
+  FreelancerContract,
+  CorporateDocument,
+  LegalStructure,
+  ComplianceGuardrail,
 } from "./types";
 
 const BASE = "/mabos/api";
@@ -233,4 +257,216 @@ export const api = {
       `/workflows/${workflowId}/validate`,
       {},
     ),
+
+  // ── ERP: Inventory ──────────────────────────────────────────
+  getStockItems: (params?: { status?: string; warehouse_id?: string; limit?: number }) => {
+    const qs = new URLSearchParams();
+    if (params?.status) qs.set("status", params.status);
+    if (params?.warehouse_id) qs.set("warehouse_id", params.warehouse_id);
+    if (params?.limit) qs.set("limit", String(params.limit));
+    const q = qs.toString();
+    return get<{ items: StockItem[] }>(`/erp/inventory/items${q ? `?${q}` : ""}`);
+  },
+  getLowStockAlerts: () => get<{ alerts: StockItem[] }>("/erp/inventory/alerts"),
+  getStockMovements: (itemId: string) =>
+    get<{ movements: unknown[] }>(`/erp/inventory/items/${itemId}/movements`),
+
+  // ── ERP: Customers ──────────────────────────────────────────
+  getContacts: (params?: { segment?: string; lifecycle_stage?: string; limit?: number }) => {
+    const qs = new URLSearchParams();
+    if (params?.segment) qs.set("segment", params.segment);
+    if (params?.lifecycle_stage) qs.set("lifecycle_stage", params.lifecycle_stage);
+    if (params?.limit) qs.set("limit", String(params.limit));
+    const q = qs.toString();
+    return get<{ contacts: Contact[] }>(`/erp/customers/contacts${q ? `?${q}` : ""}`);
+  },
+  searchContacts: (q: string) =>
+    get<{ contacts: Contact[] }>(`/erp/customers/contacts?q=${encodeURIComponent(q)}`),
+  getContact: (id: string) => get<Contact>(`/erp/customers/contacts/${id}`),
+
+  // ── ERP: Finance / Accounting ───────────────────────────────
+  getInvoices: (params?: { status?: string; customer_id?: string; limit?: number }) => {
+    const qs = new URLSearchParams();
+    if (params?.status) qs.set("status", params.status);
+    if (params?.customer_id) qs.set("customer_id", params.customer_id);
+    if (params?.limit) qs.set("limit", String(params.limit));
+    const q = qs.toString();
+    return get<{ invoices: Invoice[] }>(`/erp/finance/invoices${q ? `?${q}` : ""}`);
+  },
+  getAccounts: () => get<{ accounts: Account[] }>("/erp/finance/accounts"),
+  getProfitLoss: (from: string, to: string) =>
+    get<ProfitLoss>(
+      `/erp/finance/profit-loss?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`,
+    ),
+
+  // ── ERP: E-Commerce ─────────────────────────────────────────
+  getProducts: (params?: { category?: string; status?: string; limit?: number }) => {
+    const qs = new URLSearchParams();
+    if (params?.category) qs.set("category", params.category);
+    if (params?.status) qs.set("status", params.status);
+    if (params?.limit) qs.set("limit", String(params.limit));
+    const q = qs.toString();
+    return get<{ products: Product[] }>(`/erp/ecommerce/products${q ? `?${q}` : ""}`);
+  },
+  getOrders: (params?: { status?: string; customer_id?: string; limit?: number }) => {
+    const qs = new URLSearchParams();
+    if (params?.status) qs.set("status", params.status);
+    if (params?.customer_id) qs.set("customer_id", params.customer_id);
+    if (params?.limit) qs.set("limit", String(params.limit));
+    const q = qs.toString();
+    return get<{ orders: Order[] }>(`/erp/ecommerce/orders${q ? `?${q}` : ""}`);
+  },
+  getOrder: (id: string) => get<Order>(`/erp/ecommerce/orders/${id}`),
+  updateOrderStatus: (id: string, status: string) =>
+    put<{ ok: boolean; order: Order }>(`/erp/ecommerce/orders/${id}`, { status }),
+
+  // ── ERP: Suppliers ──────────────────────────────────────────
+  getSuppliers: (params?: { status?: string; category?: string; limit?: number }) => {
+    const qs = new URLSearchParams();
+    if (params?.status) qs.set("status", params.status);
+    if (params?.category) qs.set("category", params.category);
+    if (params?.limit) qs.set("limit", String(params.limit));
+    const q = qs.toString();
+    return get<{ suppliers: Supplier[] }>(`/erp/suppliers/list${q ? `?${q}` : ""}`);
+  },
+  getSupplier: (id: string) => get<Supplier>(`/erp/suppliers/${id}`),
+  getPurchaseOrders: (params?: { supplier_id?: string; status?: string; limit?: number }) => {
+    const qs = new URLSearchParams();
+    if (params?.supplier_id) qs.set("supplier_id", params.supplier_id);
+    if (params?.status) qs.set("status", params.status);
+    if (params?.limit) qs.set("limit", String(params.limit));
+    const q = qs.toString();
+    return get<{ orders: PurchaseOrder[] }>(`/erp/suppliers/purchase-orders${q ? `?${q}` : ""}`);
+  },
+  getPurchaseOrder: (id: string) => get<PurchaseOrder>(`/erp/suppliers/purchase-orders/${id}`),
+
+  // ── ERP: Marketing ──────────────────────────────────────────
+  getMarketingCampaigns: (params?: { status?: string; type?: string; limit?: number }) => {
+    const qs = new URLSearchParams();
+    if (params?.status) qs.set("status", params.status);
+    if (params?.type) qs.set("type", params.type);
+    if (params?.limit) qs.set("limit", String(params.limit));
+    const q = qs.toString();
+    return get<{ campaigns: Campaign[] }>(`/erp/marketing/campaigns${q ? `?${q}` : ""}`);
+  },
+  getCampaignMetrics: (id: string) =>
+    get<{ metrics: CampaignMetric[] }>(`/erp/marketing/campaigns/${id}/metrics`),
+  getMarketingKpis: () => get<{ kpis: MarketingKpi[] }>("/erp/marketing/kpis"),
+
+  // ── ERP: Supply Chain ───────────────────────────────────────
+  getShipments: (params?: { status?: string; supplier_id?: string; limit?: number }) => {
+    const qs = new URLSearchParams();
+    if (params?.status) qs.set("status", params.status);
+    if (params?.supplier_id) qs.set("supplier_id", params.supplier_id);
+    if (params?.limit) qs.set("limit", String(params.limit));
+    const q = qs.toString();
+    return get<{ shipments: Shipment[] }>(`/erp/supply-chain/shipments${q ? `?${q}` : ""}`);
+  },
+  getShipment: (id: string) => get<Shipment>(`/erp/supply-chain/shipments/${id}`),
+  trackShipment: (tracking: string) =>
+    get<{ shipment: Shipment | null }>(
+      `/erp/supply-chain/shipments?tracking=${encodeURIComponent(tracking)}`,
+    ),
+  getRoutes: (params?: { status?: string; limit?: number }) => {
+    const qs = new URLSearchParams();
+    if (params?.status) qs.set("status", params.status);
+    if (params?.limit) qs.set("limit", String(params.limit));
+    const q = qs.toString();
+    return get<{ routes: Route[] }>(`/erp/supply-chain/routes${q ? `?${q}` : ""}`);
+  },
+
+  // ── ERP: Compliance ─────────────────────────────────────────
+  getPolicies: (params?: { status?: string; category?: string; limit?: number }) => {
+    const qs = new URLSearchParams();
+    if (params?.status) qs.set("status", params.status);
+    if (params?.category) qs.set("category", params.category);
+    if (params?.limit) qs.set("limit", String(params.limit));
+    const q = qs.toString();
+    return get<{ policies: CompliancePolicy[] }>(`/erp/compliance/policies${q ? `?${q}` : ""}`);
+  },
+  getViolations: (params?: { status?: string; severity?: string; limit?: number }) => {
+    const qs = new URLSearchParams();
+    if (params?.status) qs.set("status", params.status);
+    if (params?.severity) qs.set("severity", params.severity);
+    if (params?.limit) qs.set("limit", String(params.limit));
+    const q = qs.toString();
+    return get<{ violations: Violation[] }>(`/erp/compliance/violations${q ? `?${q}` : ""}`);
+  },
+  getViolation: (id: string) => get<Violation>(`/erp/compliance/violations/${id}`),
+
+  // ── ERP: Legal ──────────────────────────────────────────────
+  getLegalContracts: (params?: { status?: string; type?: string; limit?: number }) => {
+    const qs = new URLSearchParams();
+    if (params?.status) qs.set("status", params.status);
+    if (params?.type) qs.set("type", params.type);
+    if (params?.limit) qs.set("limit", String(params.limit));
+    const q = qs.toString();
+    return get<{ contracts: unknown[] }>(`/erp/legal/contracts${q ? `?${q}` : ""}`);
+  },
+  getLegalCases: (params?: { status?: string; case_type?: string; limit?: number }) => {
+    const qs = new URLSearchParams();
+    if (params?.status) qs.set("status", params.status);
+    if (params?.case_type) qs.set("case_type", params.case_type);
+    if (params?.limit) qs.set("limit", String(params.limit));
+    const q = qs.toString();
+    return get<{ cases: unknown[] }>(`/erp/legal/cases${q ? `?${q}` : ""}`);
+  },
+  // New legal endpoints
+  getPartnershipContracts: (params?: { status?: string }) => {
+    const qs = new URLSearchParams();
+    if (params?.status) qs.set("status", params.status);
+    const q = qs.toString();
+    return get<{ contracts: PartnershipContract[] }>(
+      `/erp/legal/partnership-contracts${q ? `?${q}` : ""}`,
+    );
+  },
+  getFreelancerContracts: (params?: { status?: string }) => {
+    const qs = new URLSearchParams();
+    if (params?.status) qs.set("status", params.status);
+    const q = qs.toString();
+    return get<{ contracts: FreelancerContract[] }>(
+      `/erp/legal/freelancer-contracts${q ? `?${q}` : ""}`,
+    );
+  },
+  getCorporateDocuments: (params?: { doc_type?: string; status?: string }) => {
+    const qs = new URLSearchParams();
+    if (params?.doc_type) qs.set("doc_type", params.doc_type);
+    if (params?.status) qs.set("status", params.status);
+    const q = qs.toString();
+    return get<{ documents: CorporateDocument[] }>(
+      `/erp/legal/corporate-documents${q ? `?${q}` : ""}`,
+    );
+  },
+  getLegalStructure: () => get<{ structure: LegalStructure | null }>("/erp/legal/structure"),
+  getComplianceGuardrails: (params?: { active?: boolean; category?: string }) => {
+    const qs = new URLSearchParams();
+    if (params?.active !== undefined) qs.set("active", String(params.active));
+    if (params?.category) qs.set("category", params.category);
+    const q = qs.toString();
+    return get<{ guardrails: ComplianceGuardrail[] }>(`/erp/legal/guardrails${q ? `?${q}` : ""}`);
+  },
+
+  // ── ERP: Analytics ──────────────────────────────────────────
+  getReports: (params?: { type?: string; status?: string; limit?: number }) => {
+    const qs = new URLSearchParams();
+    if (params?.type) qs.set("type", params.type);
+    if (params?.status) qs.set("status", params.status);
+    if (params?.limit) qs.set("limit", String(params.limit));
+    const q = qs.toString();
+    return get<{ reports: AnalyticsReport[] }>(`/erp/analytics/reports${q ? `?${q}` : ""}`);
+  },
+  getReport: (id: string) => get<AnalyticsReport>(`/erp/analytics/reports/${id}`),
+  runReport: (id: string) =>
+    post<{ ok: boolean; result: unknown }>(`/erp/analytics/reports/${id}/run`, {}),
+  getReportSnapshots: (id: string) =>
+    get<{ snapshots: ReportSnapshot[] }>(`/erp/analytics/reports/${id}/snapshots`),
+  getDashboards: (params?: { owner_id?: string; limit?: number }) => {
+    const qs = new URLSearchParams();
+    if (params?.owner_id) qs.set("owner_id", params.owner_id);
+    if (params?.limit) qs.set("limit", String(params.limit));
+    const q = qs.toString();
+    return get<{ dashboards: AnalyticsDashboard[] }>(
+      `/erp/analytics/dashboards${q ? `?${q}` : ""}`,
+    );
+  },
 };

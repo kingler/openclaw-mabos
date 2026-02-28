@@ -1,25 +1,25 @@
-import { Users, MessageSquare, ChevronRight } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
+import { Users } from "lucide-react";
+import { useState, useDeferredValue } from "react";
+import { ContactTable } from "@/components/customers/ContactTable";
+import { CustomerStatsRow } from "@/components/customers/CustomerStatsRow";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { useAgents } from "@/hooks/useAgents";
-import type { AgentListResponse } from "@/lib/types";
+import { useContacts, useContactSearch } from "@/hooks/useCustomers";
 
-const BUSINESS_ID = "vividwalls";
-
-const upcomingFeatures = [
-  "Customer profiles and segmentation",
-  "CRM pipeline management",
-  "Customer lifetime value tracking",
-  "Support ticket integration",
-];
+const segmentOptions = ["all", "enterprise", "smb", "startup", "individual"] as const;
 
 export function CustomersPage() {
-  const { data: agentsRaw } = useAgents(BUSINESS_ID);
+  const [search, setSearch] = useState("");
+  const [segment, setSegment] = useState("all");
+  const deferredSearch = useDeferredValue(search);
 
-  const agentsResponse = agentsRaw as AgentListResponse | undefined;
-  const relatedAgents = agentsResponse?.agents?.filter(
-    (a) => a.id.includes("customer") || a.id.includes("cs-director") || a.id.includes("sales"),
+  const { data: contactsData, isLoading: contactsLoading } = useContacts(
+    segment !== "all" ? { segment } : undefined,
   );
+  const { data: searchData, isLoading: searchLoading } = useContactSearch(deferredSearch);
+
+  const isSearching = deferredSearch.length >= 2;
+  const contacts = isSearching ? (searchData?.contacts ?? []) : (contactsData?.contacts ?? []);
+  const loading = isSearching ? searchLoading : contactsLoading;
 
   return (
     <div className="space-y-6">
@@ -33,125 +33,50 @@ export function CustomersPage() {
         >
           <Users className="w-5 h-5 text-[var(--accent-purple)]" />
         </div>
-        <div className="flex-1">
-          <div className="flex items-center gap-2">
-            <h1 className="text-2xl font-bold text-[var(--text-primary)]">Customers</h1>
-            <Badge
-              variant="outline"
-              className="border-[var(--accent-purple)]/30 text-[var(--accent-purple)] text-[10px]"
-            >
-              Coming Soon
-            </Badge>
-          </div>
-          <p className="text-sm text-[var(--text-secondary)] mt-0.5">
-            Contact management, CRM, and customer insights
+        <div>
+          <h1 className="text-2xl font-bold text-[var(--text-primary)]">Customers</h1>
+          <p className="text-sm text-[var(--text-secondary)]">
+            Contact and relationship management
           </p>
         </div>
       </div>
 
-      {/* Relevant Agent Status */}
-      {relatedAgents && relatedAgents.length > 0 && (
-        <Card className="border-[var(--border-mabos)] bg-[var(--bg-card)] shadow-none">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-[var(--text-secondary)] flex items-center gap-2">
-              <Users className="w-4 h-4" />
-              Related Agents
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              {relatedAgents.map((agent) => (
-                <div
-                  key={agent.id}
-                  className="flex items-center gap-3 p-3 rounded-lg bg-[var(--bg-secondary)] border border-[var(--border-mabos)]"
-                >
-                  <span
-                    className="w-2 h-2 rounded-full shrink-0"
-                    style={{
-                      backgroundColor:
-                        agent.status === "active"
-                          ? "var(--accent-green)"
-                          : agent.status === "error"
-                            ? "var(--accent-red)"
-                            : "var(--accent-orange)",
-                    }}
-                  />
-                  <div className="min-w-0">
-                    <p className="text-sm text-[var(--text-primary)] truncate">{agent.name}</p>
-                    <p className="text-[10px] text-[var(--text-muted)] capitalize">
-                      {agent.status} - {agent.beliefs} beliefs, {agent.goals} goals
-                    </p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-      )}
+      {/* Stats */}
+      <CustomerStatsRow contacts={contactsData?.contacts} isLoading={contactsLoading} />
 
-      <div className="max-w-2xl space-y-6">
-        {/* Description card */}
-        <Card className="border-[var(--border-mabos)] bg-[var(--bg-card)] shadow-none">
-          <CardHeader className="pb-2">
+      {/* Search + Filter + Table */}
+      <Card className="border-[var(--border-mabos)] bg-[var(--bg-card)] shadow-none">
+        <CardHeader className="pb-2">
+          <div className="flex items-center justify-between gap-3">
             <CardTitle className="text-sm font-medium text-[var(--text-secondary)]">
-              About this Module
+              Contacts
             </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-sm text-[var(--text-primary)] leading-relaxed">
-              Manage customer relationships, track interactions, and gain insights into your
-              customer base.
-            </p>
-            <p className="text-sm text-[var(--text-muted)] mt-3 leading-relaxed">
-              While this module is under development, you can interact with the{" "}
-              <span className="text-[var(--accent-purple)] font-medium">Customer Relations</span>{" "}
-              agent through the chat panel for customer-related queries and operations.
-            </p>
-          </CardContent>
-        </Card>
-
-        {/* Upcoming features */}
-        <Card className="border-[var(--border-mabos)] bg-[var(--bg-card)] shadow-none">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-[var(--text-secondary)]">
-              Upcoming Features
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <ul className="space-y-3">
-              {upcomingFeatures.map((feature) => (
-                <li key={feature} className="flex items-center gap-3">
-                  <ChevronRight className="w-4 h-4 text-[var(--accent-purple)] shrink-0" />
-                  <span className="text-sm text-[var(--text-primary)]">{feature}</span>
-                </li>
-              ))}
-            </ul>
-          </CardContent>
-        </Card>
-
-        {/* Chat CTA */}
-        <Card className="border-[var(--border-mabos)] bg-[var(--bg-card)] shadow-none">
-          <CardContent className="py-4">
-            <div className="flex items-center gap-3">
-              <div
-                className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0"
-                style={{
-                  backgroundColor: "color-mix(in srgb, var(--accent-green) 15%, var(--bg-card))",
-                }}
+            <div className="flex items-center gap-2">
+              <input
+                type="text"
+                placeholder="Search contacts..."
+                className="text-xs px-3 py-1.5 rounded border border-[var(--border-mabos)] bg-[var(--bg-secondary)] text-[var(--text-primary)] w-48 placeholder:text-[var(--text-muted)]"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+              />
+              <select
+                className="text-xs px-2 py-1.5 rounded border border-[var(--border-mabos)] bg-[var(--bg-secondary)] text-[var(--text-primary)]"
+                value={segment}
+                onChange={(e) => setSegment(e.target.value)}
               >
-                <MessageSquare className="w-4 h-4 text-[var(--accent-green)]" />
-              </div>
-              <div>
-                <p className="text-sm font-medium text-[var(--text-primary)]">Use the Chat Panel</p>
-                <p className="text-xs text-[var(--text-muted)] mt-0.5">
-                  Open the chat panel and ask the Customer Relations agent about contacts, accounts,
-                  or customer insights.
-                </p>
-              </div>
+                {segmentOptions.map((s) => (
+                  <option key={s} value={s}>
+                    {s === "all" ? "All Segments" : s.charAt(0).toUpperCase() + s.slice(1)}
+                  </option>
+                ))}
+              </select>
             </div>
-          </CardContent>
-        </Card>
-      </div>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <ContactTable contacts={contacts} isLoading={loading} />
+        </CardContent>
+      </Card>
     </div>
   );
 }
