@@ -17,6 +17,7 @@ import { authorizeGatewayBearerRequestOrReply } from "../../src/gateway/http-aut
 import { onAgentEvent, type AgentEventPayload } from "../../src/infra/agent-events.js";
 import { readJsonBodyWithLimit } from "../../src/infra/http-body.js";
 import { createCronBridgeService } from "./src/cron-bridge.js";
+import { createApprovalTools } from "./src/tools/approval-tools.js";
 import { createBdiTools } from "./src/tools/bdi-tools.js";
 import { createBpmnMigrateTools } from "./src/tools/bpmn-migrate.js";
 import { createBusinessTools } from "./src/tools/business-tools.js";
@@ -45,6 +46,7 @@ import { createRuleEngineTools } from "./src/tools/rule-engine.js";
 import { createSendGridTools } from "./src/tools/sendgrid-tools.js";
 import { createSeoAnalyticsTools } from "./src/tools/seo-analytics-tools.js";
 import { createSetupWizardTools } from "./src/tools/setup-wizard-tools.js";
+import { createShopifyTools } from "./src/tools/shopify-tools.js";
 import { createStakeholderTools } from "./src/tools/stakeholder-tools.js";
 import { createTwilioTools } from "./src/tools/twilio-tools.js";
 import { createTypeDBTools } from "./src/tools/typedb-tools.js";
@@ -103,6 +105,8 @@ export default function register(api: OpenClawPluginApi) {
     createTwilioTools,
     createCloudflareTools,
     createGoDaddyTools,
+    createShopifyTools,
+    createApprovalTools,
   ];
 
   for (const factory of factories) {
@@ -730,6 +734,10 @@ export default function register(api: OpenClawPluginApi) {
       const goals = await readMdLines(join(agentDir, "Goals.md"));
       const intentions = await readMdLines(join(agentDir, "Intentions.md"));
       const desires = await readMdLines(join(agentDir, "Desires.md"));
+      const skills = await readMdLines(join(agentDir, "Skill.md"));
+      const plans = await readMdLines(join(agentDir, "Plans.md"));
+      const tasks = await readMdLines(join(agentDir, "Task.md"));
+      const actionItems = await readMdLines(join(agentDir, "Actions.md"));
 
       res.setHeader("Content-Type", "application/json");
       res.end(
@@ -739,12 +747,176 @@ export default function register(api: OpenClawPluginApi) {
           goalCount: goals.length,
           intentionCount: intentions.length,
           desireCount: desires.length,
+          skillCount: skills.length,
+          planCount: plans.length,
+          taskCount: tasks.length,
+          actionCount: actionItems.length,
           beliefs,
           goals,
           intentions,
           desires,
         }),
       );
+    } catch (err) {
+      res.setHeader("Content-Type", "application/json");
+      res.statusCode = 500;
+      res.end(JSON.stringify({ error: String(err) }));
+    }
+  });
+
+  // API: Agent cognitive state (structured JSON of entire mind)
+  registerParamRoute("/mabos/api/agents/:id/cognitive", async (req, res) => {
+    try {
+      const { join } = await import("node:path");
+      const { readFile: rf } = await import("node:fs/promises");
+      const url = new URL(req.url || "", "http://localhost");
+      const segments = url.pathname.split("/");
+      const agentId = sanitizeId(segments[segments.indexOf("agents") + 1] || "");
+      if (!agentId) {
+        res.statusCode = 400;
+        res.setHeader("Content-Type", "application/json");
+        res.end(JSON.stringify({ error: "Invalid agent ID" }));
+        return;
+      }
+
+      const agentDir = join(workspaceDir, "agents", agentId);
+
+      const readSafe = async (file: string) => {
+        try {
+          return await rf(join(agentDir, file), "utf-8");
+        } catch {
+          return "";
+        }
+      };
+
+      const countNonHeaderLines = (content: string) =>
+        content.split("\n").filter((l: string) => l.trim() && !l.startsWith("#")).length;
+
+      const extractCategories = (content: string) =>
+        [...content.matchAll(/^## (.+)/gm)].map((m) => m[1]);
+
+      const countActive = (content: string) => {
+        const activeSection = content.match(/## Active[\s\S]*?(?=\n## |$)/);
+        return activeSection
+          ? activeSection[0].split("\n").filter((l: string) => l.startsWith("### ")).length
+          : 0;
+      };
+
+      const countByStatus = (content: string) => {
+        const statuses: Record<string, number> = {};
+        const statusMatches = content.matchAll(/\*\*Status:\*\*\s*(\w+)/g);
+        for (const m of statusMatches) {
+          statuses[m[1]] = (statuses[m[1]] || 0) + 1;
+        }
+        return statuses;
+      };
+
+      // Read all cognitive files
+      const [
+        beliefsContent,
+        desiresContent,
+        goalsContent,
+        intentionsContent,
+        skillsContent,
+        plansContent,
+        tasksContent,
+        actionsContent,
+      ] = await Promise.all([
+        readSafe("Beliefs.md"),
+        readSafe("Desires.md"),
+        readSafe("Goals.md"),
+        readSafe("Intentions.md"),
+        readSafe("Skill.md"),
+        readSafe("Plans.md"),
+        readSafe("Task.md"),
+        readSafe("Actions.md"),
+      ]);
+
+      // Read agent.json for commitment strategy and BDI config
+      let agentConfig: Record<string, unknown> = {};
+      try {
+        agentConfig = JSON.parse(await rf(join(agentDir, "agent.json"), "utf-8"));
+      } catch {
+        // No config
+      }
+
+      // Count aligned goals (have Business Goal reference)
+      const goalLines = goalsContent.split("\n");
+      const totalGoals = goalLines.filter((l: string) => l.startsWith("### ")).length;
+      const alignedGoals = goalsContent.split("**Business Goal:**").length - 1;
+
+      // Extract skill items
+      const skillItems = [
+        ...skillsContent.matchAll(/\|\s*SK-\d+\s*\|\s*([^|]+)\s*\|[^|]*\|\s*(\w+)\s*\|/g),
+      ].map((m) => ({ name: m[1].trim(), status: m[2].trim() }));
+
+      // Count recent actions (last 24h)
+      const actionLines = actionsContent
+        .split("\n")
+        .filter(
+          (l: string) => l.startsWith("|") && !l.startsWith("|---") && !l.startsWith("| Timestamp"),
+        );
+      const now = Date.now();
+      const recentActions = actionLines.filter((l: string) => {
+        const tsMatch = l.match(/\|\s*(\d{4}-\d{2}-\d{2}T[\d:.]+Z?)\s*\|/);
+        if (!tsMatch) return false;
+        return now - new Date(tsMatch[1]).getTime() < 86400000;
+      }).length;
+
+      // Stalled intentions (active but 0% progress)
+      const stalledIntentions = (intentionsContent.match(/\*\*Progress:\*\*\s*0%/g) || []).length;
+
+      // Last BDI cycle timestamp
+      const lastCycleMatch =
+        intentionsContent.match(/Last updated: (.+)/) || goalsContent.match(/Last evaluated: (.+)/);
+
+      const bdiConfig =
+        agentConfig.bdi && typeof agentConfig.bdi === "object"
+          ? (agentConfig.bdi as Record<string, unknown>)
+          : null;
+
+      const cognitive = {
+        agentId,
+        beliefs: {
+          count: countNonHeaderLines(beliefsContent),
+          categories: extractCategories(beliefsContent),
+        },
+        desires: {
+          count: countNonHeaderLines(desiresContent),
+          active: countActive(desiresContent),
+        },
+        goals: {
+          count: totalGoals,
+          aligned: alignedGoals,
+          unaligned: totalGoals - alignedGoals,
+        },
+        intentions: {
+          count: countNonHeaderLines(intentionsContent),
+          active: countActive(intentionsContent),
+          stalled: stalledIntentions,
+        },
+        skills: {
+          count: skillItems.length,
+          items: skillItems,
+        },
+        plans: {
+          count: countNonHeaderLines(plansContent),
+          active: countActive(plansContent),
+        },
+        tasks: {
+          count: countNonHeaderLines(tasksContent),
+          byStatus: countByStatus(tasksContent),
+        },
+        actions: {
+          count: actionLines.length,
+          recent: recentActions,
+        },
+        commitmentStrategy: bdiConfig?.commitmentStrategy || "unknown",
+        lastBdiCycleAt: lastCycleMatch ? lastCycleMatch[1].trim() : null,
+      };
+
+      res.setHeader("Content-Type", "application/json");
+      res.end(JSON.stringify(cognitive));
     } catch (err) {
       res.setHeader("Content-Type", "application/json");
       res.statusCode = 500;
@@ -2125,6 +2297,9 @@ export default function register(api: OpenClawPluginApi) {
           "Goals.md",
           "Intentions.md",
           "Plans.md",
+          "Skill.md",
+          "Task.md",
+          "Actions.md",
           "Playbooks.md",
           "Knowledge.md",
           "Memory.md",
@@ -2190,6 +2365,10 @@ export default function register(api: OpenClawPluginApi) {
         const goals = await countLines(join(agentPath, "Goals.md"));
         const intentions = await countLines(join(agentPath, "Intentions.md"));
         const desires = await countLines(join(agentPath, "Desires.md"));
+        const skills = await countLines(join(agentPath, "Skill.md"));
+        const plans = await countLines(join(agentPath, "Plans.md"));
+        const tasks = await countLines(join(agentPath, "Task.md"));
+        const actions = await countLines(join(agentPath, "Actions.md"));
 
         const config = await readJsonSafe(join(agentPath, "config.json"));
         const isCoreAgent = manifest?.agents?.includes(agentId);
@@ -2202,6 +2381,10 @@ export default function register(api: OpenClawPluginApi) {
           goals,
           intentions,
           desires,
+          skills,
+          plans,
+          tasks,
+          actions,
           status: config?.status || "active",
           autonomy_level: config?.autonomy_level || "medium",
           approval_threshold_usd: config?.approval_threshold_usd || 100,
@@ -2479,6 +2662,55 @@ export default function register(api: OpenClawPluginApi) {
         heartbeatJob.nextRun = new Date(Date.now() + bdiIntervalMinutes * 60 * 1000).toISOString();
       }
 
+      // Tag local jobs with source
+      for (const j of jobs) j.source = "local";
+
+      // ── Merge parent CronService jobs ──
+      const openclawHome = join(process.env.HOME || "/tmp", ".openclaw");
+      const parentCronPath = join(openclawHome, "cron", "jobs.json");
+      const parentStore = await readJsonSafe(parentCronPath);
+      if (
+        parentStore &&
+        typeof parentStore === "object" &&
+        Array.isArray((parentStore as any).jobs)
+      ) {
+        const parentJobs: any[] = (parentStore as any).jobs;
+        // Collect parentCronIds already present in local jobs to avoid duplicates
+        const localParentIds = new Set(
+          jobs.filter((j: any) => j.parentCronId).map((j: any) => j.parentCronId),
+        );
+        for (const pj of parentJobs) {
+          if (localParentIds.has(pj.id)) continue; // already represented by a local job
+          const schedExpr =
+            pj.schedule?.kind === "cron"
+              ? pj.schedule.expr
+              : pj.schedule?.kind === "every"
+                ? `every ${Math.round((pj.schedule.everyMs || 0) / 60000)}m`
+                : pj.schedule?.kind === "at"
+                  ? `at ${pj.schedule.at}`
+                  : "unknown";
+          jobs.push({
+            id: pj.id,
+            name: pj.name || "Unnamed",
+            schedule: schedExpr,
+            agentId: pj.agentId || "",
+            action: pj.payload?.kind || "",
+            enabled: pj.enabled ?? true,
+            status: pj.state?.lastStatus === "error" ? "error" : pj.enabled ? "active" : "paused",
+            lastRun: pj.state?.lastRunAtMs
+              ? new Date(pj.state.lastRunAtMs).toISOString()
+              : undefined,
+            nextRun: pj.state?.nextRunAtMs
+              ? new Date(pj.state.nextRunAtMs).toISOString()
+              : undefined,
+            lastStatus: pj.state?.lastStatus,
+            consecutiveErrors: pj.state?.consecutiveErrors,
+            parentCronId: pj.id,
+            source: "gateway",
+          });
+        }
+      }
+
       // Filter by workflowId if query param provided
       const filterWorkflowId = url.searchParams.get("workflowId");
       const filteredJobs = filterWorkflowId
@@ -2525,7 +2757,29 @@ export default function register(api: OpenClawPluginApi) {
       const cronPath = join(workspaceDir, "businesses", businessId, "cron-jobs.json");
       const jobs = (await readJsonSafe(cronPath)) || [];
       const idx = jobs.findIndex((j: any) => j.id === jobId);
+
+      // ── Handle parent (gateway) cron jobs ──
       if (idx === -1) {
+        const openclawHome = join(process.env.HOME || "/tmp", ".openclaw");
+        const parentCronPath = join(openclawHome, "cron", "jobs.json");
+        const parentStore = await readJsonSafe(parentCronPath);
+        if (
+          parentStore &&
+          typeof parentStore === "object" &&
+          Array.isArray((parentStore as any).jobs)
+        ) {
+          const parentJobs: any[] = (parentStore as any).jobs;
+          const pIdx = parentJobs.findIndex((pj: any) => pj.id === jobId);
+          if (pIdx !== -1) {
+            if (params.enabled !== undefined) parentJobs[pIdx].enabled = params.enabled;
+            if (params.name !== undefined) parentJobs[pIdx].name = params.name;
+            parentJobs[pIdx].updatedAtMs = Date.now();
+            await writeFile(parentCronPath, JSON.stringify(parentStore, null, 2), "utf-8");
+            res.setHeader("Content-Type", "application/json");
+            res.end(JSON.stringify({ ok: true, job: parentJobs[pIdx], source: "gateway" }));
+            return;
+          }
+        }
         res.statusCode = 404;
         res.setHeader("Content-Type", "application/json");
         res.end(JSON.stringify({ error: "Cron job not found" }));
