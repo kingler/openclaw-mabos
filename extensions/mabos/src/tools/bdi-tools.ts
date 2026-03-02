@@ -5,7 +5,7 @@
  * Operates on the 10-file agent cognitive system (markdown-based).
  */
 
-import { readFile, writeFile, mkdir } from "node:fs/promises";
+import { readFile, writeFile, mkdir, readdir } from "node:fs/promises";
 import { join, dirname } from "node:path";
 import { Type, type Static } from "@sinclair/typebox";
 import type { OpenClawPluginApi, AnyAgentTool } from "openclaw/plugin-sdk";
@@ -81,6 +81,11 @@ const GoalCreateParams = Type.Object({
   deadline: Type.Optional(Type.String({ description: "Deadline (ISO date or 'ongoing')" })),
   parent_goal: Type.Optional(Type.String({ description: "Parent goal ID" })),
   success_criteria: Type.Optional(Type.String({ description: "How to determine achievement" })),
+  business_goal_id: Type.Optional(
+    Type.String({
+      description: "Tropos business goal ID for traceability (e.g., 'BG-revenue-growth')",
+    }),
+  ),
 });
 
 const GoalEvaluateParams = Type.Object({
@@ -104,6 +109,20 @@ const BdiCycleParams = Type.Object({
   depth: Type.Union([Type.Literal("quick"), Type.Literal("full")], {
     description: "Quick: goals+intentions only. Full: complete 5-phase BDI cycle.",
   }),
+});
+
+const SkillInventoryParams = Type.Object({
+  agent_id: Type.String({ description: "Agent ID to inventory skills for" }),
+});
+
+const ActionLogParams = Type.Object({
+  agent_id: Type.String({ description: "Agent ID" }),
+  tool_name: Type.String({ description: "Name of the tool/action executed" }),
+  task_id: Type.Optional(Type.String({ description: "Related task ID (e.g., 'T-003')" })),
+  outcome: Type.Union([Type.Literal("success"), Type.Literal("failure"), Type.Literal("partial")], {
+    description: "Outcome of the action",
+  }),
+  summary: Type.String({ description: "Brief summary of what the action accomplished" }),
 });
 
 export function createBdiTools(api: OpenClawPluginApi): AnyAgentTool[] {
@@ -191,7 +210,10 @@ export function createBdiTools(api: OpenClawPluginApi): AnyAgentTool[] {
           content = `# Goals — ${params.agent_id}\n\nLast evaluated: ${now}\n\n## Active Goals\n\n## Completed Goals\n\n| ID | Goal | Completed | Outcome |\n|---|---|---|---|\n\n## Abandoned Goals\n\n| ID | Goal | Reason | Learnings |\n|---|---|---|---|\n`;
         }
 
-        const entry = `\n### ${params.goal_id}: ${params.description}\n- **Level:** ${params.level}\n- **Priority:** ${params.priority}\n- **Desire:** ${params.desire_id || "—"}\n- **Status:** active\n- **Target:** ${params.target || "—"}\n- **Progress:** 0%\n- **Deadline:** ${params.deadline || "ongoing"}\n- **Parent:** ${params.parent_goal || "—"}\n- **Success Criteria:** ${params.success_criteria || "—"}\n- **Created:** ${now.split("T")[0]}\n`;
+        const businessGoalLine = params.business_goal_id
+          ? `\n- **Business Goal:** ${params.business_goal_id}`
+          : "";
+        const entry = `\n### ${params.goal_id}: ${params.description}\n- **Level:** ${params.level}\n- **Priority:** ${params.priority}\n- **Desire:** ${params.desire_id || "—"}\n- **Status:** active\n- **Target:** ${params.target || "—"}\n- **Progress:** 0%\n- **Deadline:** ${params.deadline || "ongoing"}\n- **Parent:** ${params.parent_goal || "—"}\n- **Success Criteria:** ${params.success_criteria || "—"}${businessGoalLine}\n- **Created:** ${now.split("T")[0]}\n`;
 
         const completedIdx = content.indexOf("## Completed Goals");
         if (completedIdx !== -1) {
@@ -314,6 +336,119 @@ ${files["Beliefs.md"] || "No beliefs."}
 **Memory:** ${files["Memory.md"] || "None."}
 
 Execute each phase. Write updates via belief_update, goal_create, intention_commit tools.`);
+      },
+    },
+
+    {
+      name: "skill_inventory",
+      label: "Inventory Skills",
+      description:
+        "Read an agent's capabilities and available tools, then materialize a structured Skill.md file.",
+      parameters: SkillInventoryParams,
+      async execute(_id: string, params: Static<typeof SkillInventoryParams>) {
+        const dir = agentDir(api, params.agent_id);
+
+        // Read capabilities
+        const caps = await readMd(join(dir, "Capabilities.md"));
+
+        // Read agent.json for tool/skill config
+        let agentConfig: Record<string, unknown> = {};
+        try {
+          const raw = await readFile(join(dir, "agent.json"), "utf-8");
+          agentConfig = JSON.parse(raw);
+        } catch {
+          // No config file
+        }
+
+        // Extract capability lines (non-header, non-empty lines)
+        const capLines = caps
+          .split("\n")
+          .filter((l: string) => l.trim() && !l.startsWith("#"))
+          .map((l: string) => l.replace(/^[-*]\s*/, "").trim())
+          .filter(Boolean);
+
+        // List tool files available in the workspace tools directory
+        const ws = resolveWorkspaceDir(api);
+        let availableTools: string[] = [];
+        try {
+          const toolFiles = await readdir(join(ws, "tools"));
+          availableTools = toolFiles
+            .filter((f: string) => f.endsWith(".json") || f.endsWith(".ts") || f.endsWith(".js"))
+            .map((f: string) => f.replace(/\.(json|ts|js)$/, ""));
+        } catch {
+          // No tools directory
+        }
+
+        // Build Skill.md
+        const now = new Date().toISOString();
+        const rows = capLines.map((cap: string, i: number) => {
+          const toolMatch = availableTools.find((t: string) =>
+            cap.toLowerCase().includes(t.toLowerCase()),
+          );
+          return `| SK-${String(i + 1).padStart(3, "0")} | ${cap} | ${toolMatch || "—"} | active |`;
+        });
+
+        const content = `# Skills — ${params.agent_id}
+
+Last inventoried: ${now}
+
+## Skill Registry
+
+| ID | Skill | Tools | Status |
+|---|---|---|---|
+${rows.join("\n")}
+
+## Notes
+
+Skills auto-populated from Capabilities.md by \`skill_inventory\` tool.
+Available workspace tools: ${availableTools.length > 0 ? availableTools.join(", ") : "none detected"}
+`;
+
+        await writeMd(join(dir, "Skill.md"), content);
+        return textResult(
+          `Skill inventory created for '${params.agent_id}': ${capLines.length} skills from capabilities, ${availableTools.length} workspace tools detected.`,
+        );
+      },
+    },
+
+    {
+      name: "action_log",
+      label: "Log Action",
+      description:
+        "Record an agent action in Actions.md with timestamp, tool used, task link, outcome, and summary.",
+      parameters: ActionLogParams,
+      async execute(_id: string, params: Static<typeof ActionLogParams>) {
+        const dir = agentDir(api, params.agent_id);
+        const path = join(dir, "Actions.md");
+        const now = new Date().toISOString();
+
+        let content = await readMd(path);
+        if (!content) {
+          content = `# Actions — ${params.agent_id}
+
+## Recent Actions
+
+| Timestamp | Tool | Task | Outcome | Summary |
+|-----------|------|------|---------|---------|
+`;
+        }
+
+        const row = `| ${now} | ${params.tool_name} | ${params.task_id || "—"} | ${params.outcome} | ${params.summary} |`;
+
+        // Insert after the table header row
+        const headerRow = "|-----------|------|------|---------|---------|";
+        const headerIdx = content.indexOf(headerRow);
+        if (headerIdx !== -1) {
+          const insertAt = headerIdx + headerRow.length;
+          content = content.slice(0, insertAt) + "\n" + row + content.slice(insertAt);
+        } else {
+          content += "\n" + row;
+        }
+
+        await writeMd(path, content);
+        return textResult(
+          `Action logged for '${params.agent_id}': ${params.tool_name} → ${params.outcome}`,
+        );
       },
     },
   ];

@@ -1,4 +1,13 @@
-import { Brain, Sparkles, Target, Zap } from "lucide-react";
+import {
+  Brain,
+  Sparkles,
+  Target,
+  Zap,
+  Wrench,
+  ClipboardList,
+  ListTodo,
+  Activity,
+} from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import type { AgentDetail } from "@/lib/types";
 
@@ -11,7 +20,15 @@ type BdiStat = {
   label: string;
   icon: LucideIcon;
   color: string;
-  countKey: "beliefCount" | "desireCount" | "goalCount" | "intentionCount";
+  countKey:
+    | "beliefCount"
+    | "desireCount"
+    | "goalCount"
+    | "intentionCount"
+    | "skillCount"
+    | "planCount"
+    | "taskCount"
+    | "actionCount";
   fileTab: string;
 };
 
@@ -43,6 +60,34 @@ const stats: BdiStat[] = [
     color: "var(--accent-orange)",
     countKey: "intentionCount",
     fileTab: "Intentions.md",
+  },
+  {
+    label: "Skills",
+    icon: Wrench,
+    color: "var(--accent-teal)",
+    countKey: "skillCount",
+    fileTab: "Skill.md",
+  },
+  {
+    label: "Plans",
+    icon: ClipboardList,
+    color: "var(--accent-indigo)",
+    countKey: "planCount",
+    fileTab: "Plans.md",
+  },
+  {
+    label: "Tasks",
+    icon: ListTodo,
+    color: "var(--accent-amber)",
+    countKey: "taskCount",
+    fileTab: "Task.md",
+  },
+  {
+    label: "Actions",
+    icon: Activity,
+    color: "var(--accent-rose)",
+    countKey: "actionCount",
+    fileTab: "Actions.md",
   },
 ];
 
