@@ -453,6 +453,11 @@ export function attachGatewayWsMessageHandler(params: {
         };
         const clearUnboundScopes = () => {
           if (scopes.length > 0 && !controlUiAuthPolicy.allowBypass) {
+            // Allow local clients with valid shared auth to retain scopes —
+            // they are trusted backend services on the same machine.
+            if (isLocalClient && sharedAuthOk) {
+              return;
+            }
             scopes = [];
             connectParams.scopes = scopes;
           }

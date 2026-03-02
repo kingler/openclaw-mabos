@@ -82,7 +82,7 @@ type ResponseFrame = {
 // Minimal Gateway RPC Client
 // ---------------------------------------------------------------------------
 
-const PROTOCOL_VERSION = 1;
+const PROTOCOL_VERSION = 3;
 const RPC_TIMEOUT_MS = 15_000;
 
 /**
@@ -93,8 +93,10 @@ async function callGatewayRpc<T = Record<string, unknown>>(
   gatewayUrl: string,
   method: string,
   params?: unknown,
+  authToken?: string,
 ): Promise<T> {
   return new Promise<T>((resolve, reject) => {
+    const connectId = randomUUID();
     const requestId = randomUUID();
     let settled = false;
 
@@ -110,41 +112,53 @@ async function callGatewayRpc<T = Record<string, unknown>>(
     let handshakeDone = false;
 
     ws.on("open", () => {
-      // Send connect params (hello).
-      const connectParams = {
+      // Send connect request frame (protocol v3 RequestFrame wrapper).
+      const connectParams: Record<string, unknown> = {
         minProtocol: PROTOCOL_VERSION,
         maxProtocol: PROTOCOL_VERSION,
         client: {
-          id: "mabos-cron-bridge",
+          id: "node-host",
           displayName: "MABOS Cron Bridge",
           version: "1.0.0",
           platform: "node",
           mode: "backend",
         },
-        scopes: ["cron"],
+        role: "operator",
+        scopes: ["operator.admin", "operator.read"],
       };
-      ws.send(JSON.stringify(connectParams));
+      if (authToken) {
+        connectParams.auth = { token: authToken };
+      }
+      ws.send(
+        JSON.stringify({
+          type: "req",
+          id: connectId,
+          method: "connect",
+          params: connectParams,
+        }),
+      );
     });
 
     ws.on("message", (data: WebSocket.RawData) => {
       try {
         const frame = JSON.parse(data.toString());
 
-        // Handle hello-ok.
-        if (frame.type === "hello-ok" && !handshakeDone) {
+        // Handle connect response (hello-ok wrapped in a response frame).
+        if (frame.type === "res" && frame.id === connectId && frame.ok && !handshakeDone) {
           handshakeDone = true;
-          // Send the RPC request.
-          const requestFrame = {
-            type: "req",
-            id: requestId,
-            method,
-            params,
-          };
-          ws.send(JSON.stringify(requestFrame));
+          // Send the actual RPC request.
+          ws.send(
+            JSON.stringify({
+              type: "req",
+              id: requestId,
+              method,
+              params,
+            }),
+          );
           return;
         }
 
-        // Handle response.
+        // Handle RPC response.
         if (frame.type === "res" && frame.id === requestId) {
           clearTimeout(timer);
           settled = true;
@@ -264,15 +278,18 @@ async function writeJsonAtomic(filePath: string, data: unknown): Promise<void> {
 export class CronBridge {
   private readonly gatewayUrl: string;
   private readonly workspaceDir: string;
+  private readonly authToken?: string;
   private readonly logger: { info: (msg: string) => void; warn: (msg: string) => void };
 
   constructor(opts: {
     gatewayUrl: string;
     workspaceDir: string;
+    authToken?: string;
     logger?: { info: (msg: string) => void; warn: (msg: string) => void };
   }) {
     this.gatewayUrl = opts.gatewayUrl;
     this.workspaceDir = opts.workspaceDir;
+    this.authToken = opts.authToken;
     this.logger = opts.logger ?? {
       info: (msg: string) => console.log(`[mabos-cron-bridge] ${msg}`),
       warn: (msg: string) => console.warn(`[mabos-cron-bridge] ${msg}`),
@@ -337,6 +354,7 @@ export class CronBridge {
         this.gatewayUrl,
         "cron.list",
         { includeDisabled: true },
+        this.authToken,
       );
       for (const pj of parentList.jobs ?? []) {
         // Only remove jobs created by this bridge (identified by [mabos] prefix).
@@ -346,7 +364,7 @@ export class CronBridge {
           !activeParentIds.has(pj.id)
         ) {
           try {
-            await callGatewayRpc(this.gatewayUrl, "cron.remove", { id: pj.id });
+            await callGatewayRpc(this.gatewayUrl, "cron.remove", { id: pj.id }, this.authToken);
             removed++;
           } catch {
             // Ignore removal errors — job may already be gone.
@@ -368,7 +386,12 @@ export class CronBridge {
   /** Add a single MABOS job to the parent CronService. */
   private async addToParent(job: MabosCronJob): Promise<ParentCronJob> {
     const create = mapToParentCreate(job);
-    const result = await callGatewayRpc<ParentCronJob>(this.gatewayUrl, "cron.add", create);
+    const result = await callGatewayRpc<ParentCronJob>(
+      this.gatewayUrl,
+      "cron.add",
+      create,
+      this.authToken,
+    );
     this.logger.info(`added parent job ${result.id} for MABOS ${job.id}`);
     return result;
   }
@@ -387,15 +410,20 @@ export class CronBridge {
       patch.delivery = create.delivery;
     }
 
-    await callGatewayRpc(this.gatewayUrl, "cron.update", {
-      id: job.parentCronId,
-      patch,
-    });
+    await callGatewayRpc(
+      this.gatewayUrl,
+      "cron.update",
+      {
+        id: job.parentCronId,
+        patch,
+      },
+      this.authToken,
+    );
   }
 
   /** Remove a parent job when its MABOS source is deleted. */
   async removeFromParent(parentCronId: string): Promise<void> {
-    await callGatewayRpc(this.gatewayUrl, "cron.remove", { id: parentCronId });
+    await callGatewayRpc(this.gatewayUrl, "cron.remove", { id: parentCronId }, this.authToken);
     this.logger.info(`removed parent job ${parentCronId}`);
   }
 }
@@ -424,9 +452,12 @@ export function createCronBridgeService(api: OpenClawPluginApi) {
     pluginCfg.agents?.defaults?.workspace ??
     join(process.env.HOME || "/tmp", ".openclaw", "mabos");
 
+  const authToken = process.env.OPENCLAW_GATEWAY_TOKEN;
+
   const bridge = new CronBridge({
     gatewayUrl,
     workspaceDir,
+    authToken,
     logger: {
       info: (msg) => api.logger.info(`[mabos-cron-bridge] ${msg}`),
       warn: (msg) => (api.logger.warn ?? api.logger.info)(`[mabos-cron-bridge] ${msg}`),
