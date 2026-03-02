@@ -1,5 +1,5 @@
 import { DollarSign } from "lucide-react";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { BalanceSheetView } from "@/components/accounting/BalanceSheetView";
 import { BudgetVsActualView } from "@/components/accounting/BudgetVsActualView";
 import { CashFlowView } from "@/components/accounting/CashFlowView";
@@ -23,9 +23,10 @@ const statusOptions = ["all", "draft", "sent", "paid", "overdue"] as const;
 export function AccountingPage() {
   const [activeTab, setActiveTab] = useState<(typeof tabs)[number]>("Overview");
   const [statusFilter, setStatusFilter] = useState("all");
-  const now = new Date();
-  const from = new Date(now.getFullYear(), now.getMonth() - 1, 1).toISOString();
-  const to = now.toISOString();
+  const [from, to] = useMemo(() => {
+    const now = new Date();
+    return [new Date(now.getFullYear(), now.getMonth() - 1, 1).toISOString(), now.toISOString()];
+  }, []);
 
   // All hooks at top level per React rules
   const { data: invoicesData, isLoading: invoicesLoading } = useInvoices(
