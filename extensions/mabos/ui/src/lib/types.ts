@@ -82,6 +82,10 @@ export type AgentListItem = {
   goals: number;
   intentions: number;
   desires: number;
+  skills: number;
+  plans: number;
+  tasks: number;
+  actions: number;
   status: AgentStatus;
   autonomy_level: "low" | "medium" | "high";
   approval_threshold_usd: number;
@@ -97,6 +101,10 @@ export type AgentDetail = {
   goalCount: number;
   intentionCount: number;
   desireCount: number;
+  skillCount: number;
+  planCount: number;
+  taskCount: number;
+  actionCount: number;
   beliefs: string[];
   goals: string[];
   intentions: string[];
@@ -300,6 +308,9 @@ export type CronJob = {
   workflowId?: string; // links to Workflow.id
   stepId?: string; // links to WorkflowStep.id
   parentCronId?: string; // ID in parent OpenClaw cron store
+  source?: "local" | "gateway"; // origin of this job
+  lastStatus?: string; // last run status from parent CronService
+  consecutiveErrors?: number; // error count from parent CronService
 };
 
 export type CronJobsResponse = { jobs: CronJob[] };
