@@ -419,6 +419,57 @@ export type ProfitLoss = {
   net: number;
 };
 
+export type BalanceSheet = {
+  as_of: string;
+  assets: Array<{ id: string; name: string; balance: number }>;
+  liabilities: Array<{ id: string; name: string; balance: number }>;
+  equity: Array<{ id: string; name: string; balance: number }>;
+  totals: { assets: number; liabilities: number; equity: number };
+};
+
+export type CashFlowSection = {
+  items: Array<{ description: string; amount: number; date: string }>;
+  total: number;
+};
+
+export type CashFlowStatement = {
+  from: string;
+  to: string;
+  operating: CashFlowSection;
+  investing: CashFlowSection;
+  financing: CashFlowSection;
+  net_change: number;
+};
+
+export type ExpenseCategory = {
+  name: string;
+  items: Array<{ description: string; amount: number; date: string }>;
+  total: number;
+};
+
+export type ExpenseReport = {
+  from: string;
+  to: string;
+  categories: ExpenseCategory[];
+  grand_total: number;
+};
+
+export type BudgetLine = {
+  account_name: string;
+  account_type: string;
+  budgeted: number;
+  actual: number;
+  variance: number;
+  variance_pct: number;
+};
+
+export type BudgetVsActual = {
+  from: string;
+  to: string;
+  lines: BudgetLine[];
+  totals: { budgeted: number; actual: number; variance: number };
+};
+
 // --- ERP: E-Commerce ---
 
 export type Product = {

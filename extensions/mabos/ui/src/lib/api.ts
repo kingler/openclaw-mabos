@@ -18,6 +18,10 @@ import type {
   Invoice,
   Account,
   ProfitLoss,
+  BalanceSheet,
+  CashFlowStatement,
+  ExpenseReport,
+  BudgetVsActual,
   Product,
   Order,
   Supplier,
@@ -297,6 +301,19 @@ export const api = {
   getProfitLoss: (from: string, to: string) =>
     get<ProfitLoss>(
       `/erp/finance/profit-loss?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`,
+    ),
+  getBalanceSheet: () => get<BalanceSheet>("/erp/finance/balance-sheet"),
+  getCashFlow: (from: string, to: string) =>
+    get<CashFlowStatement>(
+      `/erp/finance/cash-flow?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`,
+    ),
+  getExpenseReport: (from: string, to: string) =>
+    get<ExpenseReport>(
+      `/erp/finance/expense-report?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`,
+    ),
+  getBudgetVsActual: (from: string, to: string) =>
+    get<BudgetVsActual>(
+      `/erp/finance/budget-vs-actual?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`,
     ),
 
   // ── ERP: E-Commerce ─────────────────────────────────────────

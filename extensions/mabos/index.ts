@@ -3172,6 +3172,87 @@ export default function register(api: OpenClawPluginApi) {
     },
   });
 
+  api.registerHttpRoute({
+    path: "/mabos/api/erp/finance/balance-sheet",
+    handler: async (req, res) => {
+      if (!(await requireAuth(req, res))) return;
+      try {
+        const pg = await getErpPg();
+        const { balanceSheet } = await import("../../mabos/erp/finance/queries.js");
+        const result = await balanceSheet(pg);
+        res.setHeader("Content-Type", "application/json");
+        res.end(JSON.stringify(result));
+      } catch (err) {
+        res.statusCode = 500;
+        res.setHeader("Content-Type", "application/json");
+        res.end(JSON.stringify({ error: String(err) }));
+      }
+    },
+  });
+
+  api.registerHttpRoute({
+    path: "/mabos/api/erp/finance/cash-flow",
+    handler: async (req, res) => {
+      if (!(await requireAuth(req, res))) return;
+      try {
+        const pg = await getErpPg();
+        const { cashFlowStatement } = await import("../../mabos/erp/finance/queries.js");
+        const params = erpQueryParams(req);
+        const from = params.from || new Date(Date.now() - 30 * 86400000).toISOString();
+        const to = params.to || new Date().toISOString();
+        const result = await cashFlowStatement(pg, from, to);
+        res.setHeader("Content-Type", "application/json");
+        res.end(JSON.stringify(result));
+      } catch (err) {
+        res.statusCode = 500;
+        res.setHeader("Content-Type", "application/json");
+        res.end(JSON.stringify({ error: String(err) }));
+      }
+    },
+  });
+
+  api.registerHttpRoute({
+    path: "/mabos/api/erp/finance/expense-report",
+    handler: async (req, res) => {
+      if (!(await requireAuth(req, res))) return;
+      try {
+        const pg = await getErpPg();
+        const { expenseReport } = await import("../../mabos/erp/finance/queries.js");
+        const params = erpQueryParams(req);
+        const from = params.from || new Date(Date.now() - 30 * 86400000).toISOString();
+        const to = params.to || new Date().toISOString();
+        const result = await expenseReport(pg, from, to);
+        res.setHeader("Content-Type", "application/json");
+        res.end(JSON.stringify(result));
+      } catch (err) {
+        res.statusCode = 500;
+        res.setHeader("Content-Type", "application/json");
+        res.end(JSON.stringify({ error: String(err) }));
+      }
+    },
+  });
+
+  api.registerHttpRoute({
+    path: "/mabos/api/erp/finance/budget-vs-actual",
+    handler: async (req, res) => {
+      if (!(await requireAuth(req, res))) return;
+      try {
+        const pg = await getErpPg();
+        const { budgetVsActual } = await import("../../mabos/erp/finance/queries.js");
+        const params = erpQueryParams(req);
+        const from = params.from || new Date(Date.now() - 30 * 86400000).toISOString();
+        const to = params.to || new Date().toISOString();
+        const result = await budgetVsActual(pg, from, to);
+        res.setHeader("Content-Type", "application/json");
+        res.end(JSON.stringify(result));
+      } catch (err) {
+        res.statusCode = 500;
+        res.setHeader("Content-Type", "application/json");
+        res.end(JSON.stringify({ error: String(err) }));
+      }
+    },
+  });
+
   registerParamRoute("/mabos/api/erp/finance/balance/:accountId", async (req, res) => {
     try {
       const pg = await getErpPg();
