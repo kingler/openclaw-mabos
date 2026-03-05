@@ -21,6 +21,7 @@ import { createApprovalTools } from "./src/tools/approval-tools.js";
 import { createBdiTools } from "./src/tools/bdi-tools.js";
 import { createBpmnMigrateTools } from "./src/tools/bpmn-migrate.js";
 import { createBusinessTools } from "./src/tools/business-tools.js";
+import { createCapabilitiesSyncTools } from "./src/tools/capabilities-sync.js";
 import { createCbrTools } from "./src/tools/cbr-tools.js";
 import { createCloudflareTools } from "./src/tools/cloudflare-tools.js";
 import { resolveWorkspaceDir, getPluginConfig, generatePrefixedId } from "./src/tools/common.js";
@@ -109,11 +110,20 @@ export default function register(api: OpenClawPluginApi) {
     createApprovalTools,
   ];
 
+  const registeredToolNames: string[] = [];
   for (const factory of factories) {
     const tools = factory(api);
     for (const tool of tools) {
+      registeredToolNames.push(tool.name);
       api.registerTool(tool);
     }
+  }
+
+  // Register capabilities_sync with knowledge of all registered tools
+  const capSyncTools = createCapabilitiesSyncTools(api, { registeredToolNames });
+  for (const tool of capSyncTools) {
+    registeredToolNames.push(tool.name);
+    api.registerTool(tool);
   }
 
   // ── 2. BDI Background Service ─────────────────────────────────
