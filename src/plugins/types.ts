@@ -2,6 +2,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import type { AgentMessage } from "@mariozechner/pi-agent-core";
 import type { Command } from "commander";
 import type { AuthProfileCredential, OAuthCredential } from "../agents/auth-profiles/types.js";
+import type { SkillSnapshot } from "../agents/skills/types.js";
 import type { AnyAgentTool } from "../agents/tools/common.js";
 import type { ReplyPayload } from "../auto-reply/types.js";
 import type { ChannelDock } from "../channels/dock.js";
@@ -274,6 +275,8 @@ export type OpenClawPluginApi = {
    */
   registerCommand: (command: OpenClawPluginCommandDefinition) => void;
   resolvePath: (input: string) => string;
+  /** Query the core skill engine for the current SkillSnapshot. */
+  getSkillSnapshot: (opts?: { workspaceDir?: string; skillFilter?: string[] }) => SkillSnapshot;
   /** Register a lifecycle hook handler */
   on: <K extends PluginHookName>(
     hookName: K,

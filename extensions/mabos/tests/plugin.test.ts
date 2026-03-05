@@ -65,6 +65,7 @@ function createMockApi() {
     registerProvider: () => {},
     registerCommand: () => {},
     resolvePath: (p: string) => p,
+    getSkillSnapshot: () => ({ prompt: "", skills: [] }),
     on: (hookName: string, handler: Function) => {
       hooks.push({ events: hookName, handler });
     },
@@ -363,5 +364,19 @@ describe("Tool Categories", () => {
         `Module ${module} not loaded — missing tool: ${toolName}`,
       );
     }
+  });
+});
+
+describe("Plugin API Surface", () => {
+  it("should expose getSkillSnapshot on the API", () => {
+    const mock = createMockApi();
+    const api = mock.api as any;
+
+    assert.equal(typeof api.getSkillSnapshot, "function", "getSkillSnapshot should be a function");
+
+    const snapshot = api.getSkillSnapshot();
+    assert.ok(snapshot, "getSkillSnapshot should return a value");
+    assert.ok("prompt" in snapshot, "snapshot should have a prompt field");
+    assert.ok("skills" in snapshot, "snapshot should have a skills field");
   });
 });

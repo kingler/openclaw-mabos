@@ -1,4 +1,5 @@
 import path from "node:path";
+import { buildWorkspaceSkillSnapshot } from "../agents/skills/workspace.js";
 import type { AnyAgentTool } from "../agents/tools/common.js";
 import type { ChannelDock } from "../channels/dock.js";
 import type { ChannelPlugin } from "../channels/plugins/types.js";
@@ -498,6 +499,14 @@ export function createPluginRegistry(registryParams: PluginRegistryParams) {
       registerService: (service) => registerService(record, service),
       registerCommand: (command) => registerCommand(record, command),
       resolvePath: (input: string) => resolveUserPath(input),
+      getSkillSnapshot: (opts) => {
+        const workspaceDir =
+          opts?.workspaceDir ?? params.config?.agents?.defaults?.workspace ?? process.cwd();
+        return buildWorkspaceSkillSnapshot(workspaceDir, {
+          config: params.config,
+          skillFilter: opts?.skillFilter,
+        });
+      },
       on: (hookName, handler, opts) => registerTypedHook(record, hookName, handler, opts),
     };
   };
