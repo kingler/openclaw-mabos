@@ -112,12 +112,15 @@ export default function register(api: OpenClawPluginApi) {
     createApprovalTools,
   ];
 
-  const registeredToolNames: string[] = [];
+  const registeredToolNames: Array<{ name: string; description: string }> = [];
   for (const factory of factories) {
     const tools = factory(api);
     for (const tool of tools) {
       api.registerTool(tool);
-      registeredToolNames.push(tool.name);
+      registeredToolNames.push({
+        name: tool.name,
+        description: (tool as any).description ?? "",
+      });
     }
   }
 
@@ -288,32 +291,62 @@ export default function register(api: OpenClawPluginApi) {
   api.registerService({
     id: "capabilities-auto-sync",
     start: async () => {
+      // Non-blocking: fire-and-forget so gateway startup is not delayed
       void (async () => {
+        const { readdir, writeFile, readFile } = await import("node:fs/promises");
+        const { join } = await import("node:path");
+
+        const agentsDir = join(workspaceDir, "agents");
         try {
-          const { readdir } = await import("node:fs/promises");
-          const { join } = await import("node:path");
-          const agentsDir = join(workspaceDir, "agents");
           const entries = await readdir(agentsDir, { withFileTypes: true });
           const agentIds = entries.filter((d) => d.isDirectory()).map((d) => d.name);
 
-          const syncTool = capSyncTools.find((t) => t.name === "capabilities_sync");
-          if (!syncTool) {
-            log.debug("capabilities_sync tool not found, skipping auto-sync");
-            return;
-          }
+          // Build the tool listing section from registered MABOS tools
+          const toolLines = registeredToolNames
+            .map((t) => `- \`${t.name}\` — ${t.description || "(no description)"}`)
+            .join("\n");
 
           let synced = 0;
           for (const agentId of agentIds) {
             try {
-              await syncTool.execute(`startup-sync-${agentId}`, { agent_id: agentId });
+              const agentDir = join(agentsDir, agentId);
+
+              // Preserve any hand-crafted sections (Constraints, Delegated Capabilities, etc.)
+              let existingSections = "";
+              try {
+                const existing = await readFile(join(agentDir, "Capabilities.md"), "utf-8");
+                // Extract sections after the auto-generated tools block
+                const customMarker = "## Agent-Specific";
+                const customIdx = existing.indexOf(customMarker);
+                if (customIdx >= 0) {
+                  existingSections = "\n" + existing.slice(customIdx);
+                }
+              } catch {
+                // No existing file — that's fine
+              }
+
+              const now = new Date().toISOString();
+              const content = `# Capabilities — ${agentId}
+
+> Auto-synced on ${now}
+
+## MABOS Tools (${registeredToolNames.length} registered)
+
+${toolLines}
+${existingSections}
+`;
+
+              await writeFile(join(agentDir, "Capabilities.md"), content, "utf-8");
               synced++;
             } catch (err) {
-              log.debug(`Capabilities sync skipped for ${agentId}: ${err}`);
+              log.debug?.(`Capabilities sync skipped for ${agentId}: ${err}`);
             }
           }
-          log.info(`Capabilities.md synced for ${synced}/${agentIds.length} agents on startup.`);
+          log.info(
+            `[mabos] Capabilities.md synced for ${synced}/${agentIds.length} agents on startup.`,
+          );
         } catch (err) {
-          log.debug(`Agent capabilities auto-sync skipped: ${err}`);
+          log.debug?.(`[mabos] Agent capabilities auto-sync skipped: ${err}`);
         }
       })();
     },
