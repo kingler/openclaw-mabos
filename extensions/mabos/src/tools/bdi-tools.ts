@@ -379,10 +379,8 @@ Execute each phase. Write updates via belief_update, goal_create, intention_comm
         // ── 3. Fetch OpenClaw skill snapshot (NEW) ──
         let openclawSkills: Array<{ name: string; primaryEnv?: string }> = [];
         try {
-          if (typeof (api as any).getSkillSnapshot === "function") {
-            const snapshot = (api as any).getSkillSnapshot();
-            openclawSkills = snapshot.skills ?? [];
-          }
+          const snapshot = api.getSkillSnapshot({ workspaceDir: ws });
+          openclawSkills = snapshot.skills ?? [];
         } catch {
           // Skill snapshot unavailable — not critical
         }
