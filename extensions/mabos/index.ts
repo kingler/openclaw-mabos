@@ -3937,15 +3937,18 @@ export default function register(api: OpenClawPluginApi) {
     handler: async (_req, res) => {
       if (!(await requireAuth(_req, res))) return;
       try {
-        const mabosTools = registeredToolNames.map((name) => ({
-          name,
-          source: "mabos" as const,
-          category: categorize(name),
-        }));
+        const INTERNAL_TOOLS = new Set(["capabilities_sync"]);
+        const mabosTools = registeredToolNames
+          .filter((name) => !INTERNAL_TOOLS.has(name))
+          .map((name) => ({
+            name,
+            source: "mabos" as const,
+            category: categorize(name),
+          }));
 
         let openclawSkills: Array<{ name: string; primaryEnv?: string; source: string }> = [];
         try {
-          const snapshot = api.getSkillSnapshot();
+          const snapshot = api.getSkillSnapshot({ workspaceDir });
           openclawSkills = (snapshot.skills ?? []).map((s: any) => ({
             name: s.name,
             primaryEnv: s.primaryEnv,
