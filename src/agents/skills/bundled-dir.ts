@@ -31,6 +31,7 @@ export type BundledSkillsResolveOptions = {
   moduleUrl?: string;
   cwd?: string;
   execPath?: string;
+  config?: { skills?: { bundledDir?: string } };
 };
 
 export function resolveBundledSkillsDir(
@@ -39,6 +40,12 @@ export function resolveBundledSkillsDir(
   const override = process.env.OPENCLAW_BUNDLED_SKILLS_DIR?.trim();
   if (override) {
     return override;
+  }
+
+  // Check config for skills.bundledDir
+  if (opts.config?.skills?.bundledDir) {
+    const resolved = path.resolve(opts.config.skills.bundledDir);
+    if (looksLikeSkillsDir(resolved)) return resolved;
   }
 
   // bun --compile: ship a sibling `skills/` next to the executable.

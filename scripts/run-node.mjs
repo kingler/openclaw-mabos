@@ -226,6 +226,14 @@ export async function runNodeMain(params = {}) {
   deps.srcRoot = path.join(deps.cwd, "src");
   deps.configFiles = [path.join(deps.cwd, "tsconfig.json"), path.join(deps.cwd, "package.json")];
 
+  // Ensure bundled skills directory is discoverable when running from outside the repo
+  if (!deps.env.OPENCLAW_BUNDLED_SKILLS_DIR) {
+    const scriptDir = path.dirname(new URL(import.meta.url).pathname);
+    const repoRoot = path.dirname(scriptDir);
+    const skillsDir = path.join(repoRoot, "skills");
+    deps.env.OPENCLAW_BUNDLED_SKILLS_DIR = skillsDir;
+  }
+
   if (!shouldBuild(deps)) {
     return await runOpenClaw(deps);
   }

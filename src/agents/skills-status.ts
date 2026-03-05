@@ -236,7 +236,7 @@ export function buildWorkspaceSkillStatus(
   },
 ): SkillStatusReport {
   const managedSkillsDir = opts?.managedSkillsDir ?? path.join(CONFIG_DIR, "skills");
-  const bundledContext = resolveBundledSkillsContext();
+  const bundledContext = resolveBundledSkillsContext({ config: opts?.config });
   const skillEntries =
     opts?.entries ??
     loadWorkspaceSkillEntries(workspaceDir, {

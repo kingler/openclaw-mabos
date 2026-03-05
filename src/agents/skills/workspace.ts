@@ -323,7 +323,8 @@ function loadSkillEntries(
 
   const managedSkillsDir = opts?.managedSkillsDir ?? path.join(CONFIG_DIR, "skills");
   const workspaceSkillsDir = path.resolve(workspaceDir, "skills");
-  const bundledSkillsDir = opts?.bundledSkillsDir ?? resolveBundledSkillsDir();
+  const bundledSkillsDir =
+    opts?.bundledSkillsDir ?? resolveBundledSkillsDir({ config: opts?.config });
   const extraDirsRaw = opts?.config?.skills?.load?.extraDirs ?? [];
   const extraDirs = extraDirsRaw
     .map((d) => (typeof d === "string" ? d.trim() : ""))
