@@ -21,7 +21,7 @@ import { createApprovalTools } from "./src/tools/approval-tools.js";
 import { createBdiTools } from "./src/tools/bdi-tools.js";
 import { createBpmnMigrateTools } from "./src/tools/bpmn-migrate.js";
 import { createBusinessTools } from "./src/tools/business-tools.js";
-import { createCapabilitiesSyncTools } from "./src/tools/capabilities-sync.js";
+import { createCapabilitiesSyncTools, categorize } from "./src/tools/capabilities-sync.js";
 import { createCbrTools } from "./src/tools/cbr-tools.js";
 import { createCloudflareTools } from "./src/tools/cloudflare-tools.js";
 import { resolveWorkspaceDir, getPluginConfig, generatePrefixedId } from "./src/tools/common.js";
@@ -3923,6 +3923,47 @@ export default function register(api: OpenClawPluginApi) {
         });
         res.setHeader("Content-Type", "application/json");
         res.end(JSON.stringify({ dashboards }));
+      } catch (err) {
+        res.statusCode = 500;
+        res.setHeader("Content-Type", "application/json");
+        res.end(JSON.stringify({ error: String(err) }));
+      }
+    },
+  });
+
+  // API: Unified capabilities (MABOS tools + OpenClaw skills)
+  api.registerHttpRoute({
+    path: "/mabos/api/capabilities",
+    handler: async (_req, res) => {
+      if (!(await requireAuth(_req, res))) return;
+      try {
+        const mabosTools = registeredToolNames.map((name) => ({
+          name,
+          source: "mabos" as const,
+          category: categorize(name),
+        }));
+
+        let openclawSkills: Array<{ name: string; primaryEnv?: string; source: string }> = [];
+        try {
+          const snapshot = api.getSkillSnapshot();
+          openclawSkills = (snapshot.skills ?? []).map((s: any) => ({
+            name: s.name,
+            primaryEnv: s.primaryEnv,
+            source: "openclaw",
+          }));
+        } catch {
+          // getSkillSnapshot unavailable — non-critical
+        }
+
+        res.setHeader("Content-Type", "application/json");
+        res.end(
+          JSON.stringify({
+            mabosTools,
+            openclawSkills,
+            totalCount: mabosTools.length + openclawSkills.length,
+            generatedAt: new Date().toISOString(),
+          }),
+        );
       } catch (err) {
         res.statusCode = 500;
         res.setHeader("Content-Type", "application/json");
