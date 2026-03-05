@@ -348,10 +348,8 @@ Execute each phase. Write updates via belief_update, goal_create, intention_comm
       async execute(_id: string, params: Static<typeof SkillInventoryParams>) {
         const dir = agentDir(api, params.agent_id);
 
-        // Read capabilities
+        // ── 1. Read Capabilities.md (existing behavior) ──
         const caps = await readMd(join(dir, "Capabilities.md"));
-
-        // Read agent.json for tool/skill config
         let agentConfig: Record<string, unknown> = {};
         try {
           const raw = await readFile(join(dir, "agent.json"), "utf-8");
@@ -360,14 +358,13 @@ Execute each phase. Write updates via belief_update, goal_create, intention_comm
           // No config file
         }
 
-        // Extract capability lines (non-header, non-empty lines)
         const capLines = caps
           .split("\n")
           .filter((l: string) => l.trim() && !l.startsWith("#"))
           .map((l: string) => l.replace(/^[-*]\s*/, "").trim())
           .filter(Boolean);
 
-        // List tool files available in the workspace tools directory
+        // ── 2. Scan workspace tools directory (existing behavior) ──
         const ws = resolveWorkspaceDir(api);
         let availableTools: string[] = [];
         try {
@@ -379,16 +376,36 @@ Execute each phase. Write updates via belief_update, goal_create, intention_comm
           // No tools directory
         }
 
-        // Build Skill.md
+        // ── 3. Fetch OpenClaw skill snapshot (NEW) ──
+        let openclawSkills: Array<{ name: string; primaryEnv?: string }> = [];
+        try {
+          if (typeof (api as any).getSkillSnapshot === "function") {
+            const snapshot = (api as any).getSkillSnapshot();
+            openclawSkills = snapshot.skills ?? [];
+          }
+        } catch {
+          // Skill snapshot unavailable — not critical
+        }
+
+        // ── 4. Build unified Skill.md ──
         const now = new Date().toISOString();
-        const rows = capLines.map((cap: string, i: number) => {
+
+        // BDI/workspace skills from Capabilities.md
+        const capRows = capLines.map((cap: string, i: number) => {
           const toolMatch = availableTools.find((t: string) =>
             cap.toLowerCase().includes(t.toLowerCase()),
           );
           return `| SK-${String(i + 1).padStart(3, "0")} | ${cap} | ${toolMatch || "—"} | active |`;
         });
 
-        const content = `# Skills — ${params.agent_id}
+        // OpenClaw platform skills
+        const ocRows = openclawSkills.map((sk, i: number) => {
+          const idx = capLines.length + i + 1;
+          const envNote = sk.primaryEnv ? ` (${sk.primaryEnv})` : "";
+          return `| SK-${String(idx).padStart(3, "0")} | ${sk.name}${envNote} | openclaw-skill | active |`;
+        });
+
+        let content = `# Skills — ${params.agent_id}
 
 Last inventoried: ${now}
 
@@ -396,17 +413,30 @@ Last inventoried: ${now}
 
 | ID | Skill | Tools | Status |
 |---|---|---|---|
-${rows.join("\n")}
+${capRows.join("\n")}
+`;
 
+        if (ocRows.length > 0) {
+          content += `
+## OpenClaw Skills
+
+| ID | Skill | Source | Status |
+|---|---|---|---|
+${ocRows.join("\n")}
+`;
+        }
+
+        content += `
 ## Notes
 
 Skills auto-populated from Capabilities.md by \`skill_inventory\` tool.
 Available workspace tools: ${availableTools.length > 0 ? availableTools.join(", ") : "none detected"}
+OpenClaw eligible skills: ${openclawSkills.length > 0 ? openclawSkills.map((s) => s.name).join(", ") : "none"}
 `;
 
         await writeMd(join(dir, "Skill.md"), content);
         return textResult(
-          `Skill inventory created for '${params.agent_id}': ${capLines.length} skills from capabilities, ${availableTools.length} workspace tools detected.`,
+          `Skill inventory created for '${params.agent_id}': ${capLines.length} capabilities, ${availableTools.length} workspace tools, ${openclawSkills.length} OpenClaw skills.`,
         );
       },
     },
