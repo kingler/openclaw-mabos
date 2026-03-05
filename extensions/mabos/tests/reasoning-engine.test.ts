@@ -58,6 +58,7 @@ function createMockApi() {
     registerProvider: () => {},
     registerCommand: () => {},
     resolvePath: (p: string) => p,
+    getSkillSnapshot: () => ({ prompt: "", skills: [] }),
     on: () => {},
   };
   return { api, tools };

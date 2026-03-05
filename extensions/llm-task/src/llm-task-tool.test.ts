@@ -25,6 +25,7 @@ function fakeApi(overrides: any = {}) {
     runtime: { version: "test" },
     logger: { debug() {}, info() {}, warn() {}, error() {} },
     registerTool() {},
+    getSkillSnapshot: () => ({ prompt: "", skills: [] }),
     ...overrides,
   };
 }
