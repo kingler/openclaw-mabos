@@ -36,6 +36,8 @@ export type SkillsLimitsConfig = {
 };
 
 export type SkillsConfig = {
+  /** Override path to bundled skills directory. */
+  bundledDir?: string;
   /** Optional bundled-skill allowlist (only affects bundled skills). */
   allowBundled?: string[];
   load?: SkillsLoadConfig;

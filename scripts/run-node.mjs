@@ -231,7 +231,13 @@ export async function runNodeMain(params = {}) {
     const scriptDir = path.dirname(new URL(import.meta.url).pathname);
     const repoRoot = path.dirname(scriptDir);
     const skillsDir = path.join(repoRoot, "skills");
-    deps.env.OPENCLAW_BUNDLED_SKILLS_DIR = skillsDir;
+    try {
+      if (fs.statSync(skillsDir).isDirectory()) {
+        deps.env.OPENCLAW_BUNDLED_SKILLS_DIR = skillsDir;
+      }
+    } catch {
+      // skills/ doesn't exist at this path — let fallback resolution handle it
+    }
   }
 
   if (!shouldBuild(deps)) {

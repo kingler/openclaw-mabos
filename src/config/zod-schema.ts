@@ -587,6 +587,7 @@ export const OpenClawSchema = z
     memory: MemorySchema,
     skills: z
       .object({
+        bundledDir: z.string().optional(),
         allowBundled: z.array(z.string()).optional(),
         load: z
           .object({
