@@ -192,6 +192,11 @@ export function createCapabilitiesSyncTools(
         "Regenerate Capabilities.md from registered MABOS tools and OpenClaw skills. Preserves custom sections (Constraints, Notes, etc.).",
       parameters: CapabilitiesSyncParams,
       async execute(_id: string, params: Static<typeof CapabilitiesSyncParams>) {
+        if (!/^[a-zA-Z0-9_-]+$/.test(params.agent_id)) {
+          return textResult(
+            `Error: invalid agent_id '${params.agent_id}'. Must be alphanumeric, hyphens, and underscores only.`,
+          );
+        }
         const ws = resolveWorkspaceDir(api);
         const agentDirPath = join(ws, "agents", params.agent_id);
         const capPath = join(agentDirPath, "Capabilities.md");

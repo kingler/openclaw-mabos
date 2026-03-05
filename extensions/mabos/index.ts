@@ -3,7 +3,7 @@
  * Bundled Extension Entry Point (Deep Integration)
  *
  * Registers:
- *  - 99 tools across 21 modules
+ *  - 100 tools across 21 modules
  *  - BDI background heartbeat service
  *  - CLI subcommands (onboard, agents, bdi, business, dashboard)
  *  - Unified memory bridge to native memory system
@@ -120,7 +120,9 @@ export default function register(api: OpenClawPluginApi) {
   }
 
   // Register capabilities_sync with knowledge of all registered tools
-  const capSyncTools = createCapabilitiesSyncTools(api, { registeredToolNames });
+  const capSyncTools = createCapabilitiesSyncTools(api, {
+    registeredToolNames: [...registeredToolNames], // snapshot, not live reference
+  });
   for (const tool of capSyncTools) {
     registeredToolNames.push(tool.name);
     api.registerTool(tool);
