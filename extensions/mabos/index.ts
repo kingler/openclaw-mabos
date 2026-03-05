@@ -3,7 +3,7 @@
  * Bundled Extension Entry Point (Deep Integration)
  *
  * Registers:
- *  - 100 tools across 21 modules
+ *  - 99 tools across 21 modules
  *  - BDI background heartbeat service
  *  - CLI subcommands (onboard, agents, bdi, business, dashboard)
  *  - Unified memory bridge to native memory system
@@ -114,18 +114,18 @@ export default function register(api: OpenClawPluginApi) {
   for (const factory of factories) {
     const tools = factory(api);
     for (const tool of tools) {
-      registeredToolNames.push(tool.name);
       api.registerTool(tool);
+      registeredToolNames.push(tool.name);
     }
   }
 
-  // Register capabilities_sync with knowledge of all registered tools
+  // ── 1b. Capabilities Sync Tool ────────────────────────────────
   const capSyncTools = createCapabilitiesSyncTools(api, {
-    registeredToolNames: [...registeredToolNames], // snapshot, not live reference
+    registeredToolNames: [...registeredToolNames],
   });
   for (const tool of capSyncTools) {
-    registeredToolNames.push(tool.name);
     api.registerTool(tool);
+    registeredToolNames.push(tool.name);
   }
 
   // ── 2. BDI Background Service ─────────────────────────────────
@@ -281,6 +281,43 @@ export default function register(api: OpenClawPluginApi) {
 
   // ── 2b. Cron Bridge Service ──────────────────────────────────
   api.registerService(createCronBridgeService(api));
+
+  // ── 2c. Capabilities Auto-Sync Service ──────────────────────
+  api.registerService({
+    id: "capabilities-auto-sync",
+    start: async () => {
+      // Fire-and-forget — don't block gateway startup
+      void (async () => {
+        try {
+          const { readdir } = await import("node:fs/promises");
+          const { join } = await import("node:path");
+
+          const agentsDir = join(workspaceDir, "agents");
+          const entries = await readdir(agentsDir, { withFileTypes: true });
+          const agentIds = entries.filter((d) => d.isDirectory()).map((d) => d.name);
+
+          const syncTool = capSyncTools.find((t) => t.name === "capabilities_sync");
+          if (!syncTool) {
+            log.debug("capabilities_sync tool not found, skipping auto-sync");
+            return;
+          }
+
+          let synced = 0;
+          for (const agentId of agentIds) {
+            try {
+              await syncTool.execute(`startup-sync-${agentId}`, { agent_id: agentId });
+              synced++;
+            } catch (err) {
+              log.debug(`Capabilities sync skipped for ${agentId}: ${err}`);
+            }
+          }
+          log.info(`Capabilities.md synced for ${synced}/${agentIds.length} agents on startup.`);
+        } catch (err) {
+          log.debug(`Agent capabilities auto-sync skipped: ${err}`);
+        }
+      })();
+    },
+  });
 
   // ── 3. CLI Subcommands ────────────────────────────────────────
   api.registerCli(
