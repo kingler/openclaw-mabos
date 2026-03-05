@@ -502,10 +502,17 @@ export function createPluginRegistry(registryParams: PluginRegistryParams) {
       getSkillSnapshot: (opts) => {
         const workspaceDir =
           opts?.workspaceDir ?? params.config?.agents?.defaults?.workspace ?? process.cwd();
-        return buildWorkspaceSkillSnapshot(workspaceDir, {
-          config: params.config,
-          skillFilter: opts?.skillFilter,
-        });
+        try {
+          return buildWorkspaceSkillSnapshot(workspaceDir, {
+            config: params.config,
+            skillFilter: opts?.skillFilter,
+          });
+        } catch (err) {
+          normalizeLogger(registryParams.logger).warn(
+            `getSkillSnapshot failed for ${workspaceDir}: ${err instanceof Error ? err.message : String(err)}`,
+          );
+          return { prompt: "", skills: [] };
+        }
       },
       on: (hookName, handler, opts) => registerTypedHook(record, hookName, handler, opts),
     };
