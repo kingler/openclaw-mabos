@@ -127,9 +127,9 @@
       "sbvr:vocabulary": "ecommerce"
     },
     {
-      "@id": "ecom:Return",
+      "@id": "ecom:OrderReturn",
       "@type": "owl:Class",
-      "rdfs:label": "Return/Refund",
+      "rdfs:label": "Order Return",
       "rdfs:comment": "A customer-initiated return or refund with reason and resolution",
       "sbvr:conceptType": "NounConcept",
       "sbvr:designation": "return/refund",

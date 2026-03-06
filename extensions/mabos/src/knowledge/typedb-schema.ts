@@ -50,9 +50,46 @@ function toSnakeCase(name: string): string {
     .toLowerCase();
 }
 
+/** TypeQL reserved keywords that cannot be used as identifiers */
+const TYPEQL_RESERVED = new Set([
+  "define",
+  "undefine",
+  "match",
+  "insert",
+  "delete",
+  "fetch",
+  "get",
+  "aggregate",
+  "group",
+  "sort",
+  "offset",
+  "limit",
+  "rule",
+  "when",
+  "then",
+  "type",
+  "sub",
+  "abstract",
+  "owns",
+  "relates",
+  "plays",
+  "value",
+  "is",
+  "isa",
+  "has",
+  "not",
+  "or",
+  "in",
+  "contains",
+  "like",
+  "return",
+]);
+
 /** Build a TypeQL-safe name from an ontology @id */
 function typeqlName(id: string): string {
-  return toSnakeCase(stripPrefix(id));
+  const name = toSnakeCase(stripPrefix(id));
+  if (TYPEQL_RESERVED.has(name)) return `${name}_entity`;
+  return name;
 }
 
 // ── XSD → TypeQL Value Type Mapping ─────────────────────────────────────
