@@ -45,6 +45,7 @@ function stripPrefix(id: string): string {
 /** Convert camelCase/PascalCase to snake_case */
 function toSnakeCase(name: string): string {
   return name
+    .replace(/\s+/g, "_")
     .replace(/([a-z0-9])([A-Z])/g, "$1_$2")
     .replace(/([A-Z])([A-Z][a-z])/g, "$1_$2")
     .toLowerCase();
@@ -83,7 +84,15 @@ const TYPEQL_RESERVED = new Set([
   "contains",
   "like",
   "return",
+  "role",
+  "thing",
+  "entity",
+  "relation",
+  "attribute",
 ]);
+
+/** TypeQL primitive value types that cannot play roles */
+const TYPEQL_PRIMITIVES = new Set(["string", "integer", "long", "double", "boolean", "datetime"]);
 
 /** Build a TypeQL-safe name from an ontology @id */
 function typeqlName(id: string): string {
@@ -211,11 +220,73 @@ export function jsonldToTypeQL(graph: MergedGraph): TypeQLSchema {
 /**
  * Concatenate schema definitions into a single TypeQL `define` block.
  */
-export function generateDefineQuery(schema: TypeQLSchema): string {
+/** Extract attribute names from a TypeQL define block */
+function extractBaseSchemaAttrs(baseSchema: string): Set<string> {
+  const attrs = new Set<string>();
+  const re = /attribute\s+([a-z_][a-z0-9_]*)/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(baseSchema)) !== null) {
+    attrs.add(m[1]);
+  }
+  return attrs;
+}
+
+/**
+ * Resolve name collisions: TypeQL requires unique labels across all type kinds.
+ * Returns a renaming map (oldName -> newName) for entities and relations that
+ * collide with attribute names (from ontology or base schema).
+ */
+function resolveCollisions(
+  schema: TypeQLSchema,
+  baseSchemaAttrs?: Set<string>,
+): Map<string, string> {
+  const attrNames = new Set(schema.attributes.map((a) => a.name));
+  // Also include base schema attribute names to avoid cross-schema collisions
+  if (baseSchemaAttrs) {
+    for (const n of baseSchemaAttrs) attrNames.add(n);
+  }
+
+  const renames = new Map<string, string>();
+  const allUsed = new Set(attrNames);
+
+  for (const ent of schema.entities) {
+    if (allUsed.has(ent.name)) {
+      const newName = `${ent.name}_type`;
+      renames.set(ent.name, newName);
+      allUsed.add(newName);
+    } else {
+      allUsed.add(ent.name);
+    }
+  }
+
+  for (const rel of schema.relations) {
+    if (allUsed.has(rel.name)) {
+      const newName = `${rel.name}_rel`;
+      renames.set(rel.name, newName);
+      allUsed.add(newName);
+    } else {
+      allUsed.add(rel.name);
+    }
+  }
+
+  return renames;
+}
+
+/** Apply rename map to a name */
+function renamed(name: string, renames: Map<string, string>): string {
+  return renames.get(name) ?? name;
+}
+
+export function generateDefineQuery(schema: TypeQLSchema, baseSchema?: string): string {
+  const baseAttrs = baseSchema ? extractBaseSchemaAttrs(baseSchema) : undefined;
+  const renames = resolveCollisions(schema, baseAttrs);
   const lines: string[] = ["define"];
 
   // Attributes — TypeQL 3.x: `attribute <name>, value <type>;`
+  // Skip attributes already defined in base schema to avoid type conflicts
+  const baseAttrsToSkip = baseAttrs ?? new Set<string>();
   for (const attr of schema.attributes) {
+    if (baseAttrsToSkip.has(attr.name)) continue;
     lines.push(`  attribute ${attr.name}, value ${attr.valueType};`);
   }
 
@@ -224,10 +295,43 @@ export function generateDefineQuery(schema: TypeQLSchema): string {
   }
 
   // Entities — TypeQL 3.x: `entity <name> ...;` (use `sub` only for subtypes)
+  // Extract base schema entity names — skip them entirely (already defined)
+  const baseEntityNames = new Set<string>();
+  if (baseSchema) {
+    const entityRe = /entity\s+([a-z_][a-z0-9_]*)/g;
+    let em: RegExpExecArray | null;
+    while ((em = entityRe.exec(baseSchema)) !== null) {
+      baseEntityNames.add(em[1]);
+    }
+  }
+  const allEntityNames = new Set(schema.entities.map((e) => renamed(e.name, renames)));
+  for (const n of baseEntityNames) allEntityNames.add(n);
+
+  // Also extract base schema relation names to skip
+  const baseRelNames = new Set<string>();
+  if (baseSchema) {
+    const relRe = /relation\s+([a-z_][a-z0-9_]*)/g;
+    let rm: RegExpExecArray | null;
+    while ((rm = relRe.exec(baseSchema)) !== null) {
+      baseRelNames.add(rm[1]);
+    }
+  }
+
   for (const ent of schema.entities) {
-    const subClause = ent.parent ? ` sub ${ent.parent}` : "";
-    const ownsClause = ent.owns.length > 0 ? `,\n    owns ${ent.owns.join(",\n    owns ")}` : "";
-    lines.push(`  entity ${ent.name}${subClause}${ownsClause};`);
+    const name = renamed(ent.name, renames);
+    // Skip entities already defined in the base schema
+    if (baseEntityNames.has(name)) continue;
+    const parent = ent.parent ? renamed(ent.parent, renames) : undefined;
+    // Skip sub clause if parent is self-reference or not defined in any schema
+    const validParent =
+      parent && parent !== name && allEntityNames.has(parent) ? parent : undefined;
+    // Also skip sub clause if parent is a base schema entity (can't add sub to existing types)
+    const safeParent = validParent && !baseEntityNames.has(validParent) ? validParent : undefined;
+    const subClause = safeParent ? ` sub ${safeParent}` : "";
+    // Skip owns for base-schema-only attrs
+    const validOwns = ent.owns.filter((a) => !baseAttrsToSkip.has(a));
+    const ownsClause = validOwns.length > 0 ? `,\n    owns ${validOwns.join(",\n    owns ")}` : "";
+    lines.push(`  entity ${name}${subClause}${ownsClause};`);
   }
 
   if (schema.entities.length > 0 && schema.relations.length > 0) {
@@ -236,12 +340,20 @@ export function generateDefineQuery(schema: TypeQLSchema): string {
 
   // Relations — TypeQL 3.x: `relation <name>, relates ...;`
   for (const rel of schema.relations) {
+    const relName = renamed(rel.name, renames);
+    // Skip relations already in base schema
+    if (baseRelNames.has(relName)) continue;
     const rolesClauses = rel.roles.map((r) => `relates ${r.roleName}`).join(",\n    ");
-    lines.push(`  relation ${rel.name},\n    ${rolesClauses};`);
+    lines.push(`  relation ${relName},\n    ${rolesClauses};`);
 
     // Add role-playing declarations for entities
+    // Skip primitive types, undefined entities, and base schema entities (already configured)
     for (const role of rel.roles) {
-      lines.push(`  ${role.playerEntity} plays ${rel.name}:${role.roleName};`);
+      const playerName = renamed(role.playerEntity, renames);
+      if (TYPEQL_PRIMITIVES.has(playerName)) continue;
+      if (!allEntityNames.has(playerName)) continue;
+      if (baseEntityNames.has(playerName)) continue;
+      lines.push(`  ${playerName} plays ${relName}:${role.roleName};`);
     }
   }
 

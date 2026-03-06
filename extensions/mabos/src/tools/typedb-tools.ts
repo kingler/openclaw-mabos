@@ -110,7 +110,7 @@ TypeDB is available. Knowledge operations use dual-layer storage (TypeDB + JSON)
             const ontologies = loadOntologies();
             const graph = mergeOntologies(ontologies);
             const schema = jsonldToTypeQL(graph);
-            const typeql = generateDefineQuery(schema);
+            const typeql = generateDefineQuery(schema, getBaseSchema());
             await client.defineSchema(typeql, dbName);
             ontologyStats = `${schema.entities.length} entities, ${schema.attributes.length} attributes, ${schema.relations.length} relations`;
           } catch (e) {
