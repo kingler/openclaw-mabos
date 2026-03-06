@@ -3,7 +3,7 @@
  * Bundled Extension Entry Point (Deep Integration)
  *
  * Registers:
- *  - 99 tools across 21 modules
+ *  - 100+ tools across 21 modules
  *  - BDI background heartbeat service
  *  - CLI subcommands (onboard, agents, bdi, business, dashboard)
  *  - Unified memory bridge to native memory system
@@ -21,6 +21,7 @@ import { createApprovalTools } from "./src/tools/approval-tools.js";
 import { createBdiTools } from "./src/tools/bdi-tools.js";
 import { createBpmnMigrateTools } from "./src/tools/bpmn-migrate.js";
 import { createBusinessTools } from "./src/tools/business-tools.js";
+import { createCapabilitiesSyncTools, categorize } from "./src/tools/capabilities-sync.js";
 import { createCbrTools } from "./src/tools/cbr-tools.js";
 import { createCloudflareTools } from "./src/tools/cloudflare-tools.js";
 import { resolveWorkspaceDir, getPluginConfig, generatePrefixedId } from "./src/tools/common.js";
@@ -111,16 +112,22 @@ export default function register(api: OpenClawPluginApi) {
     createApprovalTools,
   ];
 
-  const registeredToolNames: Array<{ name: string; description: string }> = [];
+  const registeredToolNames: string[] = [];
   for (const factory of factories) {
     const tools = factory(api);
     for (const tool of tools) {
       api.registerTool(tool);
-      registeredToolNames.push({
-        name: tool.name,
-        description: (tool as any).description ?? "",
-      });
+      registeredToolNames.push(tool.name);
     }
+  }
+
+  // Register capabilities_sync with knowledge of all registered tools
+  const capSyncTools = createCapabilitiesSyncTools(api, {
+    registeredToolNames: [...registeredToolNames], // snapshot, not live reference
+  });
+  for (const tool of capSyncTools) {
+    registeredToolNames.push(tool.name);
+    api.registerTool(tool);
   }
 
   // ── 2. BDI Background Service ─────────────────────────────────
@@ -281,62 +288,32 @@ export default function register(api: OpenClawPluginApi) {
   api.registerService({
     id: "capabilities-auto-sync",
     start: async () => {
-      // Non-blocking: fire-and-forget so gateway startup is not delayed
       void (async () => {
-        const { readdir, writeFile, readFile } = await import("node:fs/promises");
-        const { join } = await import("node:path");
-
-        const agentsDir = join(workspaceDir, "agents");
         try {
+          const { readdir } = await import("node:fs/promises");
+          const { join } = await import("node:path");
+          const agentsDir = join(workspaceDir, "agents");
           const entries = await readdir(agentsDir, { withFileTypes: true });
           const agentIds = entries.filter((d) => d.isDirectory()).map((d) => d.name);
 
-          // Build the tool listing section from registered MABOS tools
-          const toolLines = registeredToolNames
-            .map((t) => `- \`${t.name}\` — ${t.description || "(no description)"}`)
-            .join("\n");
+          const syncTool = capSyncTools.find((t) => t.name === "capabilities_sync");
+          if (!syncTool) {
+            log.debug("capabilities_sync tool not found, skipping auto-sync");
+            return;
+          }
 
           let synced = 0;
           for (const agentId of agentIds) {
             try {
-              const agentDir = join(agentsDir, agentId);
-
-              // Preserve any hand-crafted sections (Constraints, Delegated Capabilities, etc.)
-              let existingSections = "";
-              try {
-                const existing = await readFile(join(agentDir, "Capabilities.md"), "utf-8");
-                // Extract sections after the auto-generated tools block
-                const customMarker = "## Agent-Specific";
-                const customIdx = existing.indexOf(customMarker);
-                if (customIdx >= 0) {
-                  existingSections = "\n" + existing.slice(customIdx);
-                }
-              } catch {
-                // No existing file — that's fine
-              }
-
-              const now = new Date().toISOString();
-              const content = `# Capabilities — ${agentId}
-
-> Auto-synced on ${now}
-
-## MABOS Tools (${registeredToolNames.length} registered)
-
-${toolLines}
-${existingSections}
-`;
-
-              await writeFile(join(agentDir, "Capabilities.md"), content, "utf-8");
+              await syncTool.execute(`startup-sync-${agentId}`, { agent_id: agentId });
               synced++;
             } catch (err) {
-              log.debug?.(`Capabilities sync skipped for ${agentId}: ${err}`);
+              log.debug(`Capabilities sync skipped for ${agentId}: ${err}`);
             }
           }
-          log.info(
-            `[mabos] Capabilities.md synced for ${synced}/${agentIds.length} agents on startup.`,
-          );
+          log.info(`Capabilities.md synced for ${synced}/${agentIds.length} agents on startup.`);
         } catch (err) {
-          log.debug?.(`[mabos] Agent capabilities auto-sync skipped: ${err}`);
+          log.debug(`Agent capabilities auto-sync skipped: ${err}`);
         }
       })();
     },
@@ -565,56 +542,42 @@ ${existingSections}
     handler: async (req, res) => {
       if (!(await requireAuth(req, res))) return;
 
-      // Category mapping: derive category from tool name prefix
-      function categoriseTool(name: string): string {
-        if (/^(bdi_|belief_|goal_|intention_|skill_)/.test(name)) return "BDI Cognitive";
-        if (/^(fact_|knowledge_|ontology_|rule_|inference_|reason)/.test(name))
-          return "Reasoning & Knowledge";
-        if (/^(business_|crm_|workflow_|bpmn_|approval_|decision_)/.test(name))
-          return "Business Operations";
-        if (/^(memory_|cbr_|planning_)/.test(name)) return "Memory & Planning";
-        if (/^(communication_|email_|sendgrid_|twilio_|seo_|marketing_)/.test(name))
-          return "Communication & Marketing";
-        if (/^(integration_|cloudflare_|godaddy_|shopify_|pictorem_)/.test(name))
-          return "Integrations";
-        if (/^(metrics_|reporting_|analytics_)/.test(name)) return "Metrics & Reporting";
-        if (/^(agent_|stakeholder_|workforce_|onboard)/.test(name)) return "Agent Management";
-        if (/^(setup_|typedb_|desire_)/.test(name)) return "System & Configuration";
-        return "General";
-      }
-
-      // Build MABOS tools list from registered tools
-      const mabosTools = registeredToolNames.map((t) => ({
-        name: t.name,
-        description: t.description,
-        source: "mabos" as const,
-        category: categoriseTool(t.name),
-      }));
-
-      // Build OpenClaw skills list
-      let openclawSkills: Array<{ name: string; source: "openclaw"; primaryEnv?: string }> = [];
       try {
-        const snapshot = api.getSkillSnapshot?.();
-        if (snapshot?.skills) {
-          openclawSkills = snapshot.skills.map((s: any) => ({
-            name: s.name,
-            source: "openclaw" as const,
-            ...(s.primaryEnv ? { primaryEnv: s.primaryEnv } : {}),
+        const INTERNAL_TOOLS = new Set(["capabilities_sync"]);
+        const mabosTools = registeredToolNames
+          .filter((name) => !INTERNAL_TOOLS.has(name))
+          .map((name) => ({
+            name,
+            source: "mabos" as const,
+            category: categorize(name),
           }));
+
+        let openclawSkills: Array<{ name: string; primaryEnv?: string; source: string }> = [];
+        try {
+          const snapshot = api.getSkillSnapshot({ workspaceDir });
+          openclawSkills = (snapshot.skills ?? []).map((s: any) => ({
+            name: s.name,
+            primaryEnv: s.primaryEnv,
+            source: "openclaw",
+          }));
+        } catch {
+          // getSkillSnapshot unavailable — non-critical
         }
+
+        res.setHeader("Content-Type", "application/json");
+        res.end(
+          JSON.stringify({
+            mabosTools,
+            openclawSkills,
+            totalCount: mabosTools.length + openclawSkills.length,
+            generatedAt: new Date().toISOString(),
+          }),
+        );
       } catch (err) {
-        log.debug(`[mabos] getSkillSnapshot failed: ${err}`);
+        res.statusCode = 500;
+        res.setHeader("Content-Type", "application/json");
+        res.end(JSON.stringify({ error: String(err) }));
       }
-
-      const payload = {
-        mabosTools,
-        openclawSkills,
-        totalCount: mabosTools.length + openclawSkills.length,
-        generatedAt: new Date().toISOString(),
-      };
-
-      res.setHeader("Content-Type", "application/json");
-      res.end(JSON.stringify(payload));
     },
   });
 
