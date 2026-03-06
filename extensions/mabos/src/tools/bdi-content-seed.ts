@@ -357,30 +357,43 @@ const beliefs: Record<AgentId, string> = {
 
   "fulfillment-mgr": `# Beliefs — Fulfillment Manager
 
-## Fulfillment Pipeline
-- **Stage 1:** Order received → validated → payment confirmed
-- **Stage 2:** Print job queued → assigned to print partner
-- **Stage 3:** Printed → quality check → approved
-- **Stage 4:** Packaged → shipping label → carrier pickup
-- **Stage 5:** In transit → delivered → confirmation sent
+## Fulfillment Pipeline (Pictorem CDP Automation)
+- **Stage 1:** Shopify order paid → webhook → Payment Bridge (port 3001)
+- **Stage 2:** Bridge looks up print-ready image from PostgreSQL media_assets
+- **Stage 3:** If image found → download/locate → submit to Pictorem via CDP browser automation
+- **Stage 4:** Pictorem processes order (Image Amplify + Expert Retouch + varnish)
+- **Stage 5:** Pictorem ships direct to customer; bridge records result in fulfillment-queue JSON
+
+## Status States
+| Status | Meaning |
+|--------|---------|
+| pending_fulfillment | Queued, awaiting Pictorem submission |
+| submitted_to_pictorem | Successfully submitted via CDP |
+| image_download_failed | Print-ready image could not be fetched |
+| automation_error | CDP automation hit an error |
+| automation_partial | Some CDP steps completed, unclear final state |
+| submission_failed | Pictorem submission threw an exception |
+| blocked_no_print_image | No print-ready original in database |
 
 ## Performance Targets
-- Order-to-ship: < 48 hours (standard), < 24 hours (express)
-- Shipping transit: 3-5 days domestic, 7-14 days international
-- Damage rate: < 1% of shipments
-- On-time delivery: > 95%
+- Auto-fulfillment rate: > 95% of paid orders
+- Error rate: < 5% of pipeline items
+- Retry-to-resolution: < 20 minutes
+- Bridge uptime: > 99%
 
 ## Current State
-- Fulfillment partners being onboarded
-- Automated order routing in development
-- Tracking integration with major carriers (USPS, UPS, FedEx)
-- Customer notification pipeline: order confirmed → shipped → delivered
+- Pictorem is the sole print partner (CDP automation, not API)
+- Payment Bridge runs on VPS port 3001 as a standalone Express service
+- MABOS agents access the bridge via 5 pictorem_* tools (HTTP to localhost:3001/api/*)
+- Fulfillment queue stored as JSON files in data/fulfillment-queue/
+- Edition numbers tracked via Shopify metafields
+- Business card auto-charged via Stripe for Pictorem costs
 
 ## Constraints
-- Weekend/holiday processing delays
-- Custom orders require manual QC step
-- Returns must be processed within 5 business days
-- Fragile items require specialized packaging
+- CDP automation is brittle — Chrome/Pictorem UI changes can break it
+- One order at a time (browser automation is sequential)
+- No Pictorem API — all interaction via browser
+- Bridge must be restarted to pick up .env changes
 `,
 
   "product-mgr": `# Beliefs — Product Manager
@@ -756,15 +769,23 @@ function generateGoals(agentId: AgentId): string {
 - **Target:** 500 designs across 6 style categories
 - **Dependencies:** Creative Director (design curation), Product Manager (catalog structure)`,
 
-    "fulfillment-mgr": `### G-FUL-1: Achieve < 48 hour order-to-ship time
-- **KPI:** Average processing time
-- **Target:** < 48 hours for 95% of orders
-- **Dependencies:** Inventory Manager (print partners), CTO (order routing automation)
+    "fulfillment-mgr": `### G-FUL-1: Achieve > 95% auto-fulfillment rate
+- **KPI:** submitted_to_pictorem / total orders
+- **Target:** > 95%
+- **Measurement:** \`pictorem_pipeline_stats\` → error_rate < 0.05
+- **Dependencies:** CTO (bridge stability), Inventory Manager (print-ready images)
 
-### G-FUL-2: Maintain < 1% damage rate
-- **KPI:** Damaged shipment percentage
-- **Target:** < 1% of total shipments
-- **Dependencies:** Inventory Manager (packaging standards)`,
+### G-FUL-2: Maintain < 5% pipeline error rate
+- **KPI:** Error items / total items
+- **Target:** < 5%
+- **Measurement:** \`pictorem_pipeline_stats\` → error_rate
+- **Dependencies:** CTO (CDP automation reliability)
+
+### G-FUL-3: Resolve failures within 20 minutes
+- **KPI:** Time from error to successful retry
+- **Target:** < 20 minutes for retryable errors
+- **Measurement:** retried_at - created_at on queue items
+- **Dependencies:** Fulfillment Manager (monitoring), CTO (fix automation bugs)`,
 
     "product-mgr": `### G-PM-1: Launch Signature Collection
 - **KPI:** Collection live with 50+ pieces
@@ -1068,19 +1089,21 @@ _None currently._
 
 ## Active Intentions
 
-### INT-FUL-1: Set up fulfillment workflow
+### INT-FUL-1: Operate Pictorem fulfillment pipeline
 - **Goal:** G-FUL-1
 - **Plan:** P-FUL-1
 - **Status:** active
-- **Adopted:** 2026-02-17
-- **Reason:** Core operational flow must be established
+- **Adopted:** 2026-03-04
+- **Reason:** Pipeline is live — must monitor and maintain > 95% auto-fulfillment
+- **Tools:** pictorem_pipeline_stats, pictorem_queue_list, pictorem_order_status
 
-### INT-FUL-2: Implement packaging standards
-- **Goal:** G-FUL-2
+### INT-FUL-2: Minimize pipeline failures
+- **Goal:** G-FUL-2, G-FUL-3
 - **Plan:** P-FUL-2
 - **Status:** active
-- **Adopted:** 2026-02-18
-- **Reason:** Damage prevention is critical for customer satisfaction
+- **Adopted:** 2026-03-04
+- **Reason:** Errors degrade customer experience; retries must be fast
+- **Tools:** pictorem_retry_fulfillment, pictorem_order_status
 
 ## Suspended Intentions
 
@@ -1531,28 +1554,29 @@ function generatePlans(agentId: AgentId): string {
 
 ## Active Plans
 
-### P-FUL-1: Fulfillment Pipeline Implementation
+### P-FUL-1: Pipeline Monitoring & Maintenance
 - **Intention:** INT-FUL-1
-- **Status:** in_progress
-- **Started:** 2026-02-17
+- **Status:** active
+- **Started:** 2026-03-04
 
-#### Steps
-1. [pending] Map end-to-end fulfillment workflow
-2. [pending] Integrate with print partner order API
-3. [pending] Set up shipping carrier integrations (USPS, UPS, FedEx)
-4. [pending] Implement automated tracking updates to customers
-5. [pending] Test with 10 sample orders
+#### Steps (recurring)
+1. Run \`pictorem_pipeline_stats\` — check error_rate and by_status breakdown
+2. If error_rate > 5%: investigate with \`pictorem_queue_list\` (status filter)
+3. Review any blocked_no_print_image items — escalate to stakeholder
+4. Verify bridge uptime is healthy (> 99%)
+5. Generate daily summary for COO
 
-### P-FUL-2: Packaging Standards
+### P-FUL-2: Error Recovery
 - **Intention:** INT-FUL-2
-- **Status:** in_progress
-- **Started:** 2026-02-18
+- **Status:** active
+- **Started:** 2026-03-04
 
-#### Steps
-1. [pending] Define packaging requirements by product type and size
-2. [pending] Source packaging materials vendors
-3. [pending] Create packaging QC checklist
-4. [pending] Train print partners on VividWalls packaging standards
+#### Steps (per-error)
+1. Identify failed items: \`pictorem_queue_list\` with status=automation_error (etc.)
+2. Check specific order: \`pictorem_order_status\` for details
+3. If retryable (< 3 retries): \`pictorem_retry_fulfillment\`
+4. If retry fails or max retries: escalate to CTO with error details
+5. If blocked_no_print_image: notify stakeholder to upload print file
 `,
     "product-mgr": `# Plans — Product Manager
 
@@ -1995,18 +2019,31 @@ function generateKnowledge(agentId: AgentId): string {
 `,
     "fulfillment-mgr": `# Knowledge — Fulfillment Manager
 
-## Domain Expertise
-- **Order Fulfillment:** End-to-end pipeline management, carrier integration
-- **Shipping Logistics:** Carrier selection, rate optimization, tracking
-- **Quality Control:** Packaging standards, damage prevention, inspection
+## Tools Reference
+| Tool | Purpose | When to Use |
+|------|---------|-------------|
+| pictorem_pipeline_stats | Dashboard: counts, error rate, uptime | Daily health check, reporting |
+| pictorem_queue_list | List/filter queue items by status | Investigating issues, auditing |
+| pictorem_order_status | Detailed status for one order | Customer inquiry, debugging |
+| pictorem_retry_fulfillment | Retry failed items | After transient errors |
+| pictorem_trigger_fulfillment | Manual trigger for an order | Re-run missed orders |
+
+## Error Triage Matrix
+| Error Status | Likely Cause | Action |
+|-------------|-------------|--------|
+| image_download_failed | Image URL expired or unreachable | Retry (often transient) |
+| automation_error | Pictorem UI changed or CDP crash | Retry once, then escalate to CTO |
+| automation_partial | CDP completed some steps but not all | Check order on Pictorem manually |
+| submission_failed | Network/timeout during submission | Retry (usually transient) |
+| blocked_no_print_image | No print-ready file in database | Notify stakeholder to upload |
 
 ## Key Metrics
-| Metric | Target |
-|--------|--------|
-| Order-to-Ship | < 48 hours |
-| On-Time Delivery | > 95% |
-| Damage Rate | < 1% |
-| Return Processing | < 5 days |
+| Metric | Target | Tool |
+|--------|--------|------|
+| Auto-fulfillment Rate | > 95% | pictorem_pipeline_stats |
+| Error Rate | < 5% | pictorem_pipeline_stats |
+| Retry Resolution | < 20 min | pictorem_order_status |
+| Bridge Uptime | > 99% | pictorem_pipeline_stats |
 `,
     "product-mgr": `# Knowledge — Product Manager
 
@@ -2330,23 +2367,35 @@ function generatePlaybooks(agentId: AgentId): string {
 `,
     "fulfillment-mgr": `# Playbooks — Fulfillment Manager
 
-## PB-FUL-1: Order Fulfillment
-**Trigger:** New order confirmed
-1. Validate order details and payment
-2. Route to print partner via API
-3. Monitor production status
-4. Quality check confirmation from partner
-5. Generate shipping label
-6. Send tracking notification to customer
-7. Monitor delivery and confirm receipt
+## PB-FUL-1: Daily Pipeline Health Check
+**Trigger:** Daily (morning) or on-demand
+1. Run \`pictorem_pipeline_stats\`
+2. Check error_rate — if > 5%, proceed to PB-FUL-2
+3. Check by_status for any blocked_no_print_image items → notify stakeholder
+4. Verify bridge uptime looks healthy
+5. Summarize status for COO: total orders, success rate, any issues
 
-## PB-FUL-2: Damaged Shipment Resolution
-**Trigger:** Customer reports damaged item
-1. Assess damage via customer photo
-2. If confirmed: approve replacement
-3. Ship replacement within 48 hours
-4. Log damage incident for supplier review
-5. If pattern detected: escalate to Inventory Manager
+## PB-FUL-2: Error Recovery
+**Trigger:** Error rate > 5% or specific order failure reported
+1. Run \`pictorem_queue_list\` with status filter for error statuses
+2. For each failed item: \`pictorem_order_status\` to get details
+3. If retryable and retry_count < 3: \`pictorem_retry_fulfillment\`
+4. Wait 2-3 minutes, then check \`pictorem_order_status\` again
+5. If still failing after 3 retries: escalate to CTO with full error details
+
+## PB-FUL-3: New Order Verification
+**Trigger:** After a new order is placed (ad-hoc check)
+1. \`pictorem_order_status\` with the order number
+2. If status is submitted_to_pictorem: all good
+3. If status is an error: run PB-FUL-2
+4. If no items found: \`pictorem_trigger_fulfillment\` to manually trigger
+
+## PB-FUL-4: Weekly Report
+**Trigger:** Weekly (Friday)
+1. Run \`pictorem_pipeline_stats\` for totals
+2. Run \`pictorem_queue_list\` with limit=100 for recent activity
+3. Calculate: success rate, avg retry count, common error types
+4. Format report for COO and stakeholder
 `,
     "product-mgr": `# Playbooks — Product Manager
 
@@ -2531,30 +2580,33 @@ function main() {
 
 ## Terminal Desires
 
-### D-001: Delivery Excellence
-- **Description:** Every order delivered on time, undamaged, and as expected
+### D-001: Pipeline Reliability
+- **Description:** Every paid order auto-fulfilled through Pictorem without manual intervention
 - **Type:** maintain
-- **Priority Score:** 0.92
-- **Generates Goals:** On-time delivery, damage prevention, accuracy
+- **Priority Score:** 0.95
+- **Generates Goals:** G-FUL-1 (auto-fulfillment rate), G-FUL-2 (error rate)
+- **Tools:** pictorem_pipeline_stats, pictorem_queue_list
 
 ### D-002: Fulfillment Speed
-- **Description:** Minimize time from order to customer receipt
+- **Description:** Minimize time from Shopify payment to Pictorem submission
 - **Type:** optimize
-- **Priority Score:** 0.86
-- **Generates Goals:** Processing time reduction, carrier optimization
+- **Priority Score:** 0.85
+- **Generates Goals:** G-FUL-3 (retry resolution time)
+- **Tools:** pictorem_order_status, pictorem_retry_fulfillment
 
 ## Instrumental Desires
 
-### D-010: Process Automation
+### D-010: Error Recovery Mastery
 - **Serves:** D-001, D-002
-- **Description:** Automate fulfillment pipeline to reduce errors and speed
+- **Description:** Quickly identify, retry, and resolve pipeline failures
 - **Type:** optimize
-- **Priority Score:** 0.68
+- **Priority Score:** 0.78
+- **Tools:** pictorem_retry_fulfillment, pictorem_trigger_fulfillment
 
 ## Desire Hierarchy
-1. D-001: Delivery Excellence — 0.92
-2. D-002: Fulfillment Speed — 0.86
-3. D-010: Process Automation — 0.68
+1. D-001: Pipeline Reliability — 0.95
+2. D-002: Fulfillment Speed — 0.85
+3. D-010: Error Recovery Mastery — 0.78
 `,
           "product-mgr": `# Desires — Product Manager (VividWalls)
 
