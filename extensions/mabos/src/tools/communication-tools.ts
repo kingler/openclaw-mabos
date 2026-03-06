@@ -342,5 +342,118 @@ ${hasCostOverThreshold ? `⚠️ Cost exceeds approval threshold ($${threshold})
 - Approach: ${winningProposal?.approach?.slice(0, 100)}`);
       },
     },
+
+    {
+      name: "inbox_read",
+      label: "Read Agent Inbox",
+      description:
+        "Read messages from an agent inbox. Supports filtering by unread status, performative type, and sender. Results sorted by priority (urgent first).",
+      parameters: Type.Object({
+        agent_id: Type.String({ description: "Agent ID whose inbox to read" }),
+        unread_only: Type.Optional(
+          Type.Boolean({
+            description: "Only return unread messages (default: true)",
+            default: true,
+          }),
+        ),
+        performative: Type.Optional(
+          Type.String({ description: "Filter by performative (e.g., REQUEST, INFORM, CFP)" }),
+        ),
+        from: Type.Optional(Type.String({ description: "Filter by sender agent ID" })),
+        limit: Type.Optional(
+          Type.Number({ description: "Max messages to return (default: 20)", default: 20 }),
+        ),
+      }),
+      async execute(
+        _id: string,
+        params: {
+          agent_id: string;
+          unread_only?: boolean;
+          performative?: string;
+          from?: string;
+          limit?: number;
+        },
+      ) {
+        const ws = resolveWorkspaceDir(api);
+        const inboxPath = join(ws, "agents", params.agent_id, "inbox.json");
+        const inbox: any[] = (await readJson(inboxPath)) || [];
+
+        let filtered = inbox;
+        if (params.unread_only !== false) {
+          filtered = filtered.filter((m) => !m.read);
+        }
+        if (params.performative) {
+          const perf = params.performative.toUpperCase();
+          filtered = filtered.filter((m) => m.performative === perf);
+        }
+        if (params.from) {
+          filtered = filtered.filter((m) => m.from === params.from);
+        }
+
+        // Sort by priority: urgent > high > normal > low
+        const priorityOrder: Record<string, number> = {
+          urgent: 0,
+          high: 1,
+          normal: 2,
+          low: 3,
+        };
+        filtered.sort(
+          (a, b) => (priorityOrder[a.priority] ?? 2) - (priorityOrder[b.priority] ?? 2),
+        );
+
+        const limit = params.limit || 20;
+        const results = filtered.slice(0, limit);
+        const totalUnread = inbox.filter((m) => !m.read).length;
+
+        if (results.length === 0) {
+          return textResult(
+            `Inbox for ${params.agent_id}: No ${params.unread_only !== false ? "unread " : ""}messages${params.performative ? ` with performative ${params.performative}` : ""}${params.from ? ` from ${params.from}` : ""}.`,
+          );
+        }
+
+        const lines = results.map(
+          (m) =>
+            `- **${m.id}** [${m.performative}] from ${m.from} (${m.priority}) ${m.read ? "" : "NEW"}\n  ${m.content.slice(0, 200)}${m.content.length > 200 ? "..." : ""}\n  _${m.timestamp}_`,
+        );
+
+        return textResult(
+          `Inbox for ${params.agent_id}: ${results.length} message(s) shown (${totalUnread} total unread)\n\n${lines.join("\n\n")}`,
+        );
+      },
+    },
+
+    {
+      name: "inbox_mark_read",
+      label: "Mark Inbox Messages Read",
+      description:
+        "Mark one or more inbox messages as read. Pass specific message IDs or \'*\' to mark all as read.",
+      parameters: Type.Object({
+        agent_id: Type.String({ description: "Agent ID whose inbox to update" }),
+        message_ids: Type.Union(
+          [
+            Type.Array(Type.String(), { description: "Message IDs to mark as read" }),
+            Type.Literal("*"),
+          ],
+          { description: "Message IDs to mark read, or \'*\' for all" },
+        ),
+      }),
+      async execute(_id: string, params: { agent_id: string; message_ids: string[] | "*" }) {
+        const ws = resolveWorkspaceDir(api);
+        const inboxPath = join(ws, "agents", params.agent_id, "inbox.json");
+        const inbox: any[] = (await readJson(inboxPath)) || [];
+
+        let count = 0;
+        for (const msg of inbox) {
+          if (msg.read) continue;
+          if (params.message_ids === "*" || params.message_ids.includes(msg.id)) {
+            msg.read = true;
+            count++;
+          }
+        }
+
+        await writeJson(inboxPath, inbox);
+        return textResult(`Marked ${count} message(s) as read in ${params.agent_id} inbox.`);
+      },
+    },
   ];
 }

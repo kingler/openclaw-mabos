@@ -16,7 +16,7 @@ import { resolveGatewayAuth, type ResolvedGatewayAuth } from "../../src/gateway/
 import { authorizeGatewayBearerRequestOrReply } from "../../src/gateway/http-auth-helpers.js";
 import { onAgentEvent, type AgentEventPayload } from "../../src/infra/agent-events.js";
 import { readJsonBodyWithLimit } from "../../src/infra/http-body.js";
-import { createCronBridgeService } from "./src/cron-bridge.js";
+import { createCronBridgeService, callGatewayRpc } from "./src/cron-bridge.js";
 import { createApprovalTools } from "./src/tools/approval-tools.js";
 import { createBdiTools } from "./src/tools/bdi-tools.js";
 import { createBpmnMigrateTools } from "./src/tools/bpmn-migrate.js";
@@ -28,6 +28,8 @@ import { resolveWorkspaceDir, getPluginConfig, generatePrefixedId } from "./src/
 import { createCommunicationTools } from "./src/tools/communication-tools.js";
 import { createCrmTools } from "./src/tools/crm-tools.js";
 import { createDesireTools } from "./src/tools/desire-tools.js";
+import { classifyDirective, buildRoutingDecision } from "./src/tools/directive-router.js";
+import { createDirectiveTools } from "./src/tools/directive-tools.js";
 import { createEmailTools } from "./src/tools/email-tools.js";
 import { createFactStoreTools } from "./src/tools/fact-store.js";
 import { createGoDaddyTools } from "./src/tools/godaddy-tools.js";
@@ -110,6 +112,7 @@ export default function register(api: OpenClawPluginApi) {
     createShopifyTools,
     createPictoremTools,
     createApprovalTools,
+    createDirectiveTools,
   ];
 
   const registeredToolNames: Array<{ name: string; description: string }> = [];
@@ -4543,7 +4546,7 @@ ${existingSections}
 
   // Inject BDI context + Persona.md + observation log into the system prompt
   // When cacheAwareLayoutEnabled: splits into stable (systemPrompt) + dynamic (prependContext)
-  api.on("before_agent_start", async (_event, ctx) => {
+  api.on("before_agent_start", async (event, ctx) => {
     if (ctx.workspaceDir) {
       const agentDir = ctx.workspaceDir;
       try {
@@ -4557,11 +4560,12 @@ ${existingSections}
         // Load Persona.md
         const persona = await readFile(join(agentDir, "Persona.md"), "utf-8").catch(() => null);
 
+        const agentId = agentDir.split("/").pop() || "default";
+
         // Load observation log (Observer/Reflector pipeline)
         let observations: any[] = [];
         try {
           const { loadObservationLog } = await import("./src/tools/observation-store.js");
-          const agentId = agentDir.split("/").pop() || "default";
           const obsLog = await loadObservationLog(api, agentId);
           observations = obsLog.observations;
         } catch {
@@ -4585,15 +4589,117 @@ ${existingSections}
         );
         const commitmentSummary = commitments?.trim() ? commitments.slice(0, 300) : "";
 
+        // Load cognitive context (BDI state summaries)
+        let cognitiveExtras = "";
+        let longTermHighlights = "";
+        const cognitiveEnabled = pluginConfig.cognitiveContextEnabled !== false;
+        if (cognitiveEnabled) {
+          try {
+            const { assembleCognitiveContext } = await import("./src/tools/cognitive-context.js");
+            const cognitive = await assembleCognitiveContext(agentDir);
+            cognitiveExtras = cognitive.cognitiveExtras;
+            longTermHighlights = cognitive.longTermHighlights;
+          } catch {
+            // Cognitive context unavailable — not critical
+          }
+        }
+
+        // Auto-recall: search memory for context relevant to the user's prompt
+        let autoRecallResults = "";
+        if (pluginConfig.autoRecallEnabled !== false && event.prompt && event.prompt.length > 10) {
+          try {
+            const { semanticRecall } = await import("./src/tools/memory-tools.js");
+            const recallPromise = semanticRecall(api, agentId, event.prompt, 5);
+            const timeoutPromise = new Promise<null>((r) => setTimeout(() => r(null), 400));
+            const results = await Promise.race([recallPromise, timeoutPromise]);
+            if (results?.length) {
+              autoRecallResults = results
+                .map((r) => `- [${r.score.toFixed(2)}] ${r.content}`)
+                .join("\n");
+            }
+          } catch {
+            // Auto-recall unavailable — not critical
+          }
+        }
+
+        // ── Directive routing suggestion (CEO only) ──
+        let routingSuggestion = "";
+        if (
+          pluginConfig.directiveRoutingEnabled !== false &&
+          agentId === "ceo" &&
+          event.prompt &&
+          event.prompt.length > 10
+        ) {
+          try {
+            const classification = classifyDirective(event.prompt);
+            if (classification.primaryAgent !== "ceo" || classification.isMultiDomain) {
+              const decision = buildRoutingDecision(classification);
+              routingSuggestion = `## Routing Suggestion\n${decision.routingSummary}\n`;
+            }
+          } catch {
+            // Routing suggestion unavailable — not critical
+          }
+        }
+
+        // ── Unread inbox context (all agents) ──
+        let inboxContext = "";
+        if (pluginConfig.inboxContextEnabled !== false) {
+          try {
+            const { readFile: readF } = await import("node:fs/promises");
+            const inboxPath = join(agentDir, "inbox.json");
+            const inboxRaw = await readF(inboxPath, "utf-8").catch(() => "[]");
+            const inbox: any[] = JSON.parse(inboxRaw);
+            const unread = inbox.filter((m: any) => !m.read);
+            if (unread.length > 0) {
+              const priorityOrder: Record<string, number> = {
+                urgent: 0,
+                high: 1,
+                normal: 2,
+                low: 3,
+              };
+              unread.sort(
+                (a: any, b: any) =>
+                  (priorityOrder[a.priority] ?? 2) - (priorityOrder[b.priority] ?? 2),
+              );
+              const preview = unread
+                .slice(0, 5)
+                .map(
+                  (m: any) =>
+                    `- [${m.performative}] from ${m.from} (${m.priority}): ${(m.content || "").slice(0, 80)}`,
+                );
+              inboxContext = `## Unread Inbox (${unread.length} message${unread.length !== 1 ? "s" : ""})\n${preview.join("\n")}\n`;
+            }
+          } catch {
+            // Inbox context unavailable — not critical
+          }
+        }
+
         if (cacheAwareEnabled) {
           // Cache-aware mode: split into stable + dynamic blocks
           const { assembleCacheAwareContext } = await import("./src/tools/cache-aware-layout.js");
-          const { stableBlock, dynamicBlock } = assembleCacheAwareContext({
+          const { stableBlock, dynamicBlock: dynamicBase } = assembleCacheAwareContext({
             persona: persona || undefined,
             observations,
+            longTermHighlights: longTermHighlights || undefined,
             activeGoals: activeGoals.trim() || undefined,
             commitments: commitmentSummary || undefined,
+            autoRecallResults: autoRecallResults || undefined,
           });
+
+          // Append cognitive extras to dynamic block
+          let dynamicBlock = dynamicBase;
+          if (cognitiveExtras) {
+            dynamicBlock = dynamicBlock
+              ? dynamicBlock + "\n## Cognitive State\n" + cognitiveExtras + "\n"
+              : "[MABOS Dynamic Context]\n## Cognitive State\n" + cognitiveExtras + "\n";
+          }
+
+          if (routingSuggestion) {
+            dynamicBlock = (dynamicBlock || "[MABOS Dynamic Context]\n") + routingSuggestion;
+          }
+          if (inboxContext) {
+            dynamicBlock = (dynamicBlock || "[MABOS Dynamic Context]\n") + inboxContext;
+          }
 
           const result: Record<string, string> = {};
           if (stableBlock) result.systemPrompt = stableBlock;
@@ -4624,6 +4730,21 @@ ${existingSections}
             parts.push(`## Current Commitments\n${commitmentSummary}`);
           }
 
+          if (autoRecallResults) {
+            parts.push(`## Auto-Recall Results\n${autoRecallResults}`);
+          }
+
+          if (cognitiveExtras) {
+            parts.push(`## Cognitive State\n${cognitiveExtras}`);
+          }
+
+          if (routingSuggestion) {
+            parts.push(routingSuggestion.trim());
+          }
+          if (inboxContext) {
+            parts.push(inboxContext.trim());
+          }
+
           if (parts.length > 0) {
             return {
               prependContext: `[MABOS Agent Context]\n${parts.join("\n\n")}\n`,
@@ -4639,6 +4760,7 @@ ${existingSections}
 
   // BDI tool call audit trail + auto-observer trigger
   api.on("after_tool_call", async (event, ctx) => {
+    const pluginConfig = (api.pluginConfig ?? {}) as Record<string, unknown>;
     if (
       event.toolName.startsWith("belief_") ||
       event.toolName.startsWith("goal_") ||
@@ -4686,7 +4808,289 @@ ${existingSections}
         }
       })();
     }
+
+    // ── Inbox wake-up trigger (high/urgent messages) ──
+    if (
+      (event.toolName === "agent_message" || event.toolName === "directive_route") &&
+      pluginConfig.inboxWakeUpEnabled !== false
+    ) {
+      const wakeParams = event.params as Record<string, unknown> | undefined;
+      const priority = (wakeParams?.priority as string) || "normal";
+      const recipient = (wakeParams?.to as string) || (wakeParams?.target_agent as string);
+
+      if (recipient && (priority === "high" || priority === "urgent")) {
+        void (async () => {
+          try {
+            const {
+              readFile: readF,
+              writeFile: writeF,
+              mkdir: mkdirF,
+            } = await import("node:fs/promises");
+            const { join: joinP, dirname: dirnameP } = await import("node:path");
+            const ws = resolveWorkspaceDir(api);
+            const wakeLogPath = joinP(ws, "directive-wake-log.json");
+
+            // Rate limit: check cooldown
+            let wakeLog: Record<string, string> = {};
+            try {
+              wakeLog = JSON.parse(await readF(wakeLogPath, "utf-8"));
+            } catch {
+              // No wake log yet
+            }
+
+            const cooldownMs = ((pluginConfig.inboxWakeUpCooldownMinutes as number) || 5) * 60_000;
+            const lastWake = wakeLog[recipient];
+            if (lastWake && Date.now() - new Date(lastWake).getTime() < cooldownMs) {
+              return; // Within cooldown period
+            }
+
+            // Update wake log
+            wakeLog[recipient] = new Date().toISOString();
+            await mkdirF(dirnameP(wakeLogPath), { recursive: true });
+            await writeF(wakeLogPath, JSON.stringify(wakeLog, null, 2), "utf-8");
+
+            // Schedule one-shot agent session via gateway RPC
+            const gatewayUrl =
+              ((pluginConfig as Record<string, unknown>).gatewayUrl as string) ||
+              process.env.OPENCLAW_GATEWAY_URL;
+            if (gatewayUrl) {
+              const authToken =
+                ((pluginConfig as Record<string, unknown>).gatewayToken as string) ||
+                process.env.OPENCLAW_GATEWAY_TOKEN;
+              await callGatewayRpc(
+                gatewayUrl,
+                "cron.add",
+                {
+                  name: `wake-${recipient}-${Date.now()}`,
+                  schedule: "once",
+                  agentId: recipient,
+                  prompt: "Check your inbox for new high-priority messages and act on them.",
+                },
+                authToken || undefined,
+              ).catch(() => {
+                // Gateway unavailable — non-critical
+              });
+            }
+          } catch {
+            // Wake-up trigger failure — non-critical
+          }
+        })();
+      }
+    }
   });
 
-  api.logger.info("[mabos] MABOS extension registered (bundled, deep integration)");
+  // ── Hook: agent_end — Error-to-Belief Recording ──
+  api.on("agent_end", async (event, ctx) => {
+    if (!ctx.workspaceDir) return;
+    const pluginConfig = (api.pluginConfig ?? {}) as Record<string, unknown>;
+
+    void (async () => {
+      try {
+        if (event.success === false) {
+          const { readFile, writeFile, mkdir } = await import("node:fs/promises");
+          const { join } = await import("node:path");
+          const { generatePrefixedId } = await import("./src/tools/common.js");
+          const agentDir = ctx.workspaceDir!;
+
+          // Record error as a case belief (BC-xxx) in Beliefs.md
+          const beliefId = generatePrefixedId("BC");
+          const timestamp = new Date().toISOString();
+          const errorMsg =
+            typeof event.error === "string" ? event.error : "Agent session ended with failure";
+          const beliefEntry = `\n| ${beliefId} | case | Session failure: ${errorMsg.slice(0, 100)} | 0.9 | agent_end | ${timestamp} |\n`;
+
+          const beliefsPath = join(agentDir, "Beliefs.md");
+          try {
+            const existing = await readFile(beliefsPath, "utf-8");
+            await writeFile(beliefsPath, existing + beliefEntry, "utf-8");
+          } catch {
+            await writeFile(
+              beliefsPath,
+              `# Beliefs\n\n| ID | Type | Content | Certainty | Source | Timestamp |\n|---|---|---|---|---|---|\n${beliefEntry}`,
+              "utf-8",
+            );
+          }
+
+          // Append failure entry to daily memory log
+          const dateStr = new Date().toISOString().split("T")[0];
+          const memoryDir = join(agentDir, "memory");
+          await mkdir(memoryDir, { recursive: true });
+          const dailyPath = join(memoryDir, `${dateStr}.md`);
+          const logEntry = `\n- **${timestamp}** [ERROR] Agent session failed: ${errorMsg.slice(0, 200)}\n`;
+          try {
+            const existing = await readFile(dailyPath, "utf-8");
+            await writeFile(dailyPath, existing + logEntry, "utf-8");
+          } catch {
+            await writeFile(dailyPath, `# ${dateStr}\n${logEntry}`, "utf-8");
+          }
+        }
+      } catch {
+        // Fire-and-forget — never throw from lifecycle hook
+      }
+    })();
+  });
+
+  // ── Hook: before_tool_call — Financial Threshold Guard ──
+  api.on("before_tool_call", (event, _ctx) => {
+    const pluginConfig = (api.pluginConfig ?? {}) as Record<string, unknown>;
+    if (pluginConfig.financialToolGuardEnabled === false) return;
+
+    const financialTools: Record<string, string[]> = {
+      ad_campaign_create: ["daily_budget_usd", "total_budget_usd"],
+      contract_net_initiate: ["budget", "estimated_cost"],
+      contract_net_propose: ["budget", "estimated_cost"],
+    };
+
+    const budgetParams = financialTools[event.toolName];
+    if (!budgetParams) return;
+
+    const threshold = (pluginConfig.stakeholderApprovalThresholdUsd as number) ?? 5000;
+    const args = (event.input ?? {}) as Record<string, unknown>;
+
+    for (const param of budgetParams) {
+      const value = args[param];
+      if (typeof value === "number" && value > threshold) {
+        return {
+          blocked: true,
+          reason: `[MABOS] Financial guard: ${event.toolName}.${param} = $${value} exceeds stakeholder approval threshold of $${threshold}. Use stakeholder_approval_request to get authorization.`,
+        };
+      }
+    }
+  });
+
+  // ── Hook: before_compaction — Pre-Compaction Observer ──
+  api.on("before_compaction", async (event, ctx) => {
+    if (!ctx.workspaceDir) return;
+    const pluginConfig = (api.pluginConfig ?? {}) as Record<string, unknown>;
+    if (pluginConfig.preCompactionObserverEnabled === false) return;
+
+    void (async () => {
+      try {
+        const { loadObservationLog, saveObservationLog } =
+          await import("./src/tools/observation-store.js");
+        const { compressMessagesToObservations } = await import("./src/tools/observer.js");
+        const { reflectObservations } = await import("./src/tools/reflector.js");
+
+        const agentId = ctx.workspaceDir!.split("/").pop() || "default";
+        const obsLog = await loadObservationLog(api, agentId);
+
+        // Safely map event.messages to ObservableMessage[]
+        const observable = (event.messages as any[])
+          .filter(
+            (m) =>
+              m && typeof m.content === "string" && ["user", "assistant", "tool"].includes(m.role),
+          )
+          .map((m: any) => ({
+            role: m.role,
+            content: m.content,
+            tool_call_id: m.tool_call_id,
+            name: m.name,
+            timestamp: m.timestamp,
+          }));
+
+        if (observable.length === 0) return;
+
+        const { observations, messagesCompressed, toolCallsCompressed } =
+          compressMessagesToObservations(observable, obsLog.observations);
+
+        obsLog.observations.push(...observations);
+        obsLog.total_messages_compressed += messagesCompressed;
+        obsLog.total_tool_calls_compressed += toolCallsCompressed;
+        obsLog.last_observer_run_at = new Date().toISOString();
+
+        // Reflect if observation count exceeds threshold
+        if (obsLog.observations.length > 100) {
+          obsLog.observations = reflectObservations(obsLog.observations);
+          obsLog.last_reflector_run_at = new Date().toISOString();
+        }
+
+        // saveObservationLog now also materializes to markdown (Phase 1 bridge)
+        await saveObservationLog(api, agentId, obsLog);
+      } catch {
+        // Fire-and-forget — compaction must not be blocked
+      }
+    })();
+  });
+
+  // ── Hook: session_start — Session Initialization ──
+  api.on("session_start", async (_event, ctx) => {
+    if (!ctx.workspaceDir) return;
+
+    void (async () => {
+      try {
+        const { readFile, writeFile, mkdir } = await import("node:fs/promises");
+        const { join } = await import("node:path");
+        const agentDir = ctx.workspaceDir!;
+
+        // Log session start to daily memory log
+        const timestamp = new Date().toISOString();
+        const dateStr = timestamp.split("T")[0];
+        const memoryDir = join(agentDir, "memory");
+        await mkdir(memoryDir, { recursive: true });
+        const dailyPath = join(memoryDir, `${dateStr}.md`);
+        const logEntry = `\n- **${timestamp}** [SESSION] New session started\n`;
+        try {
+          const existing = await readFile(dailyPath, "utf-8");
+          await writeFile(dailyPath, existing + logEntry, "utf-8");
+        } catch {
+          await writeFile(dailyPath, `# ${dateStr}\n${logEntry}`, "utf-8");
+        }
+
+        // Materialize all memory bridge files to ensure they are current
+        const { materializeAll } = await import("./src/tools/memory-materializer.js");
+        const agentId = agentDir.split("/").pop() || "default";
+        await materializeAll(api, agentId);
+      } catch {
+        // Fire-and-forget — session init failure should not block agent start
+      }
+    })();
+  });
+
+  // ── Hook: llm_output — Cache and Usage Metrics ──
+  api.on("llm_output", async (event, ctx) => {
+    if (!ctx.workspaceDir) return;
+    const pluginConfig = (api.pluginConfig ?? {}) as Record<string, unknown>;
+    if (pluginConfig.llmMetricsEnabled === false) return;
+
+    void (async () => {
+      try {
+        const { writeFile, mkdir } = await import("node:fs/promises");
+        const { join } = await import("node:path");
+        const agentDir = ctx.workspaceDir!;
+
+        const inputTokens = (event as any).inputTokens ?? 0;
+        const outputTokens = (event as any).outputTokens ?? 0;
+        const cacheReadTokens = (event as any).cacheReadTokens ?? 0;
+        const cacheWriteTokens = (event as any).cacheWriteTokens ?? 0;
+        const model = (event as any).model ?? "unknown";
+
+        const cacheHitRate =
+          inputTokens + cacheReadTokens > 0 ? cacheReadTokens / (inputTokens + cacheReadTokens) : 0;
+
+        const entry = JSON.stringify({
+          timestamp: new Date().toISOString(),
+          model,
+          inputTokens,
+          outputTokens,
+          cacheReadTokens,
+          cacheWriteTokens,
+          cacheHitRate: Math.round(cacheHitRate * 10000) / 10000,
+        });
+
+        const metricsDir = join(agentDir, "metrics");
+        await mkdir(metricsDir, { recursive: true });
+        const metricsPath = join(metricsDir, "llm-usage.jsonl");
+
+        // Append JSONL entry
+        const { appendFile } = await import("node:fs/promises");
+        await appendFile(metricsPath, entry + "\n", "utf-8");
+      } catch {
+        // Fire-and-forget — metrics failure should never affect agent operation
+      }
+    })();
+  });
+
+  api.logger.info(
+    "[mabos] MABOS extension registered (bundled, deep integration — 7 hooks active)",
+  );
 }

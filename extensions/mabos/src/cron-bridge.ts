@@ -89,7 +89,7 @@ const RPC_TIMEOUT_MS = 15_000;
  * One-shot gateway RPC call: connect → handshake → request → response → close.
  * Designed for low-frequency bridge sync, not high-throughput.
  */
-async function callGatewayRpc<T = Record<string, unknown>>(
+export async function callGatewayRpc<T = Record<string, unknown>>(
   gatewayUrl: string,
   method: string,
   params?: unknown,

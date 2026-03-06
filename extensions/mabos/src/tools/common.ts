@@ -15,6 +15,16 @@ export interface MabosPluginConfig {
   cbrMaxCases?: number;
   stakeholderApprovalThresholdUsd?: number;
   bdiCycleIntervalMinutes?: number;
+  cacheAwareLayoutEnabled?: boolean;
+  cognitiveContextEnabled?: boolean;
+  financialToolGuardEnabled?: boolean;
+  llmMetricsEnabled?: boolean;
+  preCompactionObserverEnabled?: boolean;
+  autoRecallEnabled?: boolean;
+  directiveRoutingEnabled?: boolean;
+  inboxContextEnabled?: boolean;
+  inboxWakeUpEnabled?: boolean;
+  inboxWakeUpCooldownMinutes?: number;
 }
 
 /**
