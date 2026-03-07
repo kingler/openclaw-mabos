@@ -1,21 +1,19 @@
-# Goals — {{agentName}}
+# Goals — Knowledge
 
-Last evaluated: {{initialized}}
+## Strategic Goals
 
-## Active Goals
+- Build and maintain the organizational knowledge base
+- Ensure institutional knowledge is captured, organized, and accessible
+- Support decision-making across all agents with relevant information retrieval
 
-### Strategic Goals
+## Tactical Goals
 
-### Tactical Goals
+- Organize and index documents, decisions, and learnings
+- Develop knowledge taxonomy and tagging standards
+- Identify knowledge gaps and coordinate with agents to fill them
 
-### Operational Goals
+## Operational Goals
 
-## Completed Goals
-
-| ID  | Goal | Completed | Outcome |
-| --- | ---- | --------- | ------- |
-
-## Abandoned Goals
-
-| ID  | Goal | Reason | Learnings |
-| --- | ---- | ------ | --------- |
+- Respond to knowledge queries and research requests within SLA
+- Maintain document freshness and archive outdated materials
+- Surface relevant context proactively during cross-agent discussions

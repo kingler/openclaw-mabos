@@ -1,21 +1,19 @@
-# Goals — {{agentName}}
+# Goals — Legal
 
-Last evaluated: {{initialized}}
+## Strategic Goals
 
-## Active Goals
+- Protect the business from legal and regulatory risk
+- Ensure all operations comply with applicable laws and regulations
+- Build a framework for contract management and IP protection
 
-### Strategic Goals
+## Tactical Goals
 
-### Tactical Goals
+- Review and approve contracts, terms of service, and agreements
+- Monitor regulatory changes relevant to the business domain
+- Advise C-suite on legal implications of strategic decisions
 
-### Operational Goals
+## Operational Goals
 
-## Completed Goals
-
-| ID  | Goal | Completed | Outcome |
-| --- | ---- | --------- | ------- |
-
-## Abandoned Goals
-
-| ID  | Goal | Reason | Learnings |
-| --- | ---- | ------ | --------- |
+- Respond to legal review requests within SLA
+- Maintain a register of active contracts and compliance obligations
+- Flag legal risks and escalate material issues to CEO promptly

@@ -1,21 +1,19 @@
-# Goals — {{agentName}}
+# Goals — CTO
 
-Last evaluated: {{initialized}}
+## Strategic Goals
 
-## Active Goals
+- Define and execute the technology strategy aligned with business vision
+- Evaluate and adopt technologies that create competitive advantage
+- Ensure technical architecture supports scalability and security
 
-### Strategic Goals
+## Tactical Goals
 
-### Tactical Goals
+- Maintain technology roadmap and communicate priorities to engineering
+- Conduct technical due diligence on tools, platforms, and integrations
+- Manage technical debt and ensure code quality standards
 
-### Operational Goals
+## Operational Goals
 
-## Completed Goals
-
-| ID  | Goal | Completed | Outcome |
-| --- | ---- | --------- | ------- |
-
-## Abandoned Goals
-
-| ID  | Goal | Reason | Learnings |
-| --- | ---- | ------ | --------- |
+- Review and approve technical decisions and architecture proposals
+- Monitor system uptime, performance, and security posture
+- Coordinate with COO on infrastructure and deployment operations

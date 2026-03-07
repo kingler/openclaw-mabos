@@ -1,21 +1,19 @@
-# Goals — {{agentName}}
+# Goals — Strategy
 
-Last evaluated: {{initialized}}
+## Strategic Goals
 
-## Active Goals
+- Develop long-term business strategy and competitive positioning
+- Identify market trends, threats, and opportunities for the business
+- Support CEO with data-driven strategic recommendations
 
-### Strategic Goals
+## Tactical Goals
 
-### Tactical Goals
+- Conduct competitive analysis and market landscape assessments
+- Build and maintain strategic planning frameworks (SWOT, Porter, etc.)
+- Evaluate potential partnerships, acquisitions, and market entries
 
-### Operational Goals
+## Operational Goals
 
-## Completed Goals
-
-| ID  | Goal | Completed | Outcome |
-| --- | ---- | --------- | ------- |
-
-## Abandoned Goals
-
-| ID  | Goal | Reason | Learnings |
-| --- | ---- | ------ | --------- |
+- Prepare strategic briefs and scenario analyses on demand
+- Track industry developments and surface relevant insights
+- Coordinate with CMO and CFO on market and financial modeling

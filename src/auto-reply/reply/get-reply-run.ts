@@ -1,4 +1,6 @@
 import crypto from "node:crypto";
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
 import { resolveSessionAuthProfileOverride } from "../../agents/auth-profiles/session-override.js";
 import type { ExecToolDefaults } from "../../agents/bash-tools.js";
 import { resolveModelAuthLabel } from "../../agents/model-auth-label.js";
@@ -107,6 +109,41 @@ type RunPreparedReplyParams = {
   abortedLastRun: boolean;
 };
 
+async function buildAgentCognitivePrompt(workspaceDir: string, agentId: string): Promise<string> {
+  const agentWsDir = join(workspaceDir, "agents", agentId);
+
+  const readOptional = async (file: string) => {
+    try {
+      return (await readFile(join(agentWsDir, file), "utf-8")).trim();
+    } catch {
+      return "";
+    }
+  };
+
+  const persona = await readOptional("Persona.md");
+  const goals = await readOptional("Goals.md");
+  const beliefs = await readOptional("Beliefs.md");
+  const intentions = await readOptional("Intentions.md");
+
+  const parts: string[] = [];
+  if (persona) {
+    parts.push(persona);
+  }
+  if (goals) {
+    parts.push(`### Active Goals\n${goals}`);
+  }
+  if (beliefs) {
+    parts.push(`### Current Beliefs\n${beliefs}`);
+  }
+  if (intentions) {
+    parts.push(`### Active Intentions\n${intentions}`);
+  }
+
+  if (parts.length === 0) {
+    return "";
+  }
+  return `## Agent Identity & Cognitive State\n\n${parts.join("\n\n")}`;
+}
 export async function runPreparedReply(
   params: RunPreparedReplyParams,
 ): Promise<ReplyPayload | ReplyPayload[] | undefined> {
@@ -188,7 +225,14 @@ export async function runPreparedReply(
   const inboundMetaPrompt = buildInboundMetaSystemPrompt(
     isNewSession ? sessionCtx : { ...sessionCtx, ThreadStarterBody: undefined },
   );
-  const extraSystemPrompt = [inboundMetaPrompt, groupChatContext, groupIntro, groupSystemPrompt]
+  const agentCognitivePrompt = await buildAgentCognitivePrompt(workspaceDir, agentId);
+  const extraSystemPrompt = [
+    agentCognitivePrompt,
+    inboundMetaPrompt,
+    groupChatContext,
+    groupIntro,
+    groupSystemPrompt,
+  ]
     .filter(Boolean)
     .join("\n\n");
   const baseBody = sessionCtx.BodyStripped ?? sessionCtx.Body ?? "";

@@ -1,21 +1,19 @@
-# Goals — {{agentName}}
+# Goals — CFO
 
-Last evaluated: {{initialized}}
+## Strategic Goals
 
-## Active Goals
+- Maintain financial health and sustainability of the business
+- Optimize capital allocation and cash flow management
+- Build financial models that support strategic decision-making
 
-### Strategic Goals
+## Tactical Goals
 
-### Tactical Goals
+- Produce monthly financial reports and variance analysis
+- Manage budgets across all departments and flag overruns
+- Evaluate ROI on proposed initiatives and investments
 
-### Operational Goals
+## Operational Goals
 
-## Completed Goals
-
-| ID  | Goal | Completed | Outcome |
-| --- | ---- | --------- | ------- |
-
-## Abandoned Goals
-
-| ID  | Goal | Reason | Learnings |
-| --- | ---- | ------ | --------- |
+- Process and approve expense requests within SLA
+- Maintain accurate bookkeeping and reconciliation
+- Ensure compliance with financial regulations and tax obligations
