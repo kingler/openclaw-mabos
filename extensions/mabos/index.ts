@@ -1893,12 +1893,137 @@ ${existingSections}
         await mkdir(dirname(inboxPath), { recursive: true });
         await writeFile(inboxPath, JSON.stringify(inbox, null, 2), "utf-8");
 
+        // Fire-and-forget: dispatch through gateway LLM pipeline and poll for response
+        const gatewayPort = (api as any).config?.gateway?.port ?? 18789;
+        const gatewayWsUrl = `ws://127.0.0.1:${gatewayPort}`;
+        const sessionKey = `mabos-dashboard:${businessId}:${agentId}`;
+        const gatewayAuthToken = process.env.OPENCLAW_GATEWAY_TOKEN;
+        const outboxPath = join(
+          workspaceDir,
+          "businesses",
+          businessId,
+          "agents",
+          agentId,
+          "outbox.json",
+        );
+
+        (async () => {
+          try {
+            // Send message to gateway LLM pipeline
+            const ack = await callGatewayRpc<{ runId?: string; status?: string }>(
+              gatewayWsUrl,
+              "chat.send",
+              {
+                sessionKey,
+                message: params.message,
+                idempotencyKey: msg.id,
+                timeoutMs: 120_000,
+              },
+              gatewayAuthToken,
+              120_000,
+            );
+            log.info?.(`chat.send ack for ${agentId}: runId=${ack.runId} status=${ack.status}`);
+
+            // Get baseline message count so we can detect the NEW assistant response
+            let baselineCount = 0;
+            try {
+              const baseline = await callGatewayRpc<{ messages?: any[] }>(
+                gatewayWsUrl,
+                "chat.history",
+                { sessionKey, limit: 200 },
+                gatewayAuthToken,
+              );
+              baselineCount = (baseline.messages ?? []).length;
+            } catch {
+              // If baseline fails, we'll just look for any assistant message
+            }
+
+            // Poll chat.history for the NEW assistant response
+            const maxPollMs = 60_000;
+            const pollIntervalMs = 2_000;
+            const startTime = Date.now();
+            let assistantText = "";
+
+            while (Date.now() - startTime < maxPollMs) {
+              await new Promise((r) => setTimeout(r, pollIntervalMs));
+              try {
+                const history = await callGatewayRpc<{ messages?: any[] }>(
+                  gatewayWsUrl,
+                  "chat.history",
+                  { sessionKey, limit: 200 },
+                  gatewayAuthToken,
+                );
+                const messages = history.messages ?? [];
+
+                // Only look at messages beyond the baseline (new messages since we sent)
+                if (messages.length > baselineCount) {
+                  // Check new messages (from end) for an assistant response
+                  for (let i = messages.length - 1; i >= baselineCount; i--) {
+                    const m = messages[i];
+                    if (m.role === "assistant") {
+                      const content = m.content;
+                      if (typeof content === "string") {
+                        assistantText = content;
+                      } else if (Array.isArray(content)) {
+                        assistantText = content
+                          .filter((c: any) => c.type === "text")
+                          .map((c: any) => c.text)
+                          .join("");
+                      }
+                      if (!assistantText) assistantText = ""; // reset if content empty
+                      break;
+                    }
+                  }
+                }
+                if (assistantText) break;
+              } catch (histErr) {
+                log.debug?.(`chat.history poll error: ${histErr}`);
+              }
+            }
+
+            if (assistantText) {
+              await mkdir(dirname(outboxPath), { recursive: true });
+              await writeFile(
+                outboxPath,
+                JSON.stringify([
+                  {
+                    type: "agent_response",
+                    id: msg.id,
+                    agentId,
+                    agentName: agentId,
+                    content: assistantText,
+                  },
+                ]),
+                "utf-8",
+              );
+            } else {
+              log.warn?.(`No assistant response received for ${agentId} within timeout`);
+            }
+          } catch (err) {
+            log.warn?.(`chat.send dispatch failed for ${agentId}: ${err}`);
+            await mkdir(dirname(outboxPath), { recursive: true }).catch(() => {});
+            await writeFile(
+              outboxPath,
+              JSON.stringify([
+                {
+                  type: "agent_response",
+                  id: String(Date.now()),
+                  agentId,
+                  agentName: agentId,
+                  content: `Sorry, I encountered an error processing your message. Please try again.`,
+                },
+              ]),
+              "utf-8",
+            ).catch(() => {});
+          }
+        })();
+
         res.setHeader("Content-Type", "application/json");
         res.end(
           JSON.stringify({
             ok: true,
             messageId: msg.id,
-            message: `Message delivered to ${agentId}. The agent will process it during the next BDI cycle.`,
+            message: `Message delivered to ${agentId}. Processing via LLM pipeline.`,
           }),
         );
       } catch (err) {
@@ -4045,6 +4170,60 @@ ${existingSections}
         res.statusCode = 500;
         res.setHeader("Content-Type", "application/json");
         res.end(JSON.stringify({ error: String(err) }));
+      }
+    },
+  });
+
+  // ── Shopify Webhook (incremental sync) ──────────────────────
+  api.registerHttpRoute({
+    path: "/mabos/api/shopify/webhook",
+    handler: async (req, res) => {
+      // Shopify webhooks require < 5s response — read body, ack immediately, process async.
+      try {
+        const { readRequestBodyWithLimit } = await import("../../src/infra/http-body.js");
+        const rawBody = await readRequestBodyWithLimit(req, {
+          maxBytes: 2_097_152,
+          timeoutMs: 5_000,
+        });
+
+        // HMAC verification (optional — requires SHOPIFY_WEBHOOK_SECRET env var)
+        const webhookSecret = process.env.SHOPIFY_WEBHOOK_SECRET;
+        if (webhookSecret) {
+          const crypto = await import("node:crypto");
+          const hmacHeader = req.headers["x-shopify-hmac-sha256"] as string | undefined;
+          if (!hmacHeader) {
+            res.writeHead(401, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({ error: "Missing HMAC header" }));
+            return;
+          }
+          const computed = crypto
+            .createHmac("sha256", webhookSecret)
+            .update(rawBody, "utf-8")
+            .digest("base64");
+          if (computed !== hmacHeader) {
+            res.writeHead(401, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({ error: "Invalid HMAC" }));
+            return;
+          }
+        }
+
+        // Respond 200 immediately
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ ok: true }));
+
+        // Process async
+        const topic = (req.headers["x-shopify-topic"] as string) || "";
+        const payload = JSON.parse(rawBody);
+        const pg = await getErpPg();
+        const { processShopifyWebhook } = await import("../../mabos/erp/shopify-sync/index.js");
+        processShopifyWebhook(pg, topic, payload).catch((err) => {
+          log.error(`[shopify-webhook] Error processing ${topic}:`, err);
+        });
+      } catch (err) {
+        if (!res.headersSent) {
+          res.writeHead(500, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: String(err) }));
+        }
       }
     },
   });
