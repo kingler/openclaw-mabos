@@ -1,9 +1,7 @@
 import { useRouterState } from "@tanstack/react-router";
 import {
   SendHorizontal,
-  History,
   Sparkles,
-  X,
   Minus,
   Brain,
   Search,
@@ -11,8 +9,7 @@ import {
   Database,
   Workflow,
 } from "lucide-react";
-import { useState, useRef, useEffect, useMemo } from "react";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { useState, useRef, useEffect } from "react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useChatState } from "@/contexts/ChatContext";
 import { usePanels } from "@/contexts/PanelContext";
@@ -85,37 +82,12 @@ export function FloatingChat() {
   );
 
   const [input, setInput] = useState("");
-  const [showResponsePanel, setShowResponsePanel] = useState(false);
+  const [showSuggestions, setShowSuggestions] = useState(false);
   const inputRef = useRef<HTMLTextAreaElement>(null);
-  const responseScrollRef = useRef<HTMLDivElement>(null);
+  const scrollAnchorRef = useRef<HTMLDivElement>(null);
+  const isUserScrolledUpRef = useRef(false);
+  const scrollAreaRef = useRef<HTMLDivElement>(null);
   const suggestions = getSuggestions(routerState.location.pathname);
-
-  // Derive latest agent message
-  const latestAgentMessage = useMemo(() => {
-    for (let i = messages.length - 1; i >= 0; i--) {
-      if (messages[i].role === "agent") return messages[i];
-    }
-    return null;
-  }, [messages]);
-
-  // Auto-open panel when agent activity starts
-  useEffect(() => {
-    if (agentActivity.status !== null) {
-      setShowResponsePanel(true);
-    }
-  }, [agentActivity.status]);
-
-  // Auto-scroll response area when content changes
-  useEffect(() => {
-    if (responseScrollRef.current) {
-      responseScrollRef.current.scrollTop = responseScrollRef.current.scrollHeight;
-    }
-  }, [latestAgentMessage?.content, agentActivity.status]);
-
-  // Sync activeAgent to ChatContext for collapsed button
-  useEffect(() => {
-    setLastActiveAgent(activeAgent);
-  }, [activeAgent, setLastActiveAgent]);
 
   const statusColor = {
     connected: "bg-[var(--accent-green)]",
@@ -123,15 +95,45 @@ export function FloatingChat() {
     disconnected: "bg-[var(--accent-red)]",
   }[status];
 
-  // Determine if the unified panel should be visible
-  const showPanel =
-    agentActivity.status !== null || latestAgentMessage?.streaming || showResponsePanel;
+  // Sync activeAgent to ChatContext for collapsed button
+  useEffect(() => {
+    setLastActiveAgent(activeAgent);
+  }, [activeAgent, setLastActiveAgent]);
+
+  // Attach scroll listener to ScrollArea viewport to track user scroll position
+  useEffect(() => {
+    const root = scrollAreaRef.current;
+    if (!root) return;
+    const viewport = root.querySelector<HTMLElement>('[data-slot="scroll-area-viewport"]');
+    if (!viewport) return;
+
+    function onScroll() {
+      if (!viewport) return;
+      const distanceFromBottom = viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight;
+      isUserScrolledUpRef.current = distanceFromBottom > 40;
+    }
+
+    viewport.addEventListener("scroll", onScroll, { passive: true });
+    return () => viewport.removeEventListener("scroll", onScroll);
+  }, []);
+
+  // Auto-scroll when new messages arrive (unless user scrolled up)
+  useEffect(() => {
+    if (!isUserScrolledUpRef.current && scrollAnchorRef.current) {
+      scrollAnchorRef.current.scrollIntoView({ behavior: "smooth" });
+    }
+  }, [messages, agentActivity.status]);
 
   function handleSend(text?: string) {
     const msg = text || input;
     if (!msg.trim()) return;
     sendMessage(msg, { page: pageCtx.pageId, capabilities: pageCtx.capabilities });
     setInput("");
+    // Force scroll to bottom on send
+    isUserScrolledUpRef.current = false;
+    requestAnimationFrame(() => {
+      scrollAnchorRef.current?.scrollIntoView({ behavior: "smooth" });
+    });
   }
 
   function handleKeyDown(e: React.KeyboardEvent) {
@@ -153,112 +155,24 @@ export function FloatingChat() {
     <div
       className={`fixed bottom-[40px] left-1/2 -translate-x-1/2 ${isPanelExpanded ? "z-[60]" : "z-[30]"} w-[calc(100vw-48px)] md:max-w-[800px] max-[480px]:max-w-[calc(100%-24px)] max-[480px]:bottom-[20px]`}
     >
-      {/* Unified Response + Suggestions Panel */}
-      {showPanel && (
-        <div
-          className="mb-2 rounded-xl bg-[var(--bg-secondary)] border border-[var(--border-mabos)] backdrop-blur-sm overflow-hidden"
-          style={{ boxShadow: "0 0 40px rgba(0, 0, 0, 0.15)" }}
-        >
-          {/* Agent Response Section */}
-          {(agentActivity.status || latestAgentMessage) && (
-            <div className="px-3 pt-3">
-              <ScrollArea className="max-h-[40vh]">
-                <div ref={responseScrollRef}>
-                  {/* Show latest agent response */}
-                  {latestAgentMessage && <ChatMessage message={latestAgentMessage} />}
-                  {/* Show activity indicator when processing */}
-                  {agentActivity.status && <AgentActivityIndicator activity={agentActivity} />}
-                </div>
-              </ScrollArea>
-            </div>
-          )}
-
-          {/* Spacer between sections */}
-          {(agentActivity.status || latestAgentMessage) && suggestions.length > 0 && (
-            <div className="h-[30px]" />
-          )}
-
-          {/* Suggestions Section (pinned bottom) */}
-          {suggestions.length > 0 && (
-            <div className="p-2 border-t border-[var(--border-mabos)]">
-              <div className="flex items-center justify-between px-2 mb-1">
-                <span className="text-[10px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">
-                  Suggestions
-                </span>
-                <button
-                  onClick={() => setShowResponsePanel(false)}
-                  className="p-0.5 rounded text-[var(--text-muted)] hover:text-[var(--text-primary)]"
-                >
-                  <X className="w-3 h-3" />
-                </button>
-              </div>
-              <div className="flex flex-wrap gap-1.5">
-                {suggestions.map((s) => (
-                  <button
-                    key={s}
-                    onClick={() => handleSuggestionClick(s)}
-                    className="px-3 py-1.5 text-xs rounded-full bg-[var(--bg-tertiary)] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] transition-colors"
-                  >
-                    {s}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Floating chat box */}
+      {/* Unified chat container */}
       <div
-        className="relative flex flex-col rounded-[5px] bg-[var(--bg-secondary)] border border-[var(--border-mabos)] h-[175px] max-md:h-[120px] focus-within:border-[var(--accent-purple)] focus-within:ring-2 focus-within:ring-[var(--accent-purple)]/30 transition-shadow"
-        style={{ boxShadow: "0 -4px 24px rgba(0,0,0,0.08)" }}
+        className="flex flex-col rounded-xl bg-[var(--bg-secondary)] border border-[var(--border-mabos)] overflow-hidden h-[min(480px,60vh)] md:h-[min(480px,60vh)] max-[768px]:h-[min(400px,70vh)] max-[480px]:h-[min(360px,80vh)] focus-within:border-[var(--accent-purple)] focus-within:ring-2 focus-within:ring-[var(--accent-purple)]/30 transition-shadow"
+        style={{ boxShadow: "0 0 40px rgba(0, 0, 0, 0.15)" }}
       >
-        {/* Top toolbar row */}
+        {/* Top toolbar */}
         <div className="flex items-center gap-1 px-3 py-1.5 border-b border-[var(--border-mabos)] shrink-0">
-          {/* History popover */}
-          <Popover>
-            <PopoverTrigger asChild>
-              <button
-                className="p-1.5 rounded text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)] transition-colors shrink-0"
-                aria-label="Chat history"
-              >
-                <History className="w-4 h-4" />
-              </button>
-            </PopoverTrigger>
-            <PopoverContent
-              side="top"
-              align="start"
-              className="w-80 p-0 bg-[var(--bg-secondary)] border-[var(--border-mabos)]"
-            >
-              <div className="p-3 border-b border-[var(--border-mabos)]">
-                <p className="text-sm font-medium text-[var(--text-primary)]">Chat History</p>
-                <div className="flex items-center gap-1.5 mt-1">
-                  <div className={`w-1.5 h-1.5 rounded-full ${statusColor}`} />
-                  <span className="text-[10px] text-[var(--text-muted)] capitalize">{status}</span>
-                </div>
-              </div>
-              <ScrollArea className="max-h-[60vh]">
-                <div className="p-3">
-                  {messages.length === 0 ? (
-                    <p className="text-xs text-[var(--text-muted)] text-center py-6">
-                      No messages yet
-                    </p>
-                  ) : (
-                    messages.map((msg) => <ChatMessage key={msg.id} message={msg} />)
-                  )}
-                </div>
-              </ScrollArea>
-            </PopoverContent>
-          </Popover>
-
-          {/* Agent selector (compact) */}
+          {/* Agent selector */}
           <AgentSelector activeAgent={activeAgent} onSelect={setActiveAgent} />
+
+          {/* Connection status dot */}
+          <div className={`w-2 h-2 rounded-full ${statusColor} shrink-0`} title={status} />
 
           {/* Suggestions toggle */}
           <button
-            onClick={() => setShowResponsePanel((s) => !s)}
-            className="p-1.5 rounded text-[var(--text-muted)] hover:text-[var(--accent-purple)] hover:bg-[var(--bg-hover)] transition-colors shrink-0"
-            aria-label="Show suggestions"
+            onClick={() => setShowSuggestions((s) => !s)}
+            className={`p-1.5 rounded hover:bg-[var(--bg-hover)] transition-colors shrink-0 ${showSuggestions ? "text-[var(--accent-purple)]" : "text-[var(--text-muted)] hover:text-[var(--accent-purple)]"}`}
+            aria-label="Toggle suggestions"
           >
             <Sparkles className="w-4 h-4" />
           </button>
@@ -277,26 +191,67 @@ export function FloatingChat() {
           </button>
         </div>
 
-        {/* Textarea */}
-        <textarea
-          ref={inputRef}
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onFocus={() => setShowResponsePanel(true)}
-          onKeyDown={handleKeyDown}
-          placeholder="Message your agents..."
-          className="flex-1 min-h-0 w-full resize-none px-3 py-2 pr-14 text-sm bg-transparent text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none"
-        />
+        {/* Scrollable message thread */}
+        <div ref={scrollAreaRef} className="flex-1 min-h-0 overflow-hidden">
+          <ScrollArea className="h-full">
+            <div className="p-3">
+              {messages.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-12 text-center">
+                  <p className="text-sm text-[var(--text-muted)]">
+                    Message your agents to get started
+                  </p>
+                </div>
+              ) : (
+                messages.map((msg) => <ChatMessage key={msg.id} message={msg} />)
+              )}
+              {agentActivity.status && <AgentActivityIndicator activity={agentActivity} />}
+              <div ref={scrollAnchorRef} />
+            </div>
+          </ScrollArea>
+        </div>
 
-        {/* Send button */}
-        <button
-          onClick={() => handleSend()}
-          disabled={!input.trim()}
-          className="absolute bottom-3 right-3 flex items-center justify-center w-10 h-10 rounded-[5px] bg-[var(--accent-purple)] text-white hover:opacity-90 transition-opacity disabled:opacity-50 shrink-0"
-          aria-label="Send message"
-        >
-          <SendHorizontal className="w-5 h-5" />
-        </button>
+        {/* Suggestions row (toggled by Sparkles) */}
+        {showSuggestions && suggestions.length > 0 && (
+          <div className="p-2 border-t border-[var(--border-mabos)] shrink-0">
+            <div className="flex items-center px-2 mb-1">
+              <span className="text-[10px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">
+                Suggestions
+              </span>
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {suggestions.map((s) => (
+                <button
+                  key={s}
+                  onClick={() => handleSuggestionClick(s)}
+                  className="px-3 py-1.5 text-xs rounded-full bg-[var(--bg-tertiary)] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] transition-colors"
+                >
+                  {s}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Input area */}
+        <div className="relative border-t border-[var(--border-mabos)] shrink-0">
+          <textarea
+            ref={inputRef}
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={handleKeyDown}
+            placeholder="Message your agents..."
+            className="w-full resize-none px-3 py-2 pr-14 text-sm bg-transparent text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none min-h-[44px] max-h-[80px]"
+            rows={1}
+          />
+          <button
+            onClick={() => handleSend()}
+            disabled={!input.trim()}
+            className="absolute bottom-2 right-2 flex items-center justify-center w-9 h-9 rounded-[5px] bg-[var(--accent-purple)] text-white hover:opacity-90 transition-opacity disabled:opacity-50 shrink-0"
+            aria-label="Send message"
+          >
+            <SendHorizontal className="w-4 h-4" />
+          </button>
+        </div>
       </div>
     </div>
   );
