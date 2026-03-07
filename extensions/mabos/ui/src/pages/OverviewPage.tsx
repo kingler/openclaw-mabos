@@ -4,9 +4,10 @@ import { BdiStatusPanel } from "@/components/dashboard/BdiStatusPanel";
 import { RecentActivity } from "@/components/dashboard/RecentActivity";
 import { StatusCards } from "@/components/dashboard/StatusCards";
 import { useAgents } from "@/hooks/useAgents";
+import { useCronJobs } from "@/hooks/useCronJobs";
 import { useStatus } from "@/hooks/useStatus";
 import { useTasks } from "@/hooks/useTasks";
-import type { SystemStatus, Task, AgentListResponse } from "@/lib/types";
+import type { SystemStatus, Task, AgentListResponse, CronJob } from "@/lib/types";
 
 const BUSINESS_ID = "vividwalls";
 
@@ -14,6 +15,7 @@ export function OverviewPage() {
   const { data: statusRaw, isLoading: statusLoading, error: statusError } = useStatus();
   const { data: agentsRaw, isLoading: agentsLoading, error: agentsError } = useAgents(BUSINESS_ID);
   const { data: tasksRaw, isLoading: tasksLoading } = useTasks(BUSINESS_ID);
+  const { data: cronJobs } = useCronJobs(BUSINESS_ID);
 
   const status = statusRaw as SystemStatus | undefined;
   const agentsResponse = agentsRaw as AgentListResponse | undefined;
@@ -49,7 +51,11 @@ export function OverviewPage() {
       <StatusCards status={status} tasks={tasks} isLoading={statusLoading || tasksLoading} />
 
       {/* BDI Status Panel */}
-      <BdiStatusPanel status={status} agents={agents} />
+      <BdiStatusPanel
+        status={status}
+        agents={agents}
+        cronJobs={cronJobs as CronJob[] | undefined}
+      />
 
       {/* Agent Status Grid */}
       <AgentStatusGrid agents={agents} isLoading={agentsLoading} />

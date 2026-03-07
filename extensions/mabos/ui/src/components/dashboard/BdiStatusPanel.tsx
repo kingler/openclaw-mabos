@@ -1,17 +1,20 @@
 import { useMutation } from "@tanstack/react-query";
 import { Activity, Play } from "lucide-react";
+import { HeartbeatMonitor } from "@/components/dashboard/HeartbeatMonitor";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { useActivityScore } from "@/hooks/useActivityScore";
 import { api } from "@/lib/api";
-import type { SystemStatus, AgentListItem } from "@/lib/types";
+import type { SystemStatus, AgentListItem, CronJob } from "@/lib/types";
 
 type BdiStatusPanelProps = {
   status: SystemStatus | undefined;
   agents: AgentListItem[] | undefined;
+  cronJobs: CronJob[] | undefined;
 };
 
-export function BdiStatusPanel({ status, agents }: BdiStatusPanelProps) {
+export function BdiStatusPanel({ status, agents, cronJobs }: BdiStatusPanelProps) {
   const triggerCycle = useMutation({
     mutationFn: ({ agentId }: { agentId: string }) => api.triggerBdiCycle("vividwalls", agentId),
   });
@@ -19,6 +22,8 @@ export function BdiStatusPanel({ status, agents }: BdiStatusPanelProps) {
   const heartbeat = status?.bdiHeartbeat;
   const isActive = heartbeat === "active";
   const intervalMin = status?.bdiIntervalMinutes ?? 30;
+
+  const { activityLevel, agentPulses } = useActivityScore(status, agents, cronJobs);
 
   return (
     <Card className="border-[var(--border-mabos)] bg-[var(--bg-card)] shadow-none">
@@ -28,31 +33,28 @@ export function BdiStatusPanel({ status, agents }: BdiStatusPanelProps) {
             <Activity className="w-4 h-4" />
             BDI Heartbeat
           </CardTitle>
-          <div className="flex items-center gap-2">
-            <span
-              className="inline-block w-2 h-2 rounded-full"
-              style={{
-                backgroundColor: isActive ? "var(--accent-green)" : "var(--text-muted)",
-                boxShadow: isActive ? "0 0 6px var(--accent-green)" : "none",
-                animation: isActive ? "pulse 2s infinite" : "none",
-              }}
-            />
-            <Badge
-              variant="outline"
-              className="text-[10px]"
-              style={{
-                borderColor: isActive
-                  ? "color-mix(in srgb, var(--accent-green) 30%, transparent)"
-                  : "var(--border-mabos)",
-                color: isActive ? "var(--accent-green)" : "var(--text-muted)",
-              }}
-            >
-              {isActive ? "Active" : "Stopped"}
-            </Badge>
-          </div>
+          <Badge
+            variant="outline"
+            className="text-[10px]"
+            style={{
+              borderColor: isActive
+                ? "color-mix(in srgb, var(--accent-green) 30%, transparent)"
+                : "var(--border-mabos)",
+              color: isActive ? "var(--accent-green)" : "var(--text-muted)",
+            }}
+          >
+            {isActive ? "Active" : "Stopped"}
+          </Badge>
         </div>
       </CardHeader>
       <CardContent className="space-y-3">
+        {/* ECG Heartbeat Monitor */}
+        <HeartbeatMonitor
+          activityLevel={activityLevel}
+          agentPulses={agentPulses}
+          isActive={isActive}
+        />
+
         <div className="grid grid-cols-2 gap-3">
           <div>
             <p className="text-xs text-[var(--text-muted)]">Interval</p>
