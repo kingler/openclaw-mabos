@@ -3,7 +3,7 @@
  * Bundled Extension Entry Point (Deep Integration)
  *
  * Registers:
- *  - 100+ tools across 21 modules
+ *  - 133 tools across 22 modules (includes 34 Shopify Admin tools)
  *  - BDI background heartbeat service
  *  - CLI subcommands (onboard, agents, bdi, business, dashboard)
  *  - Unified memory bridge to native memory system
@@ -11,6 +11,7 @@
  */
 
 import type { OpenClawPluginApi } from "openclaw/plugin-sdk";
+import { isMabosProduct } from "../../src/config/paths.js";
 import { createAuthRateLimiter } from "../../src/gateway/auth-rate-limit.js";
 import { resolveGatewayAuth, type ResolvedGatewayAuth } from "../../src/gateway/auth.js";
 import { authorizeGatewayBearerRequestOrReply } from "../../src/gateway/http-auth-helpers.js";
@@ -24,7 +25,12 @@ import { createBusinessTools } from "./src/tools/business-tools.js";
 import { createCapabilitiesSyncTools, categorize } from "./src/tools/capabilities-sync.js";
 import { createCbrTools } from "./src/tools/cbr-tools.js";
 import { createCloudflareTools } from "./src/tools/cloudflare-tools.js";
-import { resolveWorkspaceDir, getPluginConfig, generatePrefixedId } from "./src/tools/common.js";
+import {
+  resolveWorkspaceDir,
+  getPluginConfig,
+  generatePrefixedId,
+  listWorkspaceBusinessIds,
+} from "./src/tools/common.js";
 import { createCommunicationTools } from "./src/tools/communication-tools.js";
 import { createCrmTools } from "./src/tools/crm-tools.js";
 import { createDesireTools } from "./src/tools/desire-tools.js";
@@ -36,6 +42,7 @@ import { createGoDaddyTools } from "./src/tools/godaddy-tools.js";
 import { createInferenceTools } from "./src/tools/inference-tools.js";
 import { createIntegrationTools } from "./src/tools/integration-tools.js";
 import { createKnowledgeTools } from "./src/tools/knowledge-tools.js";
+import { createLifestyleGalleryTools } from "./src/tools/lifestyle-gallery-tools.js";
 import { createMarketingTools } from "./src/tools/marketing-tools.js";
 import { createMemoryHierarchyTools } from "./src/tools/memory-hierarchy.js";
 import { createMemoryTools } from "./src/tools/memory-tools.js";
@@ -51,6 +58,7 @@ import { createSendGridTools } from "./src/tools/sendgrid-tools.js";
 import { createSeoAnalyticsTools } from "./src/tools/seo-analytics-tools.js";
 import { createSetupWizardTools } from "./src/tools/setup-wizard-tools.js";
 import { createShopifyTools } from "./src/tools/shopify-tools.js";
+import { createShopifyAdminTools } from "./src/tools/shopify/index.js";
 import { createStakeholderTools } from "./src/tools/stakeholder-tools.js";
 import { createTwilioTools } from "./src/tools/twilio-tools.js";
 import { createTypeDBTools } from "./src/tools/typedb-tools.js";
@@ -110,7 +118,9 @@ export default function register(api: OpenClawPluginApi) {
     createCloudflareTools,
     createGoDaddyTools,
     createShopifyTools,
+    createShopifyAdminTools,
     createPictoremTools,
+    createLifestyleGalleryTools,
     createApprovalTools,
     createDirectiveTools,
   ];
@@ -356,184 +366,212 @@ ${existingSections}
   });
 
   // ── 3. CLI Subcommands ────────────────────────────────────────
-  api.registerCli(
-    ({ program }) => {
-      const mabos = program
-        .command("mabos")
-        .description("MABOS — Multi-Agent Business Operating System");
+  const registerMabosCliCommands = (
+    root: { command: (name: string) => any },
+    usagePrefix: string,
+    legacyAlias = false,
+  ) => {
+    const maybeWarnLegacyAlias = () => {
+      if (!legacyAlias) {
+        return;
+      }
+      log.warn("[mabos] Legacy command prefix detected. Use `mabos <command>` instead.");
+    };
 
-      // --- mabos onboard ---
-      mabos
-        .command("onboard")
-        .description("Interactive 5-phase business onboarding")
-        .argument("[business-name]", "Name of the business to onboard")
-        .option("--industry <type>", "Industry vertical (e.g., ecommerce, saas)")
-        .action(async (businessName: string | undefined, opts: { industry?: string }) => {
-          const { createOnboardingTools } = await import("./src/tools/onboarding-tools.js");
-          const tools = createOnboardingTools(api);
-          const orchestrateTool = tools.find((t: any) => t.name === "onboarding_orchestrate");
+    root
+      .command("onboard")
+      .description("Interactive 5-phase business onboarding")
+      .argument("[business-name]", "Name of the business to onboard")
+      .option("--industry <type>", "Industry vertical (e.g., ecommerce, saas)")
+      .action(async (businessName: string | undefined, opts: { industry?: string }) => {
+        maybeWarnLegacyAlias();
+        const { createOnboardingTools } = await import("./src/tools/onboarding-tools.js");
+        const tools = createOnboardingTools(api);
+        const orchestrateTool = tools.find((t: any) => t.name === "onboarding_orchestrate");
 
-          if (!orchestrateTool && businessName) {
-            log.info(`Starting onboarding for: ${businessName}`);
-            log.info("Use the MABOS agent tools for full interactive onboarding.");
+        if (!orchestrateTool && businessName) {
+          log.info(`Starting onboarding for: ${businessName}`);
+          log.info("Use the MABOS agent tools for full interactive onboarding.");
+          return;
+        }
+
+        if (businessName && orchestrateTool) {
+          log.info(`Onboarding "${businessName}" (${opts.industry ?? "general"})...`);
+          try {
+            const result = await (orchestrateTool as any).execute("cli", {
+              business_name: businessName,
+              industry: opts.industry ?? "general",
+            });
+            log.info(JSON.stringify(result, null, 2));
+          } catch (err) {
+            log.error(`Onboarding error: ${err instanceof Error ? err.message : String(err)}`);
+          }
+        } else {
+          log.info(`Usage: ${usagePrefix} onboard <business-name> [--industry <type>]`);
+          log.info("Industries: ecommerce, saas, consulting, marketplace, retail");
+        }
+      });
+
+    root
+      .command("agents")
+      .description("List BDI agents with cognitive state summary")
+      .action(async () => {
+        maybeWarnLegacyAlias();
+        try {
+          const { getAgentsSummary } = (await import(
+            /* webpackIgnore: true */ BDI_RUNTIME_PATH
+          )) as any;
+          const summaries = await getAgentsSummary(workspaceDir);
+
+          if (summaries.length === 0) {
+            log.info(`No MABOS agents found. Run '${usagePrefix} onboard' to create a business.`);
             return;
           }
 
-          if (businessName && orchestrateTool) {
-            log.info(`Onboarding "${businessName}" (${opts.industry ?? "general"})...`);
-            try {
-              const result = await (orchestrateTool as any).execute("cli", {
-                business_name: businessName,
-                industry: opts.industry ?? "general",
-              });
-              log.info(JSON.stringify(result, null, 2));
-            } catch (err) {
-              log.error(`Onboarding error: ${err instanceof Error ? err.message : String(err)}`);
-            }
-          } else {
-            log.info("Usage: mabos onboard <business-name> [--industry <type>]");
-            log.info("Industries: ecommerce, saas, consulting, marketplace, retail");
-          }
-        });
+          log.info("\nMABOS Agents\n" + "=".repeat(70));
+          log.info(
+            "Agent".padEnd(15) +
+              "Beliefs".padEnd(10) +
+              "Goals".padEnd(10) +
+              "Intentions".padEnd(12) +
+              "Desires".padEnd(10),
+          );
+          log.info("-".repeat(70));
 
-      // --- mabos agents ---
-      mabos
-        .command("agents")
-        .description("List BDI agents with cognitive state summary")
-        .action(async () => {
-          try {
-            const { getAgentsSummary } = (await import(
-              /* webpackIgnore: true */ BDI_RUNTIME_PATH
-            )) as any;
-            const summaries = await getAgentsSummary(workspaceDir);
-
-            if (summaries.length === 0) {
-              log.info("No MABOS agents found. Run 'mabos onboard' to create a business.");
-              return;
-            }
-
-            log.info("\nMABOS Agents\n" + "=".repeat(70));
+          for (const s of summaries) {
             log.info(
-              "Agent".padEnd(15) +
-                "Beliefs".padEnd(10) +
-                "Goals".padEnd(10) +
-                "Intentions".padEnd(12) +
-                "Desires".padEnd(10),
+              s.agentId.padEnd(15) +
+                String(s.beliefCount).padEnd(10) +
+                String(s.goalCount).padEnd(10) +
+                String(s.intentionCount).padEnd(12) +
+                String(s.desireCount).padEnd(10),
             );
-            log.info("-".repeat(70));
-
-            for (const s of summaries) {
-              log.info(
-                s.agentId.padEnd(15) +
-                  String(s.beliefCount).padEnd(10) +
-                  String(s.goalCount).padEnd(10) +
-                  String(s.intentionCount).padEnd(12) +
-                  String(s.desireCount).padEnd(10),
-              );
-            }
-            log.info(`\nTotal: ${summaries.length} agents`);
-          } catch (err) {
-            log.error(`Error: ${err instanceof Error ? err.message : String(err)}`);
           }
-        });
+          log.info(`\nTotal: ${summaries.length} agents`);
+        } catch (err) {
+          log.error(`Error: ${err instanceof Error ? err.message : String(err)}`);
+        }
+      });
 
-      // --- mabos bdi cycle <agent> ---
-      mabos
-        .command("bdi")
-        .description("BDI cognitive operations")
-        .command("cycle")
-        .argument("<agent-id>", "Agent to run BDI cycle for")
-        .description("Trigger a BDI maintenance cycle for an agent")
-        .action(async (agentId: string) => {
-          try {
-            const { join } = await import("node:path");
-            const { readAgentCognitiveState, runMaintenanceCycle } = (await import(
-              /* webpackIgnore: true */ BDI_RUNTIME_PATH
-            )) as any;
-            const agentDir = join(workspaceDir, "agents", agentId);
-            const state = await readAgentCognitiveState(agentDir, agentId);
-            const result = await runMaintenanceCycle(state);
-            log.info(`BDI cycle for ${agentId}:`);
-            log.info(`  Intentions pruned: ${result.staleIntentionsPruned}`);
-            log.info(`  Desires re-sorted: ${result.desiresPrioritized}`);
-            log.info(`  Timestamp: ${result.timestamp}`);
-          } catch (err) {
-            log.error(`Error: ${err instanceof Error ? err.message : String(err)}`);
+    root
+      .command("bdi")
+      .description("BDI cognitive operations")
+      .command("cycle")
+      .argument("<agent-id>", "Agent to run BDI cycle for")
+      .description("Trigger a BDI maintenance cycle for an agent")
+      .action(async (agentId: string) => {
+        maybeWarnLegacyAlias();
+        try {
+          const { join } = await import("node:path");
+          const { readAgentCognitiveState, runMaintenanceCycle } = (await import(
+            /* webpackIgnore: true */ BDI_RUNTIME_PATH
+          )) as any;
+          const agentDir = join(workspaceDir, "agents", agentId);
+          const state = await readAgentCognitiveState(agentDir, agentId);
+          const result = await runMaintenanceCycle(state);
+          log.info(`BDI cycle for ${agentId}:`);
+          log.info(`  Intentions pruned: ${result.staleIntentionsPruned}`);
+          log.info(`  Desires re-sorted: ${result.desiresPrioritized}`);
+          log.info(`  Timestamp: ${result.timestamp}`);
+        } catch (err) {
+          log.error(`Error: ${err instanceof Error ? err.message : String(err)}`);
+        }
+      });
+
+    root
+      .command("business")
+      .description("Business management operations")
+      .command("list")
+      .description("List managed businesses")
+      .action(async () => {
+        maybeWarnLegacyAlias();
+        try {
+          const { readdir, stat: fsStat } = await import("node:fs/promises");
+          const { join } = await import("node:path");
+          const businessDir = join(workspaceDir, "businesses");
+          const entries = await readdir(businessDir).catch(() => []);
+
+          if (entries.length === 0) {
+            log.info(`No businesses found. Run '${usagePrefix} onboard' to create one.`);
+            return;
           }
-        });
 
-      // --- mabos business list ---
-      mabos
-        .command("business")
-        .description("Business management operations")
-        .command("list")
-        .description("List managed businesses")
-        .action(async () => {
-          try {
-            const { readdir, stat: fsStat } = await import("node:fs/promises");
-            const { join } = await import("node:path");
-            const businessDir = join(workspaceDir, "businesses");
-            const entries = await readdir(businessDir).catch(() => []);
-
-            if (entries.length === 0) {
-              log.info("No businesses found. Run 'mabos onboard' to create one.");
-              return;
-            }
-
-            log.info("\nManaged Businesses\n" + "=".repeat(50));
-            for (const entry of entries) {
-              const s = await fsStat(join(businessDir, entry)).catch(() => null);
-              if (s?.isDirectory()) {
-                const manifest = join(businessDir, entry, "manifest.json");
-                try {
-                  const { readFile } = await import("node:fs/promises");
-                  const data = JSON.parse(await readFile(manifest, "utf-8"));
-                  log.info(`  ${data.name ?? entry} (${data.industry ?? "general"})`);
-                } catch {
-                  log.info(`  ${entry}`);
-                }
+          log.info("\nManaged Businesses\n" + "=".repeat(50));
+          for (const entry of entries) {
+            const s = await fsStat(join(businessDir, entry)).catch(() => null);
+            if (s?.isDirectory()) {
+              const manifest = join(businessDir, entry, "manifest.json");
+              try {
+                const { readFile } = await import("node:fs/promises");
+                const data = JSON.parse(await readFile(manifest, "utf-8"));
+                log.info(`  ${data.name ?? entry} (${data.industry ?? "general"})`);
+              } catch {
+                log.info(`  ${entry}`);
               }
             }
-          } catch (err) {
-            log.error(`Error: ${err instanceof Error ? err.message : String(err)}`);
           }
-        });
+        } catch (err) {
+          log.error(`Error: ${err instanceof Error ? err.message : String(err)}`);
+        }
+      });
 
-      // --- mabos migrate ---
-      mabos
-        .command("migrate")
-        .description("Migrate data from ~/.openclaw to ~/.mabos")
-        .option("--dry-run", "Preview changes without modifying files")
-        .action(async (opts: { dryRun?: boolean }) => {
-          try {
-            const migratePath = "../../mabos/scripts/migrate.js";
-            const { migrate } = (await import(/* webpackIgnore: true */ migratePath)) as any;
-            await migrate({ dryRun: opts.dryRun ?? false });
-          } catch (err) {
-            log.error(`Migration error: ${err instanceof Error ? err.message : String(err)}`);
-          }
-        });
+    root
+      .command("migrate")
+      .description("Migrate data from ~/.openclaw to ~/.mabos")
+      .option("--dry-run", "Preview changes without modifying files")
+      .action(async (opts: { dryRun?: boolean }) => {
+        maybeWarnLegacyAlias();
+        try {
+          const migratePath = "../../mabos/scripts/migrate.js";
+          const { migrate } = (await import(/* webpackIgnore: true */ migratePath)) as any;
+          await migrate({ dryRun: opts.dryRun ?? false });
+        } catch (err) {
+          log.error(`Migration error: ${err instanceof Error ? err.message : String(err)}`);
+        }
+      });
 
-      // --- mabos dashboard ---
-      mabos
-        .command("dashboard")
-        .description("Open the MABOS web dashboard")
-        .action(async () => {
-          const port = api.config?.gateway?.port ?? 18789;
-          const url = `http://localhost:${port}/mabos/dashboard`;
-          log.info(`Opening dashboard: ${url}`);
-          try {
-            const { exec } = await import("node:child_process");
-            const { platform } = await import("node:os");
-            const cmd =
-              platform() === "darwin" ? "open" : platform() === "win32" ? "start" : "xdg-open";
-            exec(`${cmd} ${url}`);
-          } catch {
-            log.info(`Open manually: ${url}`);
-          }
-        });
+    root
+      .command("dashboard")
+      .description("Open the MABOS web dashboard")
+      .action(async () => {
+        maybeWarnLegacyAlias();
+        const port = api.config?.gateway?.port ?? 18789;
+        const url = `http://localhost:${port}/mabos/dashboard`;
+        log.info(`Opening dashboard: ${url}`);
+        try {
+          const { exec } = await import("node:child_process");
+          const { platform } = await import("node:os");
+          const cmd =
+            platform() === "darwin" ? "open" : platform() === "win32" ? "start" : "xdg-open";
+          exec(`${cmd} ${url}`);
+        } catch {
+          log.info(`Open manually: ${url}`);
+        }
+      });
+  };
+
+  const mabosProductMode = isMabosProduct();
+  api.registerCli(
+    ({ program }) => {
+      if (mabosProductMode) {
+        registerMabosCliCommands(program, "mabos");
+        const legacyMabosPrefix = program
+          .command("mabos")
+          .description("Legacy command prefix alias (deprecated)");
+        registerMabosCliCommands(legacyMabosPrefix, "mabos mabos", true);
+        return;
+      }
+
+      const mabos = program
+        .command("mabos")
+        .description("MABOS — Multi-Agent Business Operating System");
+      registerMabosCliCommands(mabos, "mabos");
     },
-    { commands: ["mabos"] },
+    {
+      commands: mabosProductMode
+        ? ["onboard", "agents", "bdi", "business", "migrate", "dashboard", "mabos"]
+        : ["mabos"],
+    },
   );
 
   // ── 4. Dashboard HTTP Routes & API Endpoints ─────────────────────
@@ -616,6 +654,87 @@ ${existingSections}
       }
     },
   });
+
+  const listBusinessCandidates = async (preferredBusinessId?: string): Promise<string[]> => {
+    const candidates = new Set<string>();
+    const safePreferred = preferredBusinessId ? sanitizeId(preferredBusinessId) : null;
+    if (safePreferred) {
+      candidates.add(safePreferred);
+    }
+    for (const businessId of await listWorkspaceBusinessIds(workspaceDir)) {
+      const safeBusinessId = sanitizeId(businessId);
+      if (safeBusinessId) {
+        candidates.add(safeBusinessId);
+      }
+    }
+    return [...candidates];
+  };
+
+  const findBusinessIdForAgent = async (
+    agentId: string,
+    preferredBusinessId?: string,
+  ): Promise<string | null> => {
+    const { stat: fsStat } = await import("node:fs/promises");
+    const { join } = await import("node:path");
+    const candidates = await listBusinessCandidates(preferredBusinessId);
+
+    for (const businessId of candidates) {
+      const agentDir = join(workspaceDir, "businesses", businessId, "agents", agentId);
+      try {
+        if ((await fsStat(agentDir)).isDirectory()) {
+          return businessId;
+        }
+      } catch {
+        // Continue scanning candidates.
+      }
+    }
+
+    return candidates[0] ?? null;
+  };
+
+  const readBusinessAgentIds = async (businessId: string): Promise<string[]> => {
+    const { readdir } = await import("node:fs/promises");
+    const { join } = await import("node:path");
+    try {
+      const entries = await readdir(join(workspaceDir, "businesses", businessId, "agents"), {
+        withFileTypes: true,
+      });
+      return entries
+        .filter((entry) => entry.isDirectory())
+        .map((entry) => sanitizeId(entry.name))
+        .filter((entry): entry is string => !!entry);
+    } catch {
+      return [];
+    }
+  };
+
+  const selectRoleAgentId = (agentIds: string[], role: string): string | null => {
+    if (agentIds.includes(role)) {
+      return role;
+    }
+    return (
+      agentIds.find((agentId) => agentId.endsWith(`-${role}`) || agentId.endsWith(`_${role}`)) ??
+      null
+    );
+  };
+
+  const resolveRoleAgentIdForBusiness = async (
+    businessId: string,
+    role: string,
+  ): Promise<string> => {
+    const agentIds = await readBusinessAgentIds(businessId);
+    return selectRoleAgentId(agentIds, role) ?? role;
+  };
+
+  const resolveDefaultRoleAgentId = async (role: string): Promise<string> => {
+    for (const businessId of await listBusinessCandidates()) {
+      const match = selectRoleAgentId(await readBusinessAgentIds(businessId), role);
+      if (match) {
+        return match;
+      }
+    }
+    return role;
+  };
 
   // API: System status (enhanced)
   api.registerHttpRoute({
@@ -1080,7 +1199,11 @@ ${existingSections}
         return true;
       }
 
-      const bdiDir = join(workspaceDir, "businesses", "vividwalls", "agents", agentId);
+      const requestedBusinessId = sanitizeId(url.searchParams.get("businessId") || "");
+      const businessId = await findBusinessIdForAgent(agentId, requestedBusinessId || undefined);
+      const bdiDir = businessId
+        ? join(workspaceDir, "businesses", businessId, "agents", agentId)
+        : null;
       const coreDir = join(workspaceDir, "agents", agentId);
       const rawFilename = filesMatch[2];
 
@@ -1095,25 +1218,32 @@ ${existingSections}
         }
 
         // Resolve which directory contains the file (BDI first, then core)
-        let filePath = join(bdiDir, filename);
-        let category: "bdi" | "core" = "bdi";
+        let filePath = bdiDir ? join(bdiDir, filename) : join(coreDir, filename);
+        let category: "bdi" | "core" = bdiDir ? "bdi" : "core";
         try {
           await fsStat(filePath);
         } catch {
-          filePath = join(coreDir, filename);
-          category = "core";
-          try {
-            await fsStat(filePath);
-          } catch {
-            if (req.method !== "PUT") {
-              res.statusCode = 404;
-              res.setHeader("Content-Type", "application/json");
-              res.end(JSON.stringify({ error: "File not found" }));
-              return true;
+          if (bdiDir) {
+            filePath = join(coreDir, filename);
+            category = "core";
+            try {
+              await fsStat(filePath);
+            } catch {
+              if (req.method !== "PUT") {
+                res.statusCode = 404;
+                res.setHeader("Content-Type", "application/json");
+                res.end(JSON.stringify({ error: "File not found" }));
+                return true;
+              }
+              // For PUT, default to business-scoped BDI dir.
+              filePath = join(bdiDir, filename);
+              category = "bdi";
             }
-            // For PUT, default to BDI dir
-            filePath = join(bdiDir, filename);
-            category = "bdi";
+          } else if (req.method !== "PUT") {
+            res.statusCode = 404;
+            res.setHeader("Content-Type", "application/json");
+            res.end(JSON.stringify({ error: "File not found" }));
+            return true;
           }
         }
 
@@ -1149,10 +1279,13 @@ ${existingSections}
       };
       const files: AgentFile[] = [];
 
-      for (const [dir, cat] of [
-        [bdiDir, "bdi"],
-        [coreDir, "core"],
-      ] as const) {
+      const candidateDirs: Array<[string, "bdi" | "core"]> = [];
+      if (bdiDir) {
+        candidateDirs.push([bdiDir, "bdi"]);
+      }
+      candidateDirs.push([coreDir, "core"]);
+
+      for (const [dir, cat] of candidateDirs) {
         try {
           const entries = await readdir(dir);
           for (const entry of entries) {
@@ -1211,7 +1344,16 @@ ${existingSections}
         return true;
       }
 
-      const bdiDir = join(workspaceDir, "businesses", "vividwalls", "agents", agentId);
+      const requestedBusinessId = sanitizeId(url.searchParams.get("businessId") || "");
+      const businessId = await findBusinessIdForAgent(agentId, requestedBusinessId || undefined);
+      if (!businessId) {
+        res.statusCode = req.method === "POST" ? 400 : 404;
+        res.setHeader("Content-Type", "application/json");
+        res.end(JSON.stringify({ error: "Business context not found for agent" }));
+        return true;
+      }
+
+      const bdiDir = join(workspaceDir, "businesses", businessId, "agents", agentId);
 
       if (req.method === "GET") {
         // Try png first, then jpg
@@ -2874,6 +3016,9 @@ ${existingSections}
       // GET: List cron jobs
       let jobs = await readJsonSafe(cronPath);
       if (!jobs || !Array.isArray(jobs)) {
+        const knowledgeAgentId = await resolveRoleAgentIdForBusiness(businessId, "knowledge");
+        const ceoAgentId = await resolveRoleAgentIdForBusiness(businessId, "ceo");
+
         // Seed default cron jobs
         jobs = [
           {
@@ -2891,7 +3036,7 @@ ${existingSections}
             id: "CRON-knowledge",
             name: "Knowledge Consolidation",
             schedule: "0 2 * * *",
-            agentId: "vw-knowledge",
+            agentId: knowledgeAgentId,
             action: "memory_consolidate",
             enabled: true,
             status: "active",
@@ -2900,7 +3045,7 @@ ${existingSections}
             id: "CRON-decisions",
             name: "Decision Queue Review",
             schedule: "0 */6 * * *",
-            agentId: "vw-ceo",
+            agentId: ceoAgentId,
             action: "decision_review",
             enabled: true,
             status: "active",
@@ -4243,14 +4388,17 @@ ${existingSections}
         const client = getTypeDBClient();
         const url = new URL(req.url || "/", "http://localhost");
         const status = url.searchParams.get("status") || undefined;
-        const agentId = url.searchParams.get("agentId") || "vw-ceo";
+        const requestedAgentId = sanitizeId(url.searchParams.get("agentId") || "");
+        const agentId = requestedAgentId || (await resolveDefaultRoleAgentId("ceo"));
 
         if (req.method === "POST") {
           // Create workflow
           const body = await readMabosJsonBody<any>(req, res);
           if (!body) return;
           const id = body.id || generatePrefixedId("bpmn-wf");
-          const typeql = BpmnStoreQueries.createWorkflow(body.agentId || agentId, {
+          const ownerAgentId =
+            (typeof body.agentId === "string" ? sanitizeId(body.agentId) : null) || agentId;
+          const typeql = BpmnStoreQueries.createWorkflow(ownerAgentId, {
             id,
             name: body.name || "Untitled Workflow",
             status: body.status || "pending",
@@ -4410,7 +4558,9 @@ ${existingSections}
 
       const body = await readMabosJsonBody<any>(req, res);
       if (!body) return;
-      const agentId = body.agentId || "vw-ceo";
+      const agentId =
+        (typeof body.agentId === "string" ? sanitizeId(body.agentId) : null) ||
+        (await resolveDefaultRoleAgentId("ceo"));
       const elementId = body.id || generatePrefixedId("bpmn-el");
 
       const typeql = BpmnStoreQueries.addElement(agentId, workflowId, {
@@ -4528,7 +4678,9 @@ ${existingSections}
 
       const body = await readMabosJsonBody<any>(req, res);
       if (!body) return;
-      const agentId = body.agentId || "vw-ceo";
+      const agentId =
+        (typeof body.agentId === "string" ? sanitizeId(body.agentId) : null) ||
+        (await resolveDefaultRoleAgentId("ceo"));
       const flowId = body.id || generatePrefixedId("bpmn-fl");
 
       const typeql = BpmnStoreQueries.addFlow(agentId, workflowId, {
@@ -4602,7 +4754,9 @@ ${existingSections}
 
       const body = await readMabosJsonBody<any>(req, res);
       if (!body) return;
-      const agentId = body.agentId || "vw-ceo";
+      const agentId =
+        (typeof body.agentId === "string" ? sanitizeId(body.agentId) : null) ||
+        (await resolveDefaultRoleAgentId("ceo"));
       const poolId = body.id || generatePrefixedId("bpmn-pool");
 
       const typeql = BpmnStoreQueries.addPool(agentId, workflowId, {
@@ -4644,7 +4798,9 @@ ${existingSections}
 
       const body = await readMabosJsonBody<any>(req, res);
       if (!body) return;
-      const agentId = body.agentId || "vw-ceo";
+      const agentId =
+        (typeof body.agentId === "string" ? sanitizeId(body.agentId) : null) ||
+        (await resolveDefaultRoleAgentId("ceo"));
       const laneId = body.id || generatePrefixedId("bpmn-lane");
 
       const typeql = BpmnStoreQueries.addLane(agentId, body.poolId, {
