@@ -94,6 +94,7 @@ export async function callGatewayRpc<T = Record<string, unknown>>(
   method: string,
   params?: unknown,
   authToken?: string,
+  timeoutMs: number = RPC_TIMEOUT_MS,
 ): Promise<T> {
   return new Promise<T>((resolve, reject) => {
     const connectId = randomUUID();
@@ -104,9 +105,9 @@ export async function callGatewayRpc<T = Record<string, unknown>>(
       if (!settled) {
         settled = true;
         ws.close();
-        reject(new Error(`gateway RPC timeout: ${method} (${RPC_TIMEOUT_MS}ms)`));
+        reject(new Error(`gateway RPC timeout: ${method} (${timeoutMs}ms)`));
       }
-    }, RPC_TIMEOUT_MS);
+    }, timeoutMs);
 
     const ws = new WebSocket(gatewayUrl);
     let handshakeDone = false;
