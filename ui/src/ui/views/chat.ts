@@ -708,10 +708,10 @@ export function renderChat(props: ChatProps) {
       if (e.isComposing || e.keyCode === 229) {
         return;
       }
+      e.preventDefault();
       if (!props.connected) {
         return;
       }
-      e.preventDefault();
       if (canCompose) {
         if (props.draft.trim()) {
           inputHistory.push(props.draft);
@@ -894,12 +894,13 @@ export function renderChat(props: ChatProps) {
             ${
               canAbort && isBusy
                 ? html`
-                  <button class="chat-send-btn chat-send-btn--stop" @click=${props.onAbort} title="Stop">
+                  <button type="button" class="chat-send-btn chat-send-btn--stop" @click=${props.onAbort} title="Stop">
                     ${icons.stop}
                   </button>
                 `
                 : html`
                   <button
+                    type="button"
                     class="chat-send-btn"
                     @click=${() => {
                       if (props.draft.trim()) {
