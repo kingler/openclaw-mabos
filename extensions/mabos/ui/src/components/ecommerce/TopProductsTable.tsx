@@ -14,7 +14,7 @@ const columns: Column<Product>[] = [
     key: "price",
     header: "Price",
     sortable: true,
-    render: (row) => `$${row.price.toFixed(2)}`,
+    render: (row) => `$${Number(row.price).toFixed(2)}`,
   },
   { key: "stock_qty", header: "Stock", sortable: true },
   { key: "category", header: "Category", render: (row) => row.category || "—" },
