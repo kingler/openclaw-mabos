@@ -208,14 +208,7 @@ Use \`decision_resolve\` to approve, reject, defer, or modify.`);
 
         // Notify the requesting agent
         if (decision.agent) {
-          const inboxPath = join(
-            ws,
-            "businesses",
-            params.business_id,
-            "agents",
-            decision.agent,
-            "inbox.json",
-          );
+          const inboxPath = join(ws, "agents", decision.agent, "inbox.json");
           const inbox = (await readJson(inboxPath)) || [];
           inbox.push({
             id: `DEC-${params.decision_id}-resolved`,

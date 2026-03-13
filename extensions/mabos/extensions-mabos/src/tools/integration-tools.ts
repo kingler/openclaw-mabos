@@ -362,14 +362,7 @@ ${JSON.stringify(result.data, null, 2).slice(0, 3000)}
 
         // Send to agent inbox
         if (routing.agent) {
-          const inboxPath = join(
-            ws,
-            "businesses",
-            params.business_id,
-            "agents",
-            routing.agent,
-            "inbox.json",
-          );
+          const inboxPath = join(ws, "agents", routing.agent, "inbox.json");
           const inbox = (await readJson(inboxPath)) || [];
           inbox.push({
             id: `WH-${Date.now().toString(36)}`,

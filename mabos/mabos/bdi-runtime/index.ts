@@ -14,7 +14,7 @@
  *  5. Writes updated cognitive state back
  */
 
-import { readFile, writeFile, readdir, stat } from "node:fs/promises";
+import { readFile, writeFile, readdir, stat, unlink } from "node:fs/promises";
 import { join } from "node:path";
 
 /** Cognitive file names in each agent directory. */
@@ -40,7 +40,7 @@ const BELIEF_CHUNK_SIZE = 50;
 /**
  * R5: Process belief content in chunks for large belief bases.
  */
-async function processBeliefChunks(
+async function _processBeliefChunks(
   beliefs: string,
   processor: (chunk: string) => Promise<{ pruned: number; updated: string }>,
   chunkSize: number = BELIEF_CHUNK_SIZE,
@@ -84,7 +84,7 @@ function detectBeliefConflicts(beliefs: string): Array<{
         .split("\n")[0]
         ?.replace(/^##\s*/, "")
         .trim() || "";
-    const certaintyMatch = block.match(/certainty:\s*([\.\d]+)/);
+    const certaintyMatch = block.match(/certainty:\s*([.\d]+)/);
     const certainty = certaintyMatch ? parseFloat(certaintyMatch[1]) : 0.5;
     // Extract subject — first meaningful word cluster
     const subject = heading
@@ -157,6 +157,8 @@ export interface BdiCycleResult {
   desiresPrioritized: number;
   conflictsDetected: number;
   chunksProcessed: number;
+  unreadMessages: number;
+  urgentMessages: number;
   timestamp: string;
 }
 
@@ -324,12 +326,56 @@ export async function runMaintenanceCycle(state: BdiAgentState): Promise<BdiCycl
     }
   }
 
+  // --- Inbox processing: count unread and urgent messages ---
+  let unreadMessages = 0;
+  let urgentMessages = 0;
+  try {
+    const inboxPath = join(state.agentDir, "inbox.json");
+    const inboxRaw = await readFile(inboxPath, "utf-8");
+    const inbox: Array<{
+      id: string;
+      from: string;
+      performative: string;
+      content: string;
+      read: boolean;
+      priority: string;
+    }> = JSON.parse(inboxRaw);
+    unreadMessages = inbox.filter((m) => !m.read).length;
+    urgentMessages = inbox.filter(
+      (m) => !m.read && (m.priority === "urgent" || m.priority === "high"),
+    ).length;
+
+    // If urgent messages exist, append a transient belief section
+    if (urgentMessages > 0) {
+      const beliefPath = join(state.agentDir, COGNITIVE_FILES.beliefs);
+      let beliefs = state.beliefs || "";
+      // Remove any existing transient communications section
+      beliefs = beliefs.replace(
+        /\n## Pending Communications \[transient\][\s\S]*?(?=\n## |\n*$)/,
+        "",
+      );
+      const urgentEntries = inbox
+        .filter((m) => !m.read && (m.priority === "urgent" || m.priority === "high"))
+        .slice(0, 5)
+        .map(
+          (m) =>
+            `- ${m.id} from ${m.from} [${m.performative}] (${m.priority}): ${(m.content || "").slice(0, 100)}`,
+        );
+      beliefs += `\n## Pending Communications [transient]\n> ${urgentMessages} urgent/high-priority unread message(s)\n${urgentEntries.join("\n")}\n`;
+      await writeFile(beliefPath, beliefs, "utf-8");
+    }
+  } catch {
+    // No inbox or invalid — counts stay 0
+  }
+
   return {
     agentId: state.agentId,
     staleIntentionsPruned,
     desiresPrioritized,
     conflictsDetected,
     chunksProcessed,
+    unreadMessages,
+    urgentMessages,
     timestamp: new Date().toISOString(),
   };
 }
@@ -418,11 +464,36 @@ export function createBdiService(opts: {
       return;
     }
 
+    // Check for wake-up markers — prioritize woken agents
+    const wokeAgents = new Set<string>();
+    for (const agentId of agents) {
+      const wakeUpPath = join(opts.workspaceDir, "agents", agentId, "wake-up.json");
+      try {
+        const wakeUp = JSON.parse(await readFile(wakeUpPath, "utf-8"));
+        wokeAgents.add(agentId);
+        opts.logger.info(
+          `[mabos-bdi] Wake-up marker found for ${agentId}: ${wakeUp.reason || "high-priority message"}`,
+        );
+        // Delete marker after reading
+        await unlink(wakeUpPath).catch(() => {});
+      } catch {
+        // No wake-up marker
+      }
+    }
+
+    // Process woken agents first, then the rest
+    const sortedAgents = [
+      ...agents.filter((a) => wokeAgents.has(a)),
+      ...agents.filter((a) => !wokeAgents.has(a)),
+    ];
+
     let totalPruned = 0;
     let totalPrioritized = 0;
     let totalConflicts = 0;
+    let totalUnread = 0;
+    let totalUrgent = 0;
 
-    for (const agentId of agents) {
+    for (const agentId of sortedAgents) {
       const agentDir = join(opts.workspaceDir, "agents", agentId);
       try {
         const state = await readAgentCognitiveState(agentDir, agentId);
@@ -430,14 +501,16 @@ export function createBdiService(opts: {
         totalPruned += result.staleIntentionsPruned;
         totalPrioritized += result.desiresPrioritized;
         totalConflicts += result.conflictsDetected;
+        totalUnread += result.unreadMessages;
+        totalUrgent += result.urgentMessages;
       } catch {
         // Skip individual agent errors
       }
     }
 
-    if (totalPruned > 0 || totalPrioritized > 0 || totalConflicts > 0) {
+    if (totalPruned > 0 || totalPrioritized > 0 || totalConflicts > 0 || totalUnread > 0) {
       opts.logger.info(
-        `[mabos-bdi] Cycle complete: ${agents.length} agents, ${totalPruned} intentions pruned, ${totalPrioritized} desires re-sorted, ${totalConflicts} conflicts detected`,
+        `[mabos-bdi] Cycle complete: ${agents.length} agents, ${totalPruned} intentions pruned, ${totalPrioritized} desires re-sorted, ${totalConflicts} conflicts detected, ${totalUnread} unread msgs (${totalUrgent} urgent)${wokeAgents.size > 0 ? `, ${wokeAgents.size} woken` : ""}`,
       );
     }
   }

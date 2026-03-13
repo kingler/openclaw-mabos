@@ -101,6 +101,27 @@ export function createCommunicationTools(api: OpenClawPluginApi): AnyAgentTool[]
         inbox.push(msg);
         await writeJson(inboxPath, inbox);
 
+        // Wake-up marker for high/urgent priority messages
+        const cfg = getPluginConfig(api);
+        if (cfg.inboxWakeUpEnabled && (msg.priority === "high" || msg.priority === "urgent")) {
+          try {
+            const wakeUpPath = join(ws, "agents", params.to, "wake-up.json");
+            await writeJson(wakeUpPath, {
+              message_id: msg.id,
+              from: params.from,
+              priority: msg.priority,
+              performative: params.performative,
+              reason: `${msg.priority}-priority ${params.performative} from ${params.from}`,
+              timestamp: msg.timestamp,
+            });
+            api.logger?.info?.(
+              `[mabos] Wake-up marker created for ${params.to}: ${msg.priority}-priority message from ${params.from}`,
+            );
+          } catch {
+            // Wake-up is best-effort; don't fail the message send
+          }
+        }
+
         return textResult(
           `Message ${msg.id} sent: ${params.from} → ${params.to} [${params.performative}] (priority: ${msg.priority})`,
         );
@@ -351,14 +372,15 @@ ${hasCostOverThreshold ? `⚠️ Cost exceeds approval threshold ($${threshold})
       parameters: Type.Object({
         agent_id: Type.String({ description: "Agent ID whose inbox to read" }),
         unread_only: Type.Optional(
-          Type.Boolean({ description: "Only return unread messages (default: true)", default: true }),
+          Type.Boolean({
+            description: "Only return unread messages (default: true)",
+            default: true,
+          }),
         ),
         performative: Type.Optional(
           Type.String({ description: "Filter by performative (e.g., REQUEST, INFORM, CFP)" }),
         ),
-        from: Type.Optional(
-          Type.String({ description: "Filter by sender agent ID" }),
-        ),
+        from: Type.Optional(Type.String({ description: "Filter by sender agent ID" })),
         limit: Type.Optional(
           Type.Number({ description: "Max messages to return (default: 20)", default: 20 }),
         ),
@@ -397,8 +419,7 @@ ${hasCostOverThreshold ? `⚠️ Cost exceeds approval threshold ($${threshold})
           low: 3,
         };
         filtered.sort(
-          (a, b) =>
-            (priorityOrder[a.priority] ?? 2) - (priorityOrder[b.priority] ?? 2),
+          (a, b) => (priorityOrder[a.priority] ?? 2) - (priorityOrder[b.priority] ?? 2),
         );
 
         const limit = params.limit || 20;
@@ -437,10 +458,7 @@ ${hasCostOverThreshold ? `⚠️ Cost exceeds approval threshold ($${threshold})
           { description: "Message IDs to mark read, or \'*\' for all" },
         ),
       }),
-      async execute(
-        _id: string,
-        params: { agent_id: string; message_ids: string[] | "*" },
-      ) {
+      async execute(_id: string, params: { agent_id: string; message_ids: string[] | "*" }) {
         const ws = resolveWorkspaceDir(api);
         const inboxPath = join(ws, "agents", params.agent_id, "inbox.json");
         const inbox: any[] = (await readJson(inboxPath)) || [];
@@ -455,9 +473,7 @@ ${hasCostOverThreshold ? `⚠️ Cost exceeds approval threshold ($${threshold})
         }
 
         await writeJson(inboxPath, inbox);
-        return textResult(
-          `Marked ${count} message(s) as read in ${params.agent_id} inbox.`,
-        );
+        return textResult(`Marked ${count} message(s) as read in ${params.agent_id} inbox.`);
       },
     },
   ];

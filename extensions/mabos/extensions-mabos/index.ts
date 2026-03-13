@@ -3,7 +3,7 @@
  * Bundled Extension Entry Point (Deep Integration)
  *
  * Registers:
- *  - 99 tools across 21 modules
+ *  - 110 tools across 24 modules
  *  - BDI background heartbeat service
  *  - CLI subcommands (onboard, agents, bdi, business, dashboard)
  *  - Unified memory bridge to native memory system
@@ -11,13 +11,14 @@
  */
 
 import type { OpenClawPluginApi } from "openclaw/plugin-sdk";
-import { createAuthRateLimiter } from "../../src/gateway/auth-rate-limit.js";
-import { resolveGatewayAuth, type ResolvedGatewayAuth } from "../../src/gateway/auth.js";
-import { authorizeGatewayBearerRequestOrReply } from "../../src/gateway/http-auth-helpers.js";
-import { onAgentEvent, type AgentEventPayload } from "../../src/infra/agent-events.js";
-import { readJsonBodyWithLimit } from "../../src/infra/http-body.js";
+import { createAuthRateLimiter } from "../../../src/gateway/auth-rate-limit.js";
+import { resolveGatewayAuth, type ResolvedGatewayAuth } from "../../../src/gateway/auth.js";
+import { authorizeGatewayBearerRequestOrReply } from "../../../src/gateway/http-auth-helpers.js";
+import { onAgentEvent, type AgentEventPayload } from "../../../src/infra/agent-events.js";
+import { readJsonBodyWithLimit } from "../../../src/infra/http-body.js";
 import { createCronBridgeService } from "./src/cron-bridge.js";
 import { createBdiTools } from "./src/tools/bdi-tools.js";
+import { createBpmnMigrateTools } from "./src/tools/bpmn-migrate.js";
 import { createBusinessTools } from "./src/tools/business-tools.js";
 import { createCbrTools } from "./src/tools/cbr-tools.js";
 import {
@@ -33,27 +34,29 @@ import { createFactStoreTools } from "./src/tools/fact-store.js";
 import { createInferenceTools } from "./src/tools/inference-tools.js";
 import { createIntegrationTools } from "./src/tools/integration-tools.js";
 import { createKnowledgeTools } from "./src/tools/knowledge-tools.js";
+import { createLeadGenerationTools } from "./src/tools/lead-generation-tools.js";
 import { createMarketingTools } from "./src/tools/marketing-tools.js";
 import { createMemoryHierarchyTools } from "./src/tools/memory-hierarchy.js";
 import { createMemoryTools } from "./src/tools/memory-tools.js";
 import { createMetricsTools } from "./src/tools/metrics-tools.js";
 import { createOnboardingTools } from "./src/tools/onboarding-tools.js";
 import { createOntologyManagementTools } from "./src/tools/ontology-management-tools.js";
+import { createOutreachTools } from "./src/tools/outreach-tools.js";
 import { createPlanningTools } from "./src/tools/planning-tools.js";
 import { createReasoningTools } from "./src/tools/reasoning-tools.js";
 import { createReportingTools } from "./src/tools/reporting-tools.js";
 import { createRuleEngineTools } from "./src/tools/rule-engine.js";
+import { createSalesResearchTools } from "./src/tools/sales-research-tools.js";
 import { createSeoAnalyticsTools } from "./src/tools/seo-analytics-tools.js";
 import { createSetupWizardTools } from "./src/tools/setup-wizard-tools.js";
 import { createStakeholderTools } from "./src/tools/stakeholder-tools.js";
 import { createTypeDBTools } from "./src/tools/typedb-tools.js";
 import { createWorkflowTools } from "./src/tools/workflow-tools.js";
-import { createBpmnMigrateTools } from "./src/tools/bpmn-migrate.js";
 import { createWorkforceTools } from "./src/tools/workforce-tools.js";
 
 // Use a variable for the bdi-runtime path so TypeScript doesn't try to
 // statically resolve it (it lives outside this extension's rootDir).
-const BDI_RUNTIME_PATH = "../../mabos/bdi-runtime/index.js";
+const BDI_RUNTIME_PATH = "../../../mabos/bdi-runtime/index.js";
 
 export default function register(api: OpenClawPluginApi) {
   const log = api.logger;
@@ -89,6 +92,9 @@ export default function register(api: OpenClawPluginApi) {
     createWorkflowTools,
     createBpmnMigrateTools,
     createCognitiveRouterTools,
+    createLeadGenerationTools,
+    createSalesResearchTools,
+    createOutreachTools,
   ];
 
   for (const factory of factories) {
@@ -422,7 +428,7 @@ export default function register(api: OpenClawPluginApi) {
         .option("--dry-run", "Preview changes without modifying files")
         .action(async (opts: { dryRun?: boolean }) => {
           try {
-            const migratePath = "../../mabos/scripts/migrate.js";
+            const migratePath = "../../../mabos/scripts/migrate.js";
             const { migrate } = (await import(/* webpackIgnore: true */ migratePath)) as any;
             await migrate({ dryRun: opts.dryRun ?? false });
           } catch (err) {
@@ -490,6 +496,7 @@ export default function register(api: OpenClawPluginApi) {
 
   // API: System status (enhanced)
   api.registerHttpRoute({
+    auth: "gateway",
     path: "/mabos/api/status",
     handler: async (_req, res) => {
       if (!(await requireAuth(_req, res))) return;
@@ -544,6 +551,7 @@ export default function register(api: OpenClawPluginApi) {
 
   // API: Pending decisions across all businesses
   api.registerHttpRoute({
+    auth: "gateway",
     path: "/mabos/api/decisions",
     handler: async (_req, res) => {
       if (!(await requireAuth(_req, res))) return;
@@ -597,8 +605,20 @@ export default function register(api: OpenClawPluginApi) {
     },
   });
 
-  // Helper: register parameterized routes via registerHttpHandler
-  // (registerHttpRoute only supports exact path matching)
+  // Helper: register parameterized routes via registerHttpRoute with prefix matching
+  // Collects handlers per static prefix to avoid duplicate registration errors
+  const paramRouteHandlers = new Map<
+    string,
+    Array<{
+      regex: RegExp;
+      handler: (
+        req: import("node:http").IncomingMessage,
+        res: import("node:http").ServerResponse,
+      ) => Promise<void>;
+    }>
+  >();
+  const registeredPrefixes = new Set<string>();
+
   const registerParamRoute = (
     pattern: string,
     handler: (
@@ -606,16 +626,35 @@ export default function register(api: OpenClawPluginApi) {
       res: import("node:http").ServerResponse,
     ) => Promise<void>,
   ) => {
+    const staticPrefix = pattern.replace(/\/:[^/]+.*$/, "");
+    const prefix = staticPrefix || pattern;
     const regex = new RegExp("^" + pattern.replace(/:[^/]+/g, "[^/]+") + "$");
-    api.registerHttpHandler(async (req, res) => {
-      const url = new URL(req.url || "/", "http://localhost");
-      if (regex.test(url.pathname)) {
-        if (!(await requireAuth(req, res))) return true;
-        await handler(req, res);
-        return true;
-      }
-      return false;
-    });
+
+    if (!paramRouteHandlers.has(prefix)) {
+      paramRouteHandlers.set(prefix, []);
+    }
+    paramRouteHandlers.get(prefix)!.push({ regex, handler });
+
+    if (!registeredPrefixes.has(prefix)) {
+      registeredPrefixes.add(prefix);
+      api.registerHttpRoute({
+        path: prefix,
+        match: "prefix",
+        auth: "gateway",
+        handler: async (req, res) => {
+          const url = new URL(req.url || "/", "http://localhost");
+          const handlers = paramRouteHandlers.get(prefix) || [];
+          for (const { regex: r, handler: h } of handlers) {
+            if (r.test(url.pathname)) {
+              if (!(await requireAuth(req, res))) return true;
+              await h(req, res);
+              return true;
+            }
+          }
+          return false;
+        },
+      });
+    }
   };
 
   // API: Resolve a decision
@@ -757,102 +796,44 @@ export default function register(api: OpenClawPluginApi) {
     }
   });
 
-  // API: Agent files (list, read, update)
-  // Matches both /agents/:id/files and /agents/:id/files/:filename
-  api.registerHttpHandler(async (req, res) => {
-    const url = new URL(req.url || "/", "http://localhost");
-    const filesMatch = url.pathname.match(
-      /^\/mabos\/api\/agents\/([^/]+)\/files(?:\/(.+))?$/,
-    );
-    if (!filesMatch) return false;
-    if (!(await requireAuth(req, res))) return true;
-
+  // API: Agent files — list .md files for an agent
+  registerParamRoute("/mabos/api/agents/:id/files", async (req, res) => {
     try {
       const { join } = await import("node:path");
-      const { readdir, stat: fsStat, readFile: fsReadFile, writeFile: fsWriteFile } =
-        await import("node:fs/promises");
-
-      const rawId = filesMatch[1];
+      const { readdir, stat: fsStat } = await import("node:fs/promises");
+      const url = new URL(req.url || "", "http://localhost");
+      const segments = url.pathname.split("/");
+      const filesIdx = segments.indexOf("files");
+      const rawId = filesIdx > 0 ? segments[filesIdx - 1] : "";
       const agentId = sanitizeId(rawId);
       if (!agentId) {
         res.statusCode = 400;
         res.setHeader("Content-Type", "application/json");
         res.end(JSON.stringify({ error: "Invalid agent ID" }));
-        return true;
+        return;
       }
 
       const bdiDir = join(workspaceDir, "businesses", "vividwalls", "agents", agentId);
       const coreDir = join(workspaceDir, "agents", agentId);
-      const rawFilename = filesMatch[2];
+      const templateDir = join(__dirname, "templates", "base", "agents", agentId);
 
-      // --- Single file operations (GET / PUT) ---
-      if (rawFilename) {
-        const filename = decodeURIComponent(rawFilename);
-        if (!filename.endsWith(".md") || filename.includes("..") || filename.includes("/")) {
-          res.statusCode = 400;
-          res.setHeader("Content-Type", "application/json");
-          res.end(JSON.stringify({ error: "Invalid filename" }));
-          return true;
-        }
-
-        // Resolve which directory contains the file (BDI first, then core)
-        let filePath = join(bdiDir, filename);
-        let category: "bdi" | "core" = "bdi";
-        try {
-          await fsStat(filePath);
-        } catch {
-          filePath = join(coreDir, filename);
-          category = "core";
-          try {
-            await fsStat(filePath);
-          } catch {
-            if (req.method !== "PUT") {
-              res.statusCode = 404;
-              res.setHeader("Content-Type", "application/json");
-              res.end(JSON.stringify({ error: "File not found" }));
-              return true;
-            }
-            // For PUT, default to BDI dir
-            filePath = join(bdiDir, filename);
-            category = "bdi";
-          }
-        }
-
-        if (req.method === "PUT") {
-          let body = "";
-          for await (const chunk of req as any) body += chunk;
-          const parsed = JSON.parse(body);
-          if (typeof parsed.content !== "string") {
-            res.statusCode = 400;
-            res.setHeader("Content-Type", "application/json");
-            res.end(JSON.stringify({ error: "Missing content field" }));
-            return true;
-          }
-          await fsWriteFile(filePath, parsed.content, "utf-8");
-          res.setHeader("Content-Type", "application/json");
-          res.end(JSON.stringify({ ok: true }));
-          return true;
-        }
-
-        // GET file content
-        const content = await fsReadFile(filePath, "utf-8");
-        res.setHeader("Content-Type", "application/json");
-        res.end(JSON.stringify({ filename, content, category }));
-        return true;
-      }
-
-      // --- List all files ---
-      type AgentFile = { filename: string; category: "bdi" | "core"; size: number; modified: string };
+      type AgentFile = { filename: string; category: "bdi" | "core" | "template"; size: number; modified: string };
       const files: AgentFile[] = [];
+      const seen = new Set<string>();
 
-      for (const [dir, cat] of [[bdiDir, "bdi"], [coreDir, "core"]] as const) {
+      for (const [dir, cat] of [
+        [bdiDir, "bdi"],
+        [coreDir, "core"],
+        [templateDir, "template"],
+      ] as const) {
         try {
           const entries = await readdir(dir);
           for (const entry of entries) {
-            if (!entry.endsWith(".md")) continue;
+            if (!entry.endsWith(".md") || seen.has(entry)) continue;
             try {
               const s = await fsStat(join(dir, entry));
               files.push({ filename: entry, category: cat, size: s.size, modified: s.mtime.toISOString() });
+              seen.add(entry);
             } catch { /* skip unreadable */ }
           }
         } catch { /* dir doesn't exist */ }
@@ -860,12 +841,93 @@ export default function register(api: OpenClawPluginApi) {
 
       res.setHeader("Content-Type", "application/json");
       res.end(JSON.stringify({ files }));
-      return true;
     } catch (err) {
       res.setHeader("Content-Type", "application/json");
       res.statusCode = 500;
       res.end(JSON.stringify({ error: String(err) }));
-      return true;
+    }
+  });
+
+  // API: Agent files — read or update a single file
+  registerParamRoute("/mabos/api/agents/:id/files/:filename", async (req, res) => {
+    try {
+      const { join } = await import("node:path");
+      const { stat: fsStat, readFile: fsReadFile, writeFile: fsWriteFile, mkdir } = await import("node:fs/promises");
+      const url = new URL(req.url || "", "http://localhost");
+      const segments = url.pathname.split("/");
+      const filesIdx = segments.indexOf("files");
+      const rawId = filesIdx > 0 ? segments[filesIdx - 1] : "";
+      const agentId = sanitizeId(rawId);
+      const rawFilename = segments.slice(filesIdx + 1).join("/");
+      const filename = decodeURIComponent(rawFilename);
+
+      if (!agentId) {
+        res.statusCode = 400;
+        res.setHeader("Content-Type", "application/json");
+        res.end(JSON.stringify({ error: "Invalid agent ID" }));
+        return;
+      }
+      if (!filename.endsWith(".md") || filename.includes("..") || filename.includes("/")) {
+        res.statusCode = 400;
+        res.setHeader("Content-Type", "application/json");
+        res.end(JSON.stringify({ error: "Invalid filename" }));
+        return;
+      }
+
+      const bdiDir = join(workspaceDir, "businesses", "vividwalls", "agents", agentId);
+      const coreDir = join(workspaceDir, "agents", agentId);
+      const templateDir = join(__dirname, "templates", "base", "agents", agentId);
+
+      // Resolve which directory contains the file (BDI first, then core, then template)
+      let filePath = join(bdiDir, filename);
+      let category: "bdi" | "core" | "template" = "bdi";
+      try { await fsStat(filePath); } catch {
+        filePath = join(coreDir, filename);
+        category = "core";
+        try { await fsStat(filePath); } catch {
+          filePath = join(templateDir, filename);
+          category = "template";
+          try { await fsStat(filePath); } catch {
+            if (req.method !== "PUT") {
+              res.statusCode = 404;
+              res.setHeader("Content-Type", "application/json");
+              res.end(JSON.stringify({ error: "File not found" }));
+              return;
+            }
+            // For PUT, default to BDI dir
+            filePath = join(bdiDir, filename);
+            category = "bdi";
+          }
+        }
+      }
+
+      if (req.method === "PUT") {
+        let body = "";
+        for await (const chunk of req as any) body += chunk;
+        const parsed = JSON.parse(body);
+        if (typeof parsed.content !== "string") {
+          res.statusCode = 400;
+          res.setHeader("Content-Type", "application/json");
+          res.end(JSON.stringify({ error: "Missing content field" }));
+          return;
+        }
+        await mkdir(join(bdiDir), { recursive: true });
+        // Always write to BDI dir (never overwrite templates)
+        const writePath = join(bdiDir, filename);
+        await fsWriteFile(writePath, parsed.content, "utf-8");
+        res.setHeader("Content-Type", "application/json");
+        res.end(JSON.stringify({ ok: true }));
+        return;
+      }
+
+      // GET file content
+      const content = await fsReadFile(filePath, "utf-8");
+      res.setHeader("Content-Type", "application/json");
+      res.end(JSON.stringify({ filename, content, category }));
+    } catch (err) {
+      res.setHeader("Content-Type", "application/json");
+      res.statusCode = 500;
+      res.end(JSON.stringify({ error: String(err) }));
     }
   });
 
@@ -907,6 +969,7 @@ export default function register(api: OpenClawPluginApi) {
 
   // API: Business list
   api.registerHttpRoute({
+    auth: "gateway",
     path: "/mabos/api/businesses",
     handler: async (_req, res) => {
       if (!(await requireAuth(_req, res))) return;
@@ -969,6 +1032,7 @@ export default function register(api: OpenClawPluginApi) {
 
   // API: Contractors
   api.registerHttpRoute({
+    auth: "gateway",
     path: "/mabos/api/contractors",
     handler: async (_req, res) => {
       if (!(await requireAuth(_req, res))) return;
@@ -989,6 +1053,7 @@ export default function register(api: OpenClawPluginApi) {
 
   // API: Onboard a new business (POST)
   api.registerHttpRoute({
+    auth: "gateway",
     path: "/mabos/api/onboard",
     handler: async (req, res) => {
       if (!(await requireAuth(req, res))) return;
@@ -1414,6 +1479,7 @@ export default function register(api: OpenClawPluginApi) {
 
   // API: Chat — send message to an agent's inbox
   api.registerHttpRoute({
+    auth: "gateway",
     path: "/mabos/api/chat",
     handler: async (req, res) => {
       if (!(await requireAuth(req, res))) return;
@@ -1448,15 +1514,8 @@ export default function register(api: OpenClawPluginApi) {
           return;
         }
 
-        // Write message to agent's inbox
-        const inboxPath = join(
-          workspaceDir,
-          "businesses",
-          businessId,
-          "agents",
-          agentId,
-          "inbox.json",
-        );
+        // Write message to agent's canonical inbox
+        const inboxPath = join(workspaceDir, "agents", agentId, "inbox.json");
         let inbox: any[] = [];
         try {
           inbox = JSON.parse(await readFile(inboxPath, "utf-8"));
@@ -1503,6 +1562,7 @@ export default function register(api: OpenClawPluginApi) {
 
   // API: Chat SSE — stream agent events to the dashboard
   api.registerHttpRoute({
+    auth: "gateway",
     path: "/mabos/api/chat/events",
     handler: async (req, res) => {
       if (!(await requireAuth(req, res))) return;
@@ -2189,6 +2249,7 @@ export default function register(api: OpenClawPluginApi) {
 
   // API: Trigger manual BDI cycle
   api.registerHttpRoute({
+    auth: "gateway",
     path: "/mabos/api/bdi/cycle",
     handler: async (req, res) => {
       if (!(await requireAuth(req, res))) return;
@@ -2471,6 +2532,7 @@ export default function register(api: OpenClawPluginApi) {
 
   // Dashboard: serve SPA HTML (no trailing slash)
   api.registerHttpRoute({
+    auth: "gateway",
     path: "/mabos/dashboard",
     handler: async (_req, res) => {
       try {
@@ -2493,6 +2555,7 @@ export default function register(api: OpenClawPluginApi) {
 
   // Dashboard: wildcard static file server for all dashboard assets + SPA fallback
   api.registerHttpRoute({
+    auth: "gateway",
     path: "/mabos/dashboard/*",
     handler: async (req, res) => {
       try {
@@ -2624,6 +2687,7 @@ export default function register(api: OpenClawPluginApi) {
 
   // GET /mabos/api/workflows — list all BPMN workflows
   api.registerHttpRoute({
+    auth: "gateway",
     path: "/mabos/api/workflows",
     handler: async (req, res) => {
       if (!(await requireAuth(req, res))) return;
@@ -2739,7 +2803,9 @@ export default function register(api: OpenClawPluginApi) {
               size: { w: r.sw?.value ?? r.sw ?? 160, h: r.sh?.value ?? r.sh ?? 80 },
             }))
           : [];
-      } catch { /* no elements yet */ }
+      } catch {
+        /* no elements yet */
+      }
 
       // Fetch flows
       let flows: any[] = [];
@@ -2753,7 +2819,9 @@ export default function register(api: OpenClawPluginApi) {
               targetId: r.tid?.value ?? r.tid,
             }))
           : [];
-      } catch { /* no flows yet */ }
+      } catch {
+        /* no flows yet */
+      }
 
       res.setHeader("Content-Type", "application/json");
       res.end(
@@ -2797,7 +2865,8 @@ export default function register(api: OpenClawPluginApi) {
       const body = await readMabosJsonBody<any>(req, res);
       if (!body) return;
       const agentId = body.agentId || "vw-ceo";
-      const elementId = body.id || `bpmn-el-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      const elementId =
+        body.id || `bpmn-el-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
       const typeql = BpmnStoreQueries.addElement(agentId, workflowId, {
         id: elementId,
@@ -3090,7 +3159,9 @@ export default function register(api: OpenClawPluginApi) {
             }
           }
         }
-      } catch { /* skip orphan check */ }
+      } catch {
+        /* skip orphan check */
+      }
 
       res.setHeader("Content-Type", "application/json");
       res.end(JSON.stringify({ valid: errors.length === 0, errors }));
@@ -3103,55 +3174,236 @@ export default function register(api: OpenClawPluginApi) {
 
   // ── 6. Agent Lifecycle Hooks ──────────────────────────────────
 
-  // Inject BDI context + Persona.md into the system prompt
+  const cfg = getPluginConfig(api);
+
+  // Inject BDI context + Persona.md + cognitive context + auto-recall into system prompt
   api.on("before_agent_start", async (_event, ctx) => {
-    if (ctx.workspaceDir) {
-      const agentDir = ctx.workspaceDir;
-      try {
-        const { readFile } = await import("node:fs/promises");
-        const { join } = await import("node:path");
+    if (!ctx.workspaceDir) return undefined;
 
-        const parts: string[] = [];
+    const agentDir = ctx.workspaceDir;
+    const agentId = ctx.agentId ?? "unknown";
 
-        // Load Persona.md
-        const persona = await readFile(join(agentDir, "Persona.md"), "utf-8").catch(() => null);
-        if (persona) {
-          parts.push(`## Agent Persona\n${persona}`);
-        }
+    try {
+      const { readFile } = await import("node:fs/promises");
+      const { join } = await import("node:path");
 
-        // Load active goals summary
-        const goals = await readFile(join(agentDir, "Goals.md"), "utf-8").catch(() => null);
-        if (goals) {
-          // Extract only active goals (first 500 chars for prompt budget)
-          const activeGoals = goals
-            .split("\n")
-            .filter((l) => l.includes("status: active") || l.startsWith("## "))
-            .slice(0, 20)
-            .join("\n");
-          if (activeGoals.trim()) {
-            parts.push(`## Active Goals\n${activeGoals}`);
-          }
-        }
+      const parts: string[] = [];
 
-        // Load current commitments
-        const commitments = await readFile(join(agentDir, "Commitments.md"), "utf-8").catch(
-          () => null,
-        );
-        if (commitments && commitments.trim()) {
-          const summary = commitments.slice(0, 300);
-          parts.push(`## Current Commitments\n${summary}`);
-        }
-
-        if (parts.length > 0) {
-          return {
-            prependContext: `[MABOS Agent Context]\n${parts.join("\n\n")}\n`,
-          };
-        }
-      } catch (err) {
-        log.debug(`Agent context injection skipped: ${err}`);
+      // Load Persona.md
+      const persona = await readFile(join(agentDir, "Persona.md"), "utf-8").catch(() => null);
+      if (persona) {
+        parts.push(`## Agent Persona\n${persona}`);
       }
+
+      // Load active goals summary
+      const goals = await readFile(join(agentDir, "Goals.md"), "utf-8").catch(() => null);
+      if (goals) {
+        const activeGoals = goals
+          .split("\n")
+          .filter((l) => l.includes("status: active") || l.startsWith("## "))
+          .slice(0, 20)
+          .join("\n");
+        if (activeGoals.trim()) {
+          parts.push(`## Active Goals\n${activeGoals}`);
+        }
+      }
+
+      // Load current commitments
+      const commitments = await readFile(join(agentDir, "Commitments.md"), "utf-8").catch(
+        () => null,
+      );
+      if (commitments && commitments.trim()) {
+        const summary = commitments.slice(0, 300);
+        parts.push(`## Current Commitments\n${summary}`);
+      }
+
+      // ── Cognitive context injection (beliefs, desires, plans, knowledge) ──
+      if (cfg.cognitiveContextEnabled !== false) {
+        try {
+          const { assembleCognitiveContext } = await import("./src/tools/cognitive-context.js");
+          const { cognitiveExtras, longTermHighlights } = await assembleCognitiveContext(agentDir);
+          if (cognitiveExtras) {
+            parts.push(`## Cognitive State\n${cognitiveExtras}`);
+          }
+          if (longTermHighlights) {
+            parts.push(`## Long-Term Memory Highlights\n${longTermHighlights}`);
+          }
+        } catch (err) {
+          log.debug(`[mabos] Cognitive context skipped: ${err}`);
+        }
+      }
+
+      // ── Auto-recall relevant memories for this session ──
+      if (cfg.autoRecallEnabled !== false) {
+        try {
+          const { semanticRecall } = await import("./src/tools/memory-tools.js");
+          // Use the agent's Persona + Goals as the recall query
+          const recallQuery = parts.slice(0, 2).join(" ").slice(0, 500);
+          if (recallQuery.trim()) {
+            const results = await semanticRecall(api, agentId, recallQuery, 5);
+            if (results && results.length > 0) {
+              const recallBlock = results
+                .map((r) => `- [${(r.score * 100).toFixed(0)}%] ${r.content}`)
+                .join("\n");
+              parts.push(`## Recalled Memories\n${recallBlock}`);
+            }
+          }
+        } catch (err) {
+          log.debug(`[mabos] Auto-recall skipped: ${err}`);
+        }
+      }
+
+      // ── Observation log summary (recent critical/important observations) ──
+      if (cfg.preCompactionObserverEnabled !== false) {
+        try {
+          const { loadObservationLog } = await import("./src/tools/observation-store.js");
+          const { formatObservationLog } = await import("./src/tools/observer.js");
+          const obsLog = await loadObservationLog(api, agentId);
+          if (obsLog.observations.length > 0) {
+            // Include only critical/important observations, most recent 10
+            const relevant = obsLog.observations
+              .filter((o) => o.priority === "critical" || o.priority === "important")
+              .slice(-10);
+            if (relevant.length > 0) {
+              parts.push(`## Recent Observations\n${formatObservationLog(relevant)}`);
+            }
+          }
+        } catch (err) {
+          log.debug(`[mabos] Observation log injection skipped: ${err}`);
+        }
+      }
+
+      // ── Inbox context injection (pending messages) ──
+      if (cfg.inboxContextEnabled !== false) {
+        try {
+          const inboxPath = join(agentDir, "inbox.json");
+          const inboxRaw = await readFile(inboxPath, "utf-8").catch(() => "[]");
+          const inbox: Array<{
+            id: string;
+            from: string;
+            performative: string;
+            priority: string;
+            content: string;
+            timestamp: string;
+            read: boolean;
+          }> = JSON.parse(inboxRaw);
+
+          const unread = inbox.filter((m) => !m.read);
+          if (unread.length > 0) {
+            // Sort by priority: urgent > high > normal > low
+            const priorityOrder: Record<string, number> = {
+              urgent: 0,
+              high: 1,
+              normal: 2,
+              low: 3,
+            };
+            unread.sort(
+              (a, b) => (priorityOrder[a.priority] ?? 2) - (priorityOrder[b.priority] ?? 2),
+            );
+
+            const top = unread.slice(0, 10);
+            const lines = top.map(
+              (m) =>
+                `- **${m.id}** from ${m.from} [${m.performative}] (${m.priority}): ${m.content.slice(0, 200)}${m.content.length > 200 ? "..." : ""} _${m.timestamp}_`,
+            );
+            const summary = `${unread.length} unread message(s)${unread.length > 10 ? ` (showing top 10)` : ""}\n\n${lines.join("\n")}`;
+            parts.push(`## Pending Inbox Messages\n${summary}`);
+          }
+        } catch (err) {
+          log.debug(`[mabos] Inbox context injection skipped: ${err}`);
+        }
+      }
+
+      if (parts.length > 0) {
+        return {
+          prependContext: `[MABOS Agent Context]\n${parts.join("\n\n")}\n`,
+        };
+      }
+    } catch (err) {
+      log.debug(`Agent context injection skipped: ${err}`);
     }
     return undefined;
+  });
+
+  // ── Pre-compaction Observer: compress messages into observations ──
+  api.on("before_compaction", async (event, ctx) => {
+    if (cfg.preCompactionObserverEnabled === false) return;
+    if (!event.messages || !Array.isArray(event.messages) || event.messages.length === 0) return;
+
+    const agentId = ctx.agentId ?? "unknown";
+
+    try {
+      const { compressMessagesToObservations } = await import("./src/tools/observer.js");
+      const { loadObservationLog, saveObservationLog } =
+        await import("./src/tools/observation-store.js");
+
+      // Load existing observation log
+      const obsLog = await loadObservationLog(api, agentId);
+
+      // Convert event messages to ObservableMessage format
+      const observableMessages = (event.messages as any[]).map((m) => ({
+        role: m.role ?? "unknown",
+        content: typeof m.content === "string" ? m.content : JSON.stringify(m.content ?? ""),
+        name: m.name,
+        timestamp: m.timestamp ?? new Date().toISOString(),
+      }));
+
+      // Run Observer compression
+      const result = compressMessagesToObservations(observableMessages, obsLog.observations);
+
+      if (result.observations.length > 0) {
+        obsLog.observations = result.observations;
+        obsLog.total_messages_compressed += result.messagesCompressed;
+        obsLog.total_tool_calls_compressed += result.toolCallsCompressed;
+        obsLog.last_observer_run_at = new Date().toISOString();
+
+        await saveObservationLog(api, agentId, obsLog);
+        log.info(
+          `[mabos] Observer compressed ${result.messagesCompressed} messages into ${result.observations.length} observations for ${agentId}`,
+        );
+      }
+    } catch (err) {
+      log.debug(`[mabos] Pre-compaction observer failed: ${err}`);
+    }
+  });
+
+  // ── Agent end: final observation checkpoint ──
+  api.on("agent_end", async (event, ctx) => {
+    if (cfg.preCompactionObserverEnabled === false) return;
+    if (!event.messages || !Array.isArray(event.messages) || event.messages.length === 0) return;
+
+    const agentId = ctx.agentId ?? "unknown";
+
+    try {
+      const { compressMessagesToObservations } = await import("./src/tools/observer.js");
+      const { loadObservationLog, saveObservationLog } =
+        await import("./src/tools/observation-store.js");
+
+      const obsLog = await loadObservationLog(api, agentId);
+
+      const observableMessages = (event.messages as any[]).map((m) => ({
+        role: m.role ?? "unknown",
+        content: typeof m.content === "string" ? m.content : JSON.stringify(m.content ?? ""),
+        name: m.name,
+        timestamp: m.timestamp ?? new Date().toISOString(),
+      }));
+
+      const result = compressMessagesToObservations(observableMessages, obsLog.observations);
+
+      if (result.messagesCompressed > 0) {
+        obsLog.observations = result.observations;
+        obsLog.total_messages_compressed += result.messagesCompressed;
+        obsLog.total_tool_calls_compressed += result.toolCallsCompressed;
+        obsLog.last_observer_run_at = new Date().toISOString();
+
+        await saveObservationLog(api, agentId, obsLog);
+        log.info(
+          `[mabos] Agent end checkpoint: ${result.messagesCompressed} messages → ${result.observations.length} observations for ${agentId}`,
+        );
+      }
+    } catch (err) {
+      log.debug(`[mabos] Agent end observation checkpoint failed: ${err}`);
+    }
   });
 
   // BDI tool call audit trail
