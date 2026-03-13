@@ -25,6 +25,7 @@ export interface MabosPluginConfig {
   inboxContextEnabled?: boolean;
   inboxWakeUpEnabled?: boolean;
   inboxWakeUpCooldownMinutes?: number;
+  cognitiveRouterEnabled?: boolean;
 }
 
 /**

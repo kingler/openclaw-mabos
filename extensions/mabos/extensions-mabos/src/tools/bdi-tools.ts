@@ -106,9 +106,19 @@ const IntentionCommitParams = Type.Object({
 
 const BdiCycleParams = Type.Object({
   agent_id: Type.String({ description: "Agent ID to run the cycle for" }),
-  depth: Type.Union([Type.Literal("quick"), Type.Literal("full")], {
-    description: "Quick: goals+intentions only. Full: complete 5-phase BDI cycle.",
-  }),
+  depth: Type.Union(
+    [
+      Type.Literal("quick"),
+      Type.Literal("full"),
+      Type.Literal("reflexive"),
+      Type.Literal("analytical"),
+      Type.Literal("deliberative"),
+    ],
+    {
+      description:
+        "Quick: goals+intentions only. Full: complete 5-phase BDI cycle. Reflexive: zero-LLM pattern matching. Analytical: single-method reasoning. Deliberative: full multi-method BDI.",
+    },
+  ),
 });
 
 const SkillInventoryParams = Type.Object({
@@ -289,6 +299,53 @@ export function createBdiTools(api: OpenClawPluginApi): AnyAgentTool[] {
       async execute(_id: string, params: Static<typeof BdiCycleParams>) {
         const dir = agentDir(api, params.agent_id);
         const ws = resolveWorkspaceDir(api);
+
+        // Route cognitive router depths through the cognitive router
+        if (
+          params.depth === "reflexive" ||
+          params.depth === "analytical" ||
+          params.depth === "deliberative"
+        ) {
+          try {
+            const { processWithEscalation } = await import("./cognitive-router.js");
+            const { scanAllSignals } = await import("./cognitive-signal-scanners.js");
+            const { DEFAULT_ROLE_THRESHOLDS, DEFAULT_SUBAGENT_THRESHOLDS } =
+              await import("./cognitive-router-types.js");
+
+            const agentConfig = JSON.parse(
+              await readFile(join(dir, "agent.json"), "utf-8").catch(() => "{}"),
+            );
+            const role = agentConfig?.id || params.agent_id;
+            const thresholds = DEFAULT_ROLE_THRESHOLDS[role] || DEFAULT_SUBAGENT_THRESHOLDS;
+
+            const signals = await scanAllSignals(
+              dir,
+              params.agent_id,
+              new Date(Date.now() - 60 * 60 * 1000).toISOString(), // Last hour
+            );
+
+            const result = await processWithEscalation(
+              params.agent_id,
+              dir,
+              role,
+              params.depth,
+              signals,
+              thresholds,
+              api,
+            );
+
+            return textResult(
+              `## ${result.depth.charAt(0).toUpperCase() + result.depth.slice(1)} BDI Cycle — ${params.agent_id}\n\n` +
+                `**Depth:** ${result.depth} | **Confidence:** ${result.confidence.toFixed(2)} | **Methods:** ${result.methodsUsed.join(", ")}\n` +
+                `${result.escalated ? `**Escalated:** ${result.escalationHistory.join(" → ")} → ${result.depth}\n` : ""}` +
+                `\n### Reasoning Trace\n${result.reasoningTrace.map((t) => `- ${t}`).join("\n")}\n\n### Result\n${result.conclusion}`,
+            );
+          } catch (err) {
+            return textResult(
+              `Cognitive router error: ${err instanceof Error ? err.message : String(err)}\nFalling back to quick depth.`,
+            );
+          }
+        }
 
         if (params.depth === "quick") {
           const goals = await readMd(join(dir, "Goals.md"));

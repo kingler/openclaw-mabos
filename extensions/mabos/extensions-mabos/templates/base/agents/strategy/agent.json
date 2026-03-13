@@ -7,6 +7,16 @@
       "fullCycleMinutes": 240,
       "quickCheckMinutes": 60
     },
-    "reasoningMethods": ["game-theory", "counterfactual", "bayesian", "analogical"]
+    "reasoningMethods": ["game-theory", "counterfactual", "bayesian", "analogical"],
+    "cognitiveRouter": {
+      "enabled": true,
+      "thresholds": {
+        "reflexiveCeiling": 0.25,
+        "deliberativeFloor": 0.5,
+        "reflexiveConfidenceMin": 0.8,
+        "analyticalConfidenceMin": 0.75,
+        "maxConsecutiveReflexive": 3
+      }
+    }
   }
 }

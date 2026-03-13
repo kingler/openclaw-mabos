@@ -20,6 +20,10 @@ import { createCronBridgeService } from "./src/cron-bridge.js";
 import { createBdiTools } from "./src/tools/bdi-tools.js";
 import { createBusinessTools } from "./src/tools/business-tools.js";
 import { createCbrTools } from "./src/tools/cbr-tools.js";
+import {
+  createCognitiveRouterTools,
+  enhancedHeartbeatCycle,
+} from "./src/tools/cognitive-router.js";
 import { resolveWorkspaceDir, getPluginConfig } from "./src/tools/common.js";
 import { createCommunicationTools } from "./src/tools/communication-tools.js";
 import { createCrmTools } from "./src/tools/crm-tools.js";
@@ -84,6 +88,7 @@ export default function register(api: OpenClawPluginApi) {
     createTypeDBTools,
     createWorkflowTools,
     createBpmnMigrateTools,
+    createCognitiveRouterTools,
   ];
 
   for (const factory of factories) {
@@ -177,7 +182,9 @@ export default function register(api: OpenClawPluginApi) {
           log.debug(`TypeDB import failed: ${err}`);
         });
 
-      const runCycle = async () => {
+      const cognitiveRouterEnabled = getPluginConfig(api).cognitiveRouterEnabled ?? true;
+
+      const runLegacyCycle = async () => {
         try {
           const { discoverAgents, readAgentCognitiveState, runMaintenanceCycle } = (await import(
             /* webpackIgnore: true */ BDI_RUNTIME_PATH
@@ -208,6 +215,23 @@ export default function register(api: OpenClawPluginApi) {
           );
         }
       };
+
+      const runCycle = cognitiveRouterEnabled
+        ? async () => {
+            try {
+              await enhancedHeartbeatCycle(workspaceDir, api, {
+                info: (...args: any[]) => api.logger.info?.(...args),
+                debug: (...args: any[]) => log.debug?.(...args),
+                warn: (...args: any[]) => api.logger.warn?.(...args),
+              });
+            } catch (err) {
+              api.logger.warn?.(
+                `[cognitive-router] Cycle error, falling back to legacy: ${err instanceof Error ? err.message : String(err)}`,
+              );
+              await runLegacyCycle();
+            }
+          }
+        : runLegacyCycle;
 
       // Initial cycle
       await runCycle();

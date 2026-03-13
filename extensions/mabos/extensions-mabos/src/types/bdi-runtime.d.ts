@@ -3,6 +3,18 @@
  * at runtime from the workspace directory.
  */
 
+import type { CognitiveRouterConfig } from "../tools/cognitive-router-types.js";
+
+export interface AgentBdiConfig {
+  commitmentStrategy?: "single-minded" | "open-minded" | "cautious";
+  cycleFrequency?: {
+    fullCycleMinutes?: number;
+    quickCheckMinutes?: number;
+  };
+  reasoningMethods?: string[];
+  cognitiveRouter?: CognitiveRouterConfig;
+}
+
 export interface AgentCognitiveState {
   agentId: string;
   agentDir: string;

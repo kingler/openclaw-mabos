@@ -11,6 +11,16 @@ import type { OpenClawPluginApi, AnyAgentTool } from "openclaw/plugin-sdk";
 import { getTypeDBClient } from "../knowledge/typedb-client.js";
 import { InferenceQueries } from "../knowledge/typedb-queries.js";
 import { textResult, resolveWorkspaceDir, generatePrefixedId } from "./common.js";
+import {
+  matchConditions,
+  resolveBinding,
+  findSupportingFacts,
+  type Fact,
+  type Binding,
+} from "./pattern-matching.js";
+
+// Re-export for backward compatibility
+export { matchConditions, resolveBinding, findSupportingFacts };
 
 async function readJson(p: string) {
   try {
@@ -23,21 +33,6 @@ async function writeJson(p: string, d: any) {
   await mkdir(dirname(p), { recursive: true });
   await writeFile(p, JSON.stringify(d, null, 2), "utf-8");
 }
-
-type Fact = {
-  id: string;
-  subject: string;
-  predicate: string;
-  object: string;
-  confidence: number;
-  source: string;
-  derived_from?: string[];
-  rule_id?: string;
-  created_at: string;
-  updated_at: string;
-  valid_from?: string;
-  valid_until?: string;
-};
 
 type Rule = {
   id: string;
@@ -127,75 +122,7 @@ function forwardChain(
   return { newFacts, trace };
 }
 
-type Binding = Record<string, string>;
-
-function matchConditions(conditions: Rule["conditions"], facts: Fact[]): Binding[] {
-  if (conditions.length === 0) return [{}];
-
-  function matchSingle(cond: Rule["conditions"][0], fact: Fact, binding: Binding): Binding | null {
-    const b = { ...binding };
-    if (cond.predicate && cond.predicate !== fact.predicate) return null;
-
-    if (cond.subject) {
-      if (cond.subject.startsWith("?")) {
-        if (b[cond.subject] && b[cond.subject] !== fact.subject) return null;
-        b[cond.subject] = fact.subject;
-      } else if (cond.subject !== fact.subject) return null;
-    }
-
-    if (cond.object) {
-      if (cond.object.startsWith("?")) {
-        if (b[cond.object] && b[cond.object] !== fact.object) return null;
-        b[cond.object] = fact.object;
-      } else if (cond.object !== fact.object) return null;
-    }
-
-    return b;
-  }
-
-  function solve(condIdx: number, binding: Binding): Binding[] {
-    if (condIdx >= conditions.length) return [binding];
-    const results: Binding[] = [];
-    for (const fact of facts) {
-      const b = matchSingle(conditions[condIdx], fact, binding);
-      if (b) results.push(...solve(condIdx + 1, b));
-    }
-    return results;
-  }
-
-  return solve(0, {});
-}
-
-function resolveBinding(
-  template: Rule["conclusion"],
-  binding: Binding,
-): { subject: string; predicate: string; object: string } {
-  return {
-    subject:
-      (template.subject?.startsWith("?") ? binding[template.subject] : template.subject) ||
-      "unknown",
-    predicate: template.predicate,
-    object:
-      (template.object?.startsWith("?") ? binding[template.object] : template.object) || "unknown",
-  };
-}
-
-function findSupportingFacts(
-  conditions: Rule["conditions"],
-  facts: Fact[],
-  binding: Binding,
-): Fact[] {
-  const result: Fact[] = [];
-  for (const cond of conditions) {
-    const s = cond.subject?.startsWith("?") ? binding[cond.subject] : cond.subject;
-    const o = cond.object?.startsWith("?") ? binding[cond.object] : cond.object;
-    const match = facts.find(
-      (f) => f.predicate === cond.predicate && (!s || f.subject === s) && (!o || f.object === o),
-    );
-    if (match) result.push(match);
-  }
-  return result;
-}
+// matchConditions, resolveBinding, findSupportingFacts imported from pattern-matching.ts
 
 const ForwardChainParams = Type.Object({
   agent_id: Type.String({ description: "Agent ID" }),
