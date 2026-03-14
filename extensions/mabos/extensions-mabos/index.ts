@@ -801,6 +801,8 @@ export default function register(api: OpenClawPluginApi) {
     try {
       const { join } = await import("node:path");
       const { readdir, stat: fsStat } = await import("node:fs/promises");
+      const { fileURLToPath } = await import("node:url");
+      const thisDir = join(fileURLToPath(import.meta.url), "..");
       const url = new URL(req.url || "", "http://localhost");
       const segments = url.pathname.split("/");
       const filesIdx = segments.indexOf("files");
@@ -815,9 +817,14 @@ export default function register(api: OpenClawPluginApi) {
 
       const bdiDir = join(workspaceDir, "businesses", "vividwalls", "agents", agentId);
       const coreDir = join(workspaceDir, "agents", agentId);
-      const templateDir = join(__dirname, "templates", "base", "agents", agentId);
+      const templateDir = join(thisDir, "templates", "base", "agents", agentId);
 
-      type AgentFile = { filename: string; category: "bdi" | "core" | "template"; size: number; modified: string };
+      type AgentFile = {
+        filename: string;
+        category: "bdi" | "core" | "template";
+        size: number;
+        modified: string;
+      };
       const files: AgentFile[] = [];
       const seen = new Set<string>();
 
@@ -832,11 +839,20 @@ export default function register(api: OpenClawPluginApi) {
             if (!entry.endsWith(".md") || seen.has(entry)) continue;
             try {
               const s = await fsStat(join(dir, entry));
-              files.push({ filename: entry, category: cat, size: s.size, modified: s.mtime.toISOString() });
+              files.push({
+                filename: entry,
+                category: cat,
+                size: s.size,
+                modified: s.mtime.toISOString(),
+              });
               seen.add(entry);
-            } catch { /* skip unreadable */ }
+            } catch {
+              /* skip unreadable */
+            }
           }
-        } catch { /* dir doesn't exist */ }
+        } catch {
+          /* dir doesn't exist */
+        }
       }
 
       res.setHeader("Content-Type", "application/json");
@@ -852,7 +868,14 @@ export default function register(api: OpenClawPluginApi) {
   registerParamRoute("/mabos/api/agents/:id/files/:filename", async (req, res) => {
     try {
       const { join } = await import("node:path");
-      const { stat: fsStat, readFile: fsReadFile, writeFile: fsWriteFile, mkdir } = await import("node:fs/promises");
+      const {
+        stat: fsStat,
+        readFile: fsReadFile,
+        writeFile: fsWriteFile,
+        mkdir,
+      } = await import("node:fs/promises");
+      const { fileURLToPath } = await import("node:url");
+      const thisDir = join(fileURLToPath(import.meta.url), "..");
       const url = new URL(req.url || "", "http://localhost");
       const segments = url.pathname.split("/");
       const filesIdx = segments.indexOf("files");
@@ -876,18 +899,24 @@ export default function register(api: OpenClawPluginApi) {
 
       const bdiDir = join(workspaceDir, "businesses", "vividwalls", "agents", agentId);
       const coreDir = join(workspaceDir, "agents", agentId);
-      const templateDir = join(__dirname, "templates", "base", "agents", agentId);
+      const templateDir = join(thisDir, "templates", "base", "agents", agentId);
 
       // Resolve which directory contains the file (BDI first, then core, then template)
       let filePath = join(bdiDir, filename);
       let category: "bdi" | "core" | "template" = "bdi";
-      try { await fsStat(filePath); } catch {
+      try {
+        await fsStat(filePath);
+      } catch {
         filePath = join(coreDir, filename);
         category = "core";
-        try { await fsStat(filePath); } catch {
+        try {
+          await fsStat(filePath);
+        } catch {
           filePath = join(templateDir, filename);
           category = "template";
-          try { await fsStat(filePath); } catch {
+          try {
+            await fsStat(filePath);
+          } catch {
             if (req.method !== "PUT") {
               res.statusCode = 404;
               res.setHeader("Content-Type", "application/json");

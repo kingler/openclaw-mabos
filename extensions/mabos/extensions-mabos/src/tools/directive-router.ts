@@ -52,7 +52,7 @@ const AGENT_KEYWORD_MAP: AgentKeywordEntry[] = [
   },
   {
     agent: "cmo",
-    label: "CMO (Marketing)",
+    label: "CMO (Marketing & Sales)",
     keywords: [
       "customer",
       "market",
@@ -64,6 +64,19 @@ const AGENT_KEYWORD_MAP: AgentKeywordEntry[] = [
       "lead",
       "subscriber",
       "audience",
+      "prospect",
+      "outreach",
+      "pipeline",
+      "deal",
+      "nurture",
+      "conversion",
+      "sales",
+      "cold",
+      "warm",
+      "follow-up",
+      "qualify",
+      "apollo",
+      "google maps",
     ],
   },
   {

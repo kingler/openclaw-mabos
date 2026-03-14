@@ -19,7 +19,7 @@ function ownerChatId(): string {
 }
 
 export type ApprovalRequest = {
-  type: "post" | "campaign" | "ad_set";
+  type: "post" | "campaign" | "ad_set" | "outreach" | "bulk_outreach" | "handoff";
   summary: string;
   details: string;
   preview_url?: string;
