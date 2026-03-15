@@ -33,6 +33,7 @@ import { DEFAULT_ROLE_THRESHOLDS, DEFAULT_SUBAGENT_THRESHOLDS } from "./cognitiv
 import { scanAllSignals } from "./cognitive-signal-scanners.js";
 import { textResult, resolveWorkspaceDir, generatePrefixedId } from "./common.js";
 import { runReflexiveProcessing } from "./reflexive-processor.js";
+import { ROLE_TOOL_SCOPE, isToolAllowedForRole } from "./tool-filter.js";
 
 // ── File I/O ──────────────────────────────────────────────────
 
@@ -61,30 +62,6 @@ async function writeMd(p: string, c: string): Promise<void> {
   await mkdir(dirname(p), { recursive: true });
   await writeFile(p, c, "utf-8");
 }
-
-// ── Role-Scoped Tool Context ──────────────────────────────────
-
-const ROLE_TOOL_SCOPE: Record<string, string[]> = {
-  cfo: [
-    "metrics_*",
-    "financial_*",
-    "forecast_*",
-    "rule_*",
-    "constraint_*",
-    "report_*",
-    "fact_*",
-    "reason",
-  ],
-  cmo: ["marketing_*", "content_*", "ad_*", "email_*", "seo_*", "audience_*", "crm_*", "lead_*"],
-  cto: ["cloudflare_*", "integration_*", "typedb_*", "shopify_*", "webhook_*", "setup_*"],
-  coo: ["workflow_*", "bpmn_*", "work_package_*", "integration_*", "report_*"],
-  ceo: ["decision_*", "report_*", "metrics_*", "stakeholder_*"],
-  legal: ["compliance_*", "contract_*", "rule_*", "policy_*"],
-  hr: ["employee_*", "recruitment_*", "performance_*", "policy_*"],
-  strategy: ["decision_*", "scenario_*", "competitive_*", "market_*"],
-  knowledge: ["knowledge_*", "typedb_*", "fact_*", "ontology_*"],
-  ecommerce: ["shopify_*", "product_*", "order_*", "inventory_*", "collection_*"],
-};
 
 // ── LLM Caller ─────────────────────────────────────────────────
 
@@ -1214,6 +1191,46 @@ async function executeLlmActions(
             await writeMd(goalsPath, goals);
             applied++;
             log.info(`[llm-action-executor] Goal ${goalId}: progress → ${progress}%`);
+
+            // Sync matching intentions: update all executing intentions for this goal
+            try {
+              const intentionsPath = join(agentDir, "Intentions.md");
+              let intentions = await readMd(intentionsPath);
+              if (intentions) {
+                let intentionsUpdated = false;
+                // Split into blocks, update each that references this goal and is executing
+                const intentionBlockPattern = new RegExp(
+                  `(### [\\w-]+:\\s*${goalId}\\b[\\s\\S]*?)(?=### [\\w-]+:|## Completed|## Dropped|$)`,
+                  "g",
+                );
+                intentions = intentions.replace(intentionBlockPattern, (block) => {
+                  if (!/\*\*Status:\*\*\s*executing/i.test(block)) return block;
+                  intentionsUpdated = true;
+                  // Update progress
+                  if (block.includes("**Progress:**")) {
+                    block = block.replace(/\*\*Progress:\*\*\s*\d+%/, `**Progress:** ${progress}%`);
+                  }
+                  // Estimate step from progress (advance beyond S-1)
+                  if (progress > 0 && block.includes("**Current Step:** S-1")) {
+                    const step = Math.max(1, Math.ceil(progress / 20)); // S-1 at 0-20%, S-2 at 21-40%, etc.
+                    block = block.replace(
+                      /\*\*Current Step:\*\*\s*S-\d+/,
+                      `**Current Step:** S-${step}`,
+                    );
+                  }
+                  return block;
+                });
+                if (intentionsUpdated) {
+                  intentions = intentions.replace(/Last updated: .*/, `Last updated: ${now}`);
+                  await writeMd(intentionsPath, intentions);
+                  log.info(
+                    `[llm-action-executor] Synced intention progress for ${goalId} → ${progress}%`,
+                  );
+                }
+              }
+            } catch (err) {
+              log.debug(`[llm-action-executor] Intention sync failed for ${goalId}: ${err}`);
+            }
           } else {
             log.info(`[llm-action-executor] Goal ${goalId} not found in Goals.md`);
           }
@@ -1264,10 +1281,12 @@ async function updateGoalProgress(
     }
   }
 
-  // Update Goals.md with computed progress
+  // Update Goals.md with computed progress from intentions
+  // Only apply when intention progress > 0 to avoid overwriting LLM-set goal progress
   let updatedGoals = goals;
   for (const [goalId, progValues] of goalProgress) {
     const avg = Math.round(progValues.reduce((a, b) => a + b, 0) / progValues.length);
+    if (avg === 0) continue; // Skip: don't overwrite LLM-set progress with 0%
     const blockPattern = new RegExp(
       `(### ${goalId}:[\\s\\S]*?)(?=### G-|## Achieved|## Completed|## Failed|$)`,
     );
