@@ -291,6 +291,150 @@ export function createBdiTools(api: OpenClawPluginApi): AnyAgentTool[] {
     },
 
     {
+      name: "intention_update",
+      label: "Update Intention",
+      description:
+        "Advance intention progress: update current step, progress percentage, or status.",
+      parameters: Type.Object({
+        agent_id: Type.String({ description: "Agent ID" }),
+        intention_id: Type.String({ description: "Intention ID (e.g., I-001)" }),
+        current_step: Type.Optional(Type.String({ description: "New current step (e.g., S-2)" })),
+        progress: Type.Optional(Type.Number({ description: "Progress 0-100" })),
+        status: Type.Optional(
+          Type.String({ description: "executing | paused | completed | dropped" }),
+        ),
+        note: Type.Optional(Type.String({ description: "Status note" })),
+      }),
+      async execute(
+        _id: string,
+        params: {
+          agent_id: string;
+          intention_id: string;
+          current_step?: string;
+          progress?: number;
+          status?: string;
+          note?: string;
+        },
+      ) {
+        const dir = agentDir(api, params.agent_id);
+        const path = join(dir, "Intentions.md");
+        let content = await readMd(path);
+        const now = new Date().toISOString();
+
+        const intentionPattern = new RegExp(
+          `(### ${params.intention_id}:[\\s\\S]*?)(?=### I-|## Completed|## Dropped|$)`,
+        );
+        const match = content.match(intentionPattern);
+        if (!match) return textResult(`Intention ${params.intention_id} not found`);
+
+        let block = match[1];
+
+        if (params.current_step) {
+          block = block.replace(
+            /\*\*Current Step:\*\*\s*S-\d+/,
+            `**Current Step:** ${params.current_step}`,
+          );
+        }
+        if (params.progress !== undefined) {
+          block = block.replace(/\*\*Progress:\*\*\s*\d+%/, `**Progress:** ${params.progress}%`);
+        }
+        if (params.status) {
+          block = block.replace(/\*\*Status:\*\*\s*\w+/, `**Status:** ${params.status}`);
+        }
+
+        content = content.replace(match[1], block);
+
+        // If completed, move to Completed section
+        if (params.status === "completed") {
+          content = content.replace(block, "");
+          const completedIdx = content.indexOf("## Completed");
+          if (completedIdx !== -1) {
+            const tableEnd = content.indexOf("\n\n", completedIdx + 20);
+            if (tableEnd !== -1) {
+              const row = `| ${params.intention_id} | ${params.note || "Completed"} | ${now.split("T")[0]} | success |\n`;
+              content = content.slice(0, tableEnd) + "\n" + row + content.slice(tableEnd);
+            }
+          }
+        }
+
+        content = content.replace(/Last updated: .*/, `Last updated: ${now}`);
+        await writeMd(path, content);
+        return textResult(
+          `Intention ${params.intention_id} updated: step=${params.current_step || "-"}, progress=${params.progress ?? "-"}%, status=${params.status || "-"}`,
+        );
+      },
+    },
+
+    {
+      name: "goal_progress_update",
+      label: "Update Goal Progress",
+      description: "Update goal progress percentage and optionally status.",
+      parameters: Type.Object({
+        agent_id: Type.String({ description: "Agent ID" }),
+        goal_id: Type.String({ description: "Goal ID (e.g., G-CFO-001)" }),
+        progress: Type.Number({ description: "Progress 0-100" }),
+        status: Type.Optional(
+          Type.String({ description: "active | achieved | failed | suspended" }),
+        ),
+        note: Type.Optional(Type.String({ description: "Progress note" })),
+      }),
+      async execute(
+        _id: string,
+        params: {
+          agent_id: string;
+          goal_id: string;
+          progress: number;
+          status?: string;
+          note?: string;
+        },
+      ) {
+        const dir = agentDir(api, params.agent_id);
+        const path = join(dir, "Goals.md");
+        let content = await readMd(path);
+        const now = new Date().toISOString();
+
+        // Find goal block and update progress
+        const goalPattern = new RegExp(
+          `(### ${params.goal_id}:[\\s\\S]*?)(?=### G-|## Achieved|## Completed|## Failed|$)`,
+        );
+        const match = content.match(goalPattern);
+        if (!match) return textResult(`Goal ${params.goal_id} not found`);
+
+        let block = match[1];
+
+        // Update or insert progress
+        if (block.includes("**Progress:**")) {
+          block = block.replace(/\*\*Progress:\*\*\s*\d+%/, `**Progress:** ${params.progress}%`);
+        } else {
+          block = block.replace(
+            /(\*\*Status:\*\*\s*\w+)/,
+            `$1\n- **Progress:** ${params.progress}%`,
+          );
+        }
+
+        if (params.status) {
+          block = block.replace(/\*\*Status:\*\*\s*\w+/, `**Status:** ${params.status}`);
+        }
+
+        content = content.replace(match[1], block);
+        content = content.replace(/Last evaluated: .*/, `Last evaluated: ${now}`);
+        await writeMd(path, content);
+
+        // Log progress milestone
+        if (params.progress >= 100 || params.status === "achieved") {
+          const memPath = join(dir, "Memory.md");
+          let mem = await readMd(memPath);
+          mem += `\n- [${now.split("T")[0]}] Goal ${params.goal_id} achieved! ${params.note || ""}`;
+          await writeMd(memPath, mem);
+        }
+
+        return textResult(
+          `Goal ${params.goal_id}: progress=${params.progress}%, status=${params.status || "unchanged"}`,
+        );
+      },
+    },
+
+    {
       name: "bdi_cycle",
       label: "BDI Reasoning Cycle",
       description:

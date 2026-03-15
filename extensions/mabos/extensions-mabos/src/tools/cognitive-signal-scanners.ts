@@ -79,17 +79,23 @@ interface InboxMessage {
 export async function scanInbox(
   agentDir: string,
   agentId: string,
-  since: string,
+  _since: string,
 ): Promise<CognitiveSignal[]> {
   const raw = await readJson(join(agentDir, "inbox.json"));
   // Handle both flat array [...] and wrapped { messages: [...] } formats
   const messages: InboxMessage[] = Array.isArray(raw) ? raw : raw?.messages || [];
   if (messages.length === 0) return [];
 
-  const sinceTime = new Date(since).getTime();
-  const unread = messages.filter((m) => !m.read && new Date(m.timestamp).getTime() > sinceTime);
+  // Rely on read flag only — timestamp filter caused permanent message skip
+  // when first heartbeat ran with buggy code and set lastHeartbeatAt
+  const unread = messages.filter((m) => !m.read);
 
-  return unread.map((msg) => {
+  // Cap at 20 signals per cycle to avoid flooding from large backlogs
+  const capped = unread
+    .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime())
+    .slice(0, 20);
+
+  return capped.map((msg) => {
     const priority = msg.priority || "normal";
     const urgency = normalizeUrgency("inbox", priority);
     // Higher stakes for directives from supervisors (case-insensitive)

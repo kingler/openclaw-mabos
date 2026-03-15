@@ -27,6 +27,7 @@ import type {
   AgentRouterState,
   ProcessingResult,
   CognitiveRouterConfig,
+  ReflexiveAction,
 } from "./cognitive-router-types.js";
 import { DEFAULT_ROLE_THRESHOLDS, DEFAULT_SUBAGENT_THRESHOLDS } from "./cognitive-router-types.js";
 import { scanAllSignals } from "./cognitive-signal-scanners.js";
@@ -54,6 +55,114 @@ async function readMd(p: string): Promise<string> {
   } catch {
     return "";
   }
+}
+
+async function writeMd(p: string, c: string): Promise<void> {
+  await mkdir(dirname(p), { recursive: true });
+  await writeFile(p, c, "utf-8");
+}
+
+// ── Role-Scoped Tool Context ──────────────────────────────────
+
+const ROLE_TOOL_SCOPE: Record<string, string[]> = {
+  cfo: [
+    "metrics_*",
+    "financial_*",
+    "forecast_*",
+    "rule_*",
+    "constraint_*",
+    "report_*",
+    "fact_*",
+    "reason",
+  ],
+  cmo: ["marketing_*", "content_*", "ad_*", "email_*", "seo_*", "audience_*", "crm_*", "lead_*"],
+  cto: ["cloudflare_*", "integration_*", "typedb_*", "shopify_*", "webhook_*", "setup_*"],
+  coo: ["workflow_*", "bpmn_*", "work_package_*", "integration_*", "report_*"],
+  ceo: ["decision_*", "report_*", "metrics_*", "stakeholder_*"],
+  legal: ["compliance_*", "contract_*", "rule_*", "policy_*"],
+  hr: ["employee_*", "recruitment_*", "performance_*", "policy_*"],
+  strategy: ["decision_*", "scenario_*", "competitive_*", "market_*"],
+  knowledge: ["knowledge_*", "typedb_*", "fact_*", "ontology_*"],
+  ecommerce: ["shopify_*", "product_*", "order_*", "inventory_*", "collection_*"],
+};
+
+// ── LLM Caller ─────────────────────────────────────────────────
+
+async function callLlm(
+  api: OpenClawPluginApi,
+  systemPrompt: string,
+  userPrompt: string,
+  opts: { maxTokens?: number; temperature?: number } = {},
+): Promise<string | null> {
+  // Guard: runtime may not have modelAuth
+  if (!api?.runtime?.modelAuth) return null;
+
+  // Try Anthropic first
+  try {
+    const auth = await api.runtime.modelAuth.resolveApiKeyForProvider({
+      provider: "anthropic",
+      cfg: api.config,
+    });
+    if (auth?.apiKey) {
+      const resp = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-api-key": auth.apiKey,
+          "anthropic-version": "2023-06-01",
+        },
+        body: JSON.stringify({
+          model: "claude-sonnet-4-20250514",
+          max_tokens: opts.maxTokens ?? 1024,
+          temperature: opts.temperature ?? 0.3,
+          system: systemPrompt,
+          messages: [{ role: "user", content: userPrompt }],
+        }),
+      });
+      if (resp.ok) {
+        const data = (await resp.json()) as { content?: Array<{ text?: string }> };
+        return data.content?.[0]?.text ?? null;
+      }
+    }
+  } catch {
+    /* fall through */
+  }
+
+  // Fallback: OpenAI
+  try {
+    const auth = await api.runtime.modelAuth.resolveApiKeyForProvider({
+      provider: "openai",
+      cfg: api.config,
+    });
+    if (auth?.apiKey) {
+      const resp = await fetch("https://api.openai.com/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${auth.apiKey}`,
+        },
+        body: JSON.stringify({
+          model: "gpt-4o-mini",
+          max_tokens: opts.maxTokens ?? 1024,
+          temperature: opts.temperature ?? 0.3,
+          messages: [
+            { role: "system", content: systemPrompt },
+            { role: "user", content: userPrompt },
+          ],
+        }),
+      });
+      if (resp.ok) {
+        const data = (await resp.json()) as {
+          choices?: Array<{ message?: { content?: string } }>;
+        };
+        return data.choices?.[0]?.message?.content ?? null;
+      }
+    }
+  } catch {
+    /* fall through */
+  }
+
+  return null; // Graceful degradation — callers use structured fallback
 }
 
 // ── Demand Scoring ────────────────────────────────────────────
@@ -253,6 +362,7 @@ async function executeReflexive(
     tokensConsumed: 0,
     escalated: false,
     escalationHistory: [],
+    _reflexiveActions: outcome.actions,
   };
 }
 
@@ -313,9 +423,56 @@ async function executeAnalytical(
     `Signals summarized: ${signals.length}`,
   ];
 
-  // The analytical depth produces a structured prompt for the LLM
-  // rather than calling it directly — the heartbeat caller handles invocation
-  const conclusion = `## Analytical Assessment — ${agentId}
+  // Resolve role from agent config for tool scope
+  const agentCfg = await readJson(join(agentDir, "agent.json"));
+  const role = agentCfg?.id || agentId;
+  const toolScope = ROLE_TOOL_SCOPE[role]?.join(", ") || "all BDI tools";
+
+  const systemPrompt = `You are the ${agentId} agent. Analyze the following signals and produce a structured assessment.
+Your authorized tools for this role: ${toolScope}
+Only recommend actions using tools within your domain. For cross-domain needs, send a message to the appropriate C-suite agent.
+
+Respond in this EXACT format:
+CONFIDENCE: [0.0-1.0]
+ASSESSMENT: [1-3 sentence analysis]
+BELIEF_UPDATES:
+- [belief to add/update, or "none"]
+GOAL_UPDATES:
+- [G-ID: progress% reason, or "none"]
+NEW_INTENTIONS:
+- [new intention description, or "none"]
+ACTIONS:
+- [recommended action, or "none"]`;
+
+  const userPrompt = `Classification: uncertainty=${classification.uncertainty}, complexity=${classification.complexity}, stakes=${classification.stakes}, time_pressure=${classification.time_pressure}
+Selected method: ${topMethod} (${(methodScore * 100).toFixed(0)}% suitability)
+
+Signals (${signals.length}):
+${problemSummary}
+
+Apply ${topMethod} reasoning. Determine actions and whether deliberative depth is needed.`;
+
+  // Invoke LLM
+  const llmText = await callLlm(api, systemPrompt, userPrompt, {
+    maxTokens: 1024,
+    temperature: 0.3,
+  });
+
+  let conclusion: string;
+  let confidence = methodScore * 0.8;
+
+  if (llmText) {
+    conclusion = llmText;
+    // Parse confidence from response
+    const confMatch = llmText.match(/CONFIDENCE:\s*([\d.]+)/);
+    if (confMatch) {
+      const parsed = parseFloat(confMatch[1]);
+      if (!isNaN(parsed) && parsed >= 0 && parsed <= 1) confidence = parsed;
+    }
+    trace.push("LLM invoked: Anthropic/OpenAI");
+  } else {
+    // Fallback: structured prompt-based output (no LLM available)
+    conclusion = `## Analytical Assessment — ${agentId}
 
 **Classification:** uncertainty=${classification.uncertainty}, complexity=${classification.complexity}, stakes=${classification.stakes}, time_pressure=${classification.time_pressure}
 
@@ -325,21 +482,23 @@ async function executeAnalytical(
 ${problemSummary}
 
 **Instruction:** Apply ${topMethod} reasoning to the above signals. Determine actions and whether deliberative depth is needed.`;
+    trace.push("LLM unavailable: using structured fallback");
+  }
 
   return {
     depth: "analytical",
-    confidence: methodScore * 0.8, // Analytical confidence scaled by method fit
+    confidence,
     conclusion,
     reasoningTrace: trace,
     methodsUsed: [topMethod],
-    tokensConsumed: 1, // Marker: 1 LLM call expected
+    tokensConsumed: llmText ? 1 : 0,
     escalated: false,
     escalationHistory: [],
   };
 }
 
 /**
- * Execute deliberative processing (full BDI cycle, 3-5 LLM calls).
+ * Execute deliberative processing (full BDI cycle, 1 LLM call with truncated context).
  */
 async function executeDeliberative(
   agentId: string,
@@ -347,22 +506,34 @@ async function executeDeliberative(
   signals: CognitiveSignal[],
   api: OpenClawPluginApi,
 ): Promise<ProcessingResult> {
-  // Load all 10 cognitive files
-  const cognitiveFiles: Record<string, string> = {};
-  for (const f of [
-    "Persona.md",
-    "Capabilities.md",
-    "Beliefs.md",
-    "Desires.md",
-    "Goals.md",
-    "Intentions.md",
-    "Plans.md",
-    "Playbooks.md",
-    "Knowledge.md",
-    "Memory.md",
-  ]) {
-    cognitiveFiles[f] = await readMd(join(agentDir, f));
-  }
+  // Load cognitive files with truncation to control token costs
+  const truncate = (s: string, maxChars: number) =>
+    s.length > maxChars ? s.slice(0, maxChars) + "\n...(truncated)" : s;
+
+  // Extract only active/executing blocks from structured files
+  const extractActiveBlocks = (content: string, statusPattern: RegExp): string => {
+    if (!content) return "None.";
+    const blocks = content.split(/\n### /).slice(1);
+    const active = blocks.filter((b) => statusPattern.test(b));
+    return active.length > 0
+      ? active
+          .map((b) => "### " + b)
+          .join("\n")
+          .slice(0, 1500)
+      : "None active.";
+  };
+
+  const goalsRaw = await readMd(join(agentDir, "Goals.md"));
+  const intentionsRaw = await readMd(join(agentDir, "Intentions.md"));
+  const plansRaw = await readMd(join(agentDir, "Plans.md"));
+  const memoryRaw = await readMd(join(agentDir, "Memory.md"));
+  const beliefsRaw = await readMd(join(agentDir, "Beliefs.md"));
+  const personaRaw = await readMd(join(agentDir, "Persona.md"));
+
+  const activeGoals = extractActiveBlocks(goalsRaw, /\*\*Status:\*\*\s*active/i);
+  const executingIntentions = extractActiveBlocks(intentionsRaw, /\*\*Status:\*\*\s*executing/i);
+  const activePlans = extractActiveBlocks(plansRaw, /\*\*Status:\*\*\s*active/i);
+  const recentMemory = memoryRaw ? memoryRaw.split("\n").slice(-20).join("\n") : "None.";
 
   // Get top 3 methods via meta-reasoning
   let top3Methods: string[] = ["means-ends", "causal", "decision-theory"];
@@ -399,49 +570,104 @@ async function executeDeliberative(
 
   const trace = [
     `Deliberative processing for ${agentId}`,
-    `Full BDI cycle with ${Object.keys(cognitiveFiles).length} cognitive files`,
+    `Truncated BDI context (active blocks only)`,
     `Multi-method fusion: ${top3Methods.join(", ")}`,
     `Signals: ${signals.length}`,
   ];
 
-  // Build the full deliberative prompt
-  const conclusion = `## Full BDI Cycle — ${agentId}
+  // Resolve role for tool scope
+  const agentCfg = await readJson(join(agentDir, "agent.json"));
+  const role = agentCfg?.id || agentId;
+  const toolScope = ROLE_TOOL_SCOPE[role]?.join(", ") || "all BDI tools";
+
+  const systemPrompt = `You are the ${agentId} agent performing full BDI deliberation.
+Your authorized tools: ${toolScope}
+Only recommend actions within your domain. For cross-domain needs, use agent_message.
+
+Respond in this EXACT format:
+CONFIDENCE: [0.0-1.0]
+ASSESSMENT: [2-5 sentence analysis]
+BELIEF_UPDATES:
+- [belief to add/update, or "none"]
+GOAL_UPDATES:
+- [G-ID: progress% reason, or "none"]
+NEW_INTENTIONS:
+- [new intention, or "none"]
+ACTIONS:
+- [recommended action, or "none"]`;
+
+  const userPrompt = `## Triggering Signals (${signals.length})
+${signalSummary}
+
+## Persona
+${truncate(personaRaw, 500)}
+
+## Active Goals
+${activeGoals}
+
+## Executing Intentions
+${executingIntentions}
+
+## Active Plans
+${activePlans}
+
+## Beliefs (summary)
+${truncate(beliefsRaw, 500)}
+
+## Recent Memory
+${recentMemory}
+
+## Methods
+Apply these in order: ${top3Methods.join(", ")}
+Determine: actions, goal updates, new intentions, belief revisions.
+Before executing high-stakes actions (financial >$1000, legal, public-facing), verify approval requirements.`;
+
+  // Invoke LLM
+  const llmText = await callLlm(api, systemPrompt, userPrompt, {
+    maxTokens: 1024,
+    temperature: 0.2,
+  });
+
+  let conclusion: string;
+  let confidence = 0.6;
+
+  if (llmText) {
+    conclusion = llmText;
+    const confMatch = llmText.match(/CONFIDENCE:\s*([\d.]+)/);
+    if (confMatch) {
+      const parsed = parseFloat(confMatch[1]);
+      if (!isNaN(parsed) && parsed >= 0 && parsed <= 1) confidence = parsed;
+    }
+    trace.push("LLM invoked: Anthropic/OpenAI (deliberative)");
+  } else {
+    // Fallback: raw prompt as conclusion
+    conclusion = `## Full BDI Cycle — ${agentId}
 
 ### Triggering Signals (${signals.length})
 ${signalSummary}
 
-### PHASE 1: PERCEIVE
-${cognitiveFiles["Beliefs.md"] || "No beliefs."}
+### Active Goals
+${activeGoals}
 
-### PHASE 2: DELIBERATE
-**Desires:** ${cognitiveFiles["Desires.md"] || "None."}
-**Goals:** ${cognitiveFiles["Goals.md"] || "None."}
+### Executing Intentions
+${executingIntentions}
 
-### PHASE 3: PLAN
-**Playbooks:** ${cognitiveFiles["Playbooks.md"] || "None."}
-**Plans:** ${cognitiveFiles["Plans.md"] || "None."}
-
-### PHASE 4: ACT
-**Intentions:** ${cognitiveFiles["Intentions.md"] || "None."}
-**Capabilities:** ${cognitiveFiles["Capabilities.md"] || "None."}
-
-### PHASE 5: LEARN
-**Memory:** ${cognitiveFiles["Memory.md"] || "None."}
+### Active Plans
+${activePlans}
 
 ### Multi-Method Fusion
 Apply these methods in order: ${top3Methods.join(", ")}
-Fuse results and determine: actions, goal updates, new intentions, belief revisions.
-
-### Governance Check
-Before executing high-stakes actions (financial >$1000, legal, public-facing), verify approval requirements.`;
+Fuse results and determine: actions, goal updates, new intentions, belief revisions.`;
+    trace.push("LLM unavailable: using structured fallback");
+  }
 
   return {
     depth: "deliberative",
-    confidence: 0.6, // Will be refined after LLM processing
+    confidence,
     conclusion,
     reasoningTrace: trace,
     methodsUsed: top3Methods,
-    tokensConsumed: 4, // Marker: 3-5 LLM calls expected
+    tokensConsumed: llmText ? 4 : 0,
     escalated: false,
     escalationHistory: [],
   };
@@ -520,6 +746,7 @@ async function processInboxResponses(
   signals: CognitiveSignal[],
   result: ProcessingResult,
   log: { debug: (...args: any[]) => void; warn?: (...args: any[]) => void },
+  api?: OpenClawPluginApi,
 ): Promise<void> {
   const inboxSignals = signals.filter((s) => s.source === "inbox");
   if (inboxSignals.length === 0) return;
@@ -550,27 +777,78 @@ async function processInboxResponses(
 
     // For REQUEST, QUERY, CFP, DIRECTIVE: compose and send a response
     if (perf === "REQUEST" || perf === "QUERY" || perf === "CFP" || perf === "DIRECTIVE") {
-      const responsePerf = perf === "QUERY" ? "INFORM" : "AGREE";
+      const responsePerf = perf === "QUERY" ? "INFORM" : "CONFIRM";
       const msgPreview = (msg.content || msg.subject || "your message").slice(0, 300);
 
       // Build response content from processing result
       let responseContent: string;
       if (result.depth === "reflexive") {
+        // Read agent's active goals to provide contextual acknowledgment
+        let goalContext = "";
+        try {
+          const goalsMd = await readMd(join(agentDir, "Goals.md"));
+          const activeGoals = goalsMd
+            .split(/\n### /)
+            .slice(1)
+            .filter((b) => /\*\*Status:\*\*\s*active/i.test(b))
+            .slice(0, 3)
+            .map((b) => {
+              const title = b.split("\n")[0]?.replace(/^G-\d+:\s*/, "") || "";
+              return `  - ${title.slice(0, 80)}`;
+            });
+          if (activeGoals.length > 0) {
+            goalContext = `\nRelevant active goals:\n${activeGoals.join("\n")}`;
+          }
+        } catch {
+          // Goals unavailable
+        }
         responseContent = [
           `Acknowledged your ${perf}: ${msgPreview}`,
           ``,
-          `Processing depth: ${result.depth} | Confidence: ${result.confidence.toFixed(2)}`,
-          `This message has been logged and will be addressed in the next deliberative cycle.`,
+          `Processing: ${result.depth} | Confidence: ${result.confidence.toFixed(2)}`,
+          `This has been queued for processing in the next analytical/deliberative cycle.${goalContext}`,
         ].join("\n");
+      } else if (api) {
+        // Analytical/Deliberative: per-message LLM call for tailored response
+        const replyPrompt = `You are ${agentId}. Compose a concise, actionable reply to this message.
+
+FROM: ${msg.from}
+PERFORMATIVE: ${perf}
+MESSAGE: ${msg.content || msg.subject || "(empty)"}
+
+Your analysis context:
+${result.conclusion.slice(0, 1500)}
+
+Reply directly. State what you will do, concerns, and next steps.`;
+
+        const reply = await callLlm(
+          api,
+          `You are the ${agentId} agent. Write a professional inter-agent response.`,
+          replyPrompt,
+          { maxTokens: 512 },
+        );
+        if (reply) {
+          responseContent = reply;
+        } else {
+          // Fallback: structured response without LLM
+          responseContent = [
+            `Re: ${msgPreview.slice(0, 120)}`,
+            ``,
+            `Processing: ${result.depth} | Confidence: ${result.confidence.toFixed(2)}`,
+            `Methods: ${result.methodsUsed.join(", ")}`,
+            ``,
+            result.conclusion.slice(0, 500),
+          ].join("\n");
+        }
       } else {
-        // Analytical/Deliberative: use the full analysis as response
+        // No API available — structured fallback
         responseContent = [
           `Re: ${msgPreview.slice(0, 120)}`,
           ``,
-          `Processing depth: ${result.depth} | Confidence: ${result.confidence.toFixed(2)}`,
-          `Methods used: ${result.methodsUsed.join(", ")}`,
+          `Processing: ${result.depth} | Confidence: ${result.confidence.toFixed(2)}`,
+          `Methods: ${result.methodsUsed.join(", ")}`,
           ``,
-          result.conclusion,
+          result.conclusion.slice(0, 500),
         ].join("\n");
       }
 
@@ -609,6 +887,268 @@ async function processInboxResponses(
     log.debug(
       `[cognitive-router] ${agentId}: marked ${signalMessageIds.size} message(s) read, sent ${repliesSent} reply(s)`,
     );
+  }
+}
+
+// ── Action Executors ──────────────────────────────────────────
+
+/**
+ * Execute reflexive actions (assert facts, log actions, send messages).
+ * Called after reflexive processing to apply the generated actions.
+ */
+async function executeReflexiveActions(
+  agentId: string,
+  agentDir: string,
+  workspaceDir: string,
+  actions: ReflexiveAction[],
+  log: { debug: (...args: any[]) => void },
+): Promise<number> {
+  let applied = 0;
+
+  for (const action of actions) {
+    try {
+      switch (action.type) {
+        case "assert_fact": {
+          const factsPath = join(agentDir, "facts.json");
+          const store = (await readJson(factsPath)) || { facts: [], version: 0 };
+          const facts = store.facts || [];
+          const d = action.data as Record<string, unknown>;
+          // Skip if missing structured data (e.g. inbox_inform type assertions)
+          if (!d.subject || !d.predicate || !d.object) break;
+          // Deduplicate by subject+predicate+object
+          const exists = facts.some(
+            (f: any) =>
+              f.subject === d.subject && f.predicate === d.predicate && f.object === d.object,
+          );
+          if (!exists) {
+            facts.push({
+              id: (d.id as string) || generatePrefixedId("FACT"),
+              subject: d.subject,
+              predicate: d.predicate,
+              object: d.object,
+              confidence: (d.confidence as number) ?? 0.5,
+              source: d.ruleId ? `inference:${d.ruleId}` : "reflexive",
+              derived_from: (d.derivedFrom as string[]) || [],
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+            });
+            store.version++;
+            await writeJson(factsPath, store);
+            applied++;
+          }
+          break;
+        }
+        case "log_action": {
+          const actionsPath = join(agentDir, "Actions.md");
+          let content = await readMd(actionsPath);
+          if (!content) {
+            content = `# Actions — ${agentId}\n\n## Recent Actions\n`;
+          }
+          content += `\n- [${new Date().toISOString().split("T")[0]}] ${action.description}`;
+          await writeMd(actionsPath, content);
+          applied++;
+          break;
+        }
+        case "send_message": {
+          const d = action.data as Record<string, unknown>;
+          if (d.to && d.content) {
+            const recipientInboxPath = join(workspaceDir, "agents", d.to as string, "inbox.json");
+            const raw = await readJson(recipientInboxPath);
+            const inbox: any[] = Array.isArray(raw) ? raw : raw?.messages || [];
+            inbox.push({
+              id: generatePrefixedId("MSG"),
+              from: agentId,
+              to: d.to,
+              performative: (d.performative as string) || "INFORM",
+              content: d.content,
+              priority: (d.priority as string) || "normal",
+              timestamp: new Date().toISOString(),
+              read: false,
+            });
+            await writeJson(recipientInboxPath, inbox);
+            applied++;
+          }
+          break;
+        }
+      }
+    } catch (err) {
+      log.debug(`[action-executor] Failed to apply ${action.type}: ${err}`);
+    }
+  }
+  return applied;
+}
+
+// ── LLM Action Parser & Executor ─────────────────────────────
+
+interface LlmAction {
+  type: "belief_update" | "goal_progress" | "new_intention";
+  data: Record<string, unknown>;
+}
+
+function parseLlmActions(llmResponse: string): LlmAction[] {
+  const actions: LlmAction[] = [];
+
+  // Parse BELIEF_UPDATES section
+  const beliefMatch = llmResponse.match(/BELIEF_UPDATES:\s*\n([\s\S]*?)(?=\n[A-Z_]+:|$)/);
+  if (beliefMatch) {
+    for (const line of beliefMatch[1].split("\n").filter((l) => l.trim().startsWith("-"))) {
+      const content = line.replace(/^-\s*/, "").trim();
+      if (content && content.toLowerCase() !== "none") {
+        actions.push({ type: "belief_update", data: { content } });
+      }
+    }
+  }
+
+  // Parse GOAL_UPDATES section
+  const goalMatch = llmResponse.match(/GOAL_UPDATES:\s*\n([\s\S]*?)(?=\n[A-Z_]+:|$)/);
+  if (goalMatch) {
+    for (const line of goalMatch[1].split("\n").filter((l) => l.trim().startsWith("-"))) {
+      const progressMatch = line.match(/(G-[\w-]+).*?(\d+)%/);
+      if (progressMatch) {
+        const reason = line.replace(/^-\s*/, "").replace(progressMatch[0], "").trim();
+        actions.push({
+          type: "goal_progress",
+          data: { goalId: progressMatch[1], progress: parseInt(progressMatch[2]), reason },
+        });
+      }
+    }
+  }
+
+  // Parse NEW_INTENTIONS section
+  const intentionMatch = llmResponse.match(/NEW_INTENTIONS:\s*\n([\s\S]*?)(?=\n[A-Z_]+:|$)/);
+  if (intentionMatch) {
+    for (const line of intentionMatch[1].split("\n").filter((l) => l.trim().startsWith("-"))) {
+      const content = line.replace(/^-\s*/, "").trim();
+      if (content && content.toLowerCase() !== "none") {
+        actions.push({ type: "new_intention", data: { content } });
+      }
+    }
+  }
+
+  return actions;
+}
+
+/**
+ * Execute parsed LLM actions: update beliefs, goal progress, intentions.
+ */
+async function executeLlmActions(
+  agentId: string,
+  agentDir: string,
+  _workspaceDir: string,
+  actions: LlmAction[],
+  log: { debug: (...args: any[]) => void },
+): Promise<number> {
+  let applied = 0;
+  const now = new Date().toISOString();
+
+  for (const action of actions) {
+    try {
+      switch (action.type) {
+        case "belief_update": {
+          const beliefsPath = join(agentDir, "Beliefs.md");
+          let beliefs = await readMd(beliefsPath);
+          if (!beliefs) {
+            beliefs = `# Beliefs — ${agentId}\n\nLast updated: ${now}\n\n## Current Beliefs\n`;
+          }
+          const content = action.data.content as string;
+          // Append to Current Beliefs section
+          const currentIdx = beliefs.indexOf("## Current Beliefs");
+          if (currentIdx !== -1) {
+            const nextSection = beliefs.indexOf("\n## ", currentIdx + 20);
+            const insertAt = nextSection !== -1 ? nextSection : beliefs.length;
+            beliefs = beliefs.slice(0, insertAt) + `\n- ${content}` + beliefs.slice(insertAt);
+          } else {
+            beliefs += `\n- ${content}`;
+          }
+          beliefs = beliefs.replace(/Last updated: .*/, `Last updated: ${now}`);
+          await writeMd(beliefsPath, beliefs);
+          applied++;
+          break;
+        }
+        case "goal_progress": {
+          const goalsPath = join(agentDir, "Goals.md");
+          let goals = await readMd(goalsPath);
+          const goalId = action.data.goalId as string;
+          const progress = action.data.progress as number;
+          // Extract goal block and update progress
+          const blockPattern = new RegExp(
+            `(### ${goalId}:[\\s\\S]*?)(?=### G-|## Achieved|## Completed|## Failed|$)`,
+          );
+          const goalBlock = goals.match(blockPattern)?.[1];
+          if (goalBlock && goalBlock.includes("**Progress:**")) {
+            const updatedBlock = goalBlock.replace(
+              /\*\*Progress:\*\*\s*\d+%/,
+              `**Progress:** ${progress}%`,
+            );
+            goals = goals.replace(goalBlock, updatedBlock);
+            goals = goals.replace(/Last evaluated: .*/, `Last evaluated: ${now}`);
+            await writeMd(goalsPath, goals);
+            applied++;
+          }
+          break;
+        }
+        case "new_intention": {
+          // Log new intention recommendation to Memory.md for review
+          const memPath = join(agentDir, "Memory.md");
+          let mem = await readMd(memPath);
+          const content = action.data.content as string;
+          mem += `\n- [${now.split("T")[0]}] LLM recommended intention: ${content}`;
+          await writeMd(memPath, mem);
+          applied++;
+          break;
+        }
+      }
+    } catch (err) {
+      log.debug(`[llm-action-executor] Failed to apply ${action.type}: ${err}`);
+    }
+  }
+  return applied;
+}
+
+/**
+ * Compute and update goal progress from intention progress.
+ */
+async function updateGoalProgress(
+  agentDir: string,
+  log: { debug: (...args: any[]) => void },
+): Promise<void> {
+  const intentions = await readMd(join(agentDir, "Intentions.md"));
+  const goals = await readMd(join(agentDir, "Goals.md"));
+  if (!intentions || !goals) return;
+
+  // Parse active intentions: extract goal_id + progress
+  const intentionBlocks = intentions.split(/\n### I-/).slice(1);
+  const goalProgress: Map<string, number[]> = new Map();
+
+  for (const block of intentionBlocks) {
+    const goalMatch = block.match(/(G-[\w-]+)/);
+    const progMatch = block.match(/\*\*Progress:\*\*\s*(\d+)%/);
+    const statusMatch = block.match(/\*\*Status:\*\*\s*(\w+)/);
+    if (goalMatch && progMatch && statusMatch?.[1] === "executing") {
+      const goalId = goalMatch[1];
+      const prog = parseInt(progMatch[1]);
+      if (!goalProgress.has(goalId)) goalProgress.set(goalId, []);
+      goalProgress.get(goalId)!.push(prog);
+    }
+  }
+
+  // Update Goals.md with computed progress
+  let updatedGoals = goals;
+  for (const [goalId, progValues] of goalProgress) {
+    const avg = Math.round(progValues.reduce((a, b) => a + b, 0) / progValues.length);
+    const blockPattern = new RegExp(
+      `(### ${goalId}:[\\s\\S]*?)(?=### G-|## Achieved|## Completed|## Failed|$)`,
+    );
+    const goalBlock = updatedGoals.match(blockPattern)?.[1];
+    if (goalBlock && goalBlock.includes("**Progress:**")) {
+      const updatedBlock = goalBlock.replace(/\*\*Progress:\*\*\s*\d+%/, `**Progress:** ${avg}%`);
+      updatedGoals = updatedGoals.replace(goalBlock, updatedBlock);
+    }
+  }
+
+  if (updatedGoals !== goals) {
+    await writeMd(join(agentDir, "Goals.md"), updatedGoals);
+    log.debug(`[cognitive-router] Updated goal progress for ${goalProgress.size} goal(s)`);
   }
 }
 
@@ -737,11 +1277,61 @@ export async function enhancedHeartbeatCycle(
 
       // 5. Process inbox responses (reply to REQUEST/QUERY, mark messages read)
       try {
-        await processInboxResponses(agentId, agentDir, workspaceDir, signals, result, log);
+        await processInboxResponses(agentId, agentDir, workspaceDir, signals, result, log, api);
       } catch (err) {
         log.warn?.(
           `[cognitive-router] Inbox response error for ${agentId}: ${err instanceof Error ? err.message : String(err)}`,
         );
+      }
+
+      // 5b. Execute reflexive actions (assert facts, log actions, send messages)
+      if (
+        result.depth === "reflexive" &&
+        result._reflexiveActions &&
+        result._reflexiveActions.length > 0
+      ) {
+        try {
+          const applied = await executeReflexiveActions(
+            agentId,
+            agentDir,
+            workspaceDir,
+            result._reflexiveActions,
+            log,
+          );
+          log.debug(`[cognitive-router] ${agentId}: applied ${applied} reflexive action(s)`);
+        } catch (err) {
+          log.warn?.(
+            `[cognitive-router] Reflexive action error for ${agentId}: ${err instanceof Error ? err.message : String(err)}`,
+          );
+        }
+      }
+
+      // 5c. Parse and execute LLM-recommended actions (analytical/deliberative)
+      if (result.depth !== "reflexive" && result.conclusion) {
+        try {
+          const llmActions = parseLlmActions(result.conclusion);
+          if (llmActions.length > 0) {
+            const applied = await executeLlmActions(
+              agentId,
+              agentDir,
+              workspaceDir,
+              llmActions,
+              log,
+            );
+            log.debug(`[cognitive-router] ${agentId}: applied ${applied} LLM action(s)`);
+          }
+        } catch (err) {
+          log.warn?.(
+            `[cognitive-router] LLM action error for ${agentId}: ${err instanceof Error ? err.message : String(err)}`,
+          );
+        }
+      }
+
+      // 5d. Update goal progress from intention completion
+      try {
+        await updateGoalProgress(agentDir, log);
+      } catch {
+        /* non-critical */
       }
 
       // 6. Update router state
@@ -922,6 +1512,7 @@ ${demand.peakSignal ? demand.peakSignal.summary : "None"}`);
           signals,
           result,
           routeLog,
+          api,
         );
 
         // Update state

@@ -182,6 +182,8 @@ export interface ProcessingResult {
   tokensConsumed: number;
   escalated: boolean;
   escalationHistory: ProcessingDepth[];
+  /** Reflexive actions to be applied by the heartbeat (populated only for reflexive depth). */
+  _reflexiveActions?: ReflexiveAction[];
 }
 
 export interface ReflexiveAction {

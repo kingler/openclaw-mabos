@@ -6,7 +6,12 @@ import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { join, dirname } from "node:path";
 import { Type, type Static } from "@sinclair/typebox";
 import type { OpenClawPluginApi, AnyAgentTool } from "openclaw/plugin-sdk";
-import { textResult, resolveWorkspaceDir, getPluginConfig } from "./common.js";
+import {
+  textResult,
+  resolveWorkspaceDir,
+  getPluginConfig,
+  checkAgentToAgentPolicy,
+} from "./common.js";
 
 async function readJson(p: string) {
   try {
@@ -82,6 +87,12 @@ export function createCommunicationTools(api: OpenClawPluginApi): AnyAgentTool[]
         "Send an ACL message between agents. Supports REQUEST, INFORM, QUERY, PROPOSE, ACCEPT, REJECT, CONFIRM, CANCEL performatives.",
       parameters: AgentMessageParams,
       async execute(_id: string, params: Static<typeof AgentMessageParams>) {
+        // Access control: check agent-to-agent policy
+        const policyError = checkAgentToAgentPolicy(api, params.from, params.to);
+        if (policyError) {
+          return textResult(`ACL blocked: ${policyError}`);
+        }
+
         const ws = resolveWorkspaceDir(api);
         const inboxPath = join(ws, "agents", params.to, "inbox.json");
         const inbox = (await readJson(inboxPath)) || [];
@@ -101,24 +112,15 @@ export function createCommunicationTools(api: OpenClawPluginApi): AnyAgentTool[]
         inbox.push(msg);
         await writeJson(inboxPath, inbox);
 
-        // Wake-up marker for high/urgent priority messages
-        const cfg = getPluginConfig(api);
-        if (cfg.inboxWakeUpEnabled && (msg.priority === "high" || msg.priority === "urgent")) {
+        // Trigger immediate heartbeat for high/urgent priority messages
+        if (msg.priority === "high" || msg.priority === "urgent") {
           try {
-            const wakeUpPath = join(ws, "agents", params.to, "wake-up.json");
-            await writeJson(wakeUpPath, {
-              message_id: msg.id,
-              from: params.from,
-              priority: msg.priority,
-              performative: params.performative,
-              reason: `${msg.priority}-priority ${params.performative} from ${params.from}`,
-              timestamp: msg.timestamp,
+            api.runtime.system.requestHeartbeatNow({
+              reason: `inbox-${msg.priority}:${params.performative}:${params.from}→${params.to}`,
+              coalesceMs: 100,
             });
-            api.logger?.info?.(
-              `[mabos] Wake-up marker created for ${params.to}: ${msg.priority}-priority message from ${params.from}`,
-            );
           } catch {
-            // Wake-up is best-effort; don't fail the message send
+            // Heartbeat trigger is best-effort; don't fail the message send
           }
         }
 

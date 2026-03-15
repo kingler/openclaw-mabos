@@ -113,3 +113,45 @@ export function resolveWorkspaceDir(api: OpenClawPluginApi): string {
 export function getPluginConfig(api: OpenClawPluginApi): MabosPluginConfig {
   return (api.pluginConfig ?? api.config ?? {}) as MabosPluginConfig;
 }
+
+/**
+ * Check whether agent-to-agent messaging is allowed between two agents.
+ * Reads `tools.agentToAgent.enabled` and `tools.agentToAgent.allow` from config.
+ * Returns null if allowed, or an error string if blocked.
+ */
+export function checkAgentToAgentPolicy(
+  api: OpenClawPluginApi,
+  fromAgentId: string,
+  toAgentId: string,
+): string | null {
+  const a2a = (api.config as any)?.tools?.agentToAgent;
+
+  // Same agent always allowed
+  if (fromAgentId === toAgentId) return null;
+
+  // Feature flag check
+  if (!a2a?.enabled) {
+    return `Agent-to-agent messaging is disabled. Set tools.agentToAgent.enabled=true to allow cross-agent messages.`;
+  }
+
+  // Allow patterns check
+  const allowPatterns: string[] = Array.isArray(a2a.allow) ? a2a.allow : [];
+  if (allowPatterns.length === 0) return null; // No allowlist = all allowed
+
+  const matchesAllow = (agentId: string): boolean =>
+    allowPatterns.some((pattern: string) => {
+      const raw = String(pattern ?? "").trim();
+      if (!raw) return false;
+      if (raw === "*") return true;
+      if (!raw.includes("*")) return raw === agentId;
+      const escaped = raw.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      const re = new RegExp(`^${escaped.split("\\*").join(".*")}$`, "i");
+      return re.test(agentId);
+    });
+
+  if (!matchesAllow(fromAgentId) || !matchesAllow(toAgentId)) {
+    return `Agent-to-agent messaging denied by tools.agentToAgent.allow: ${fromAgentId} → ${toAgentId} not permitted.`;
+  }
+
+  return null;
+}

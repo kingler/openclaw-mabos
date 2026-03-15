@@ -237,6 +237,51 @@ ${params.risks?.length ? `#### Risks\n\n| Risk | Impact | Likelihood | Mitigatio
           source: "plan-execution",
         });
 
+        // Update Plans.md step status: pending → outcome
+        const plansPath = join(dir, "Plans.md");
+        let plans = await readMd(plansPath);
+        if (plans) {
+          const stepPattern = new RegExp(
+            `(\\|\\s*${params.step_id}\\s*\\|[^|]*\\|[^|]*\\|[^|]*\\|[^|]*\\|)\\s*pending\\s*(\\|)`,
+          );
+          plans = plans.replace(stepPattern, `$1 ${params.outcome} $2`);
+          await writeMd(plansPath, plans);
+        }
+
+        // Update Intentions.md — advance current step and progress
+        if (params.plan_id && params.outcome === "success") {
+          const intentionsPath = join(dir, "Intentions.md");
+          let intentions = await readMd(intentionsPath);
+          if (intentions) {
+            const nextStep =
+              params.next_step || `S-${parseInt(params.step_id.replace("S-", "")) + 1}`;
+
+            // Find the intention that references this plan and update current step
+            const planRefPattern = new RegExp(
+              `(### I-[\\w-]+:[^]*?via ${params.plan_id}[^]*?)\\*\\*Current Step:\\*\\*\\s*${params.step_id}`,
+            );
+            intentions = intentions.replace(planRefPattern, `$1**Current Step:** ${nextStep}`);
+
+            // Estimate progress from step number
+            const stepNum = parseInt(params.step_id.replace("S-", ""));
+            // Extract plan section by heading, then count steps within it
+            const planSection =
+              plans.match(new RegExp(`### ${params.plan_id}:[\\s\\S]*?(?=### [A-Z]|## |$)`))?.[0] ||
+              "";
+            const stepCount = (planSection.match(/\| S-\d+/g) || []).length;
+            const progress = stepCount > 0 ? Math.round((stepNum / stepCount) * 100) : 0;
+
+            // Update progress in the intention block that references this plan
+            const progPattern = new RegExp(
+              `(### I-[\\w-]+:[^]*?via ${params.plan_id}[^]*?)\\*\\*Progress:\\*\\*\\s*\\d+%`,
+            );
+            intentions = intentions.replace(progPattern, `$1**Progress:** ${progress}%`);
+
+            intentions = intentions.replace(/Last updated: .*/, `Last updated: ${now}`);
+            await writeMd(intentionsPath, intentions);
+          }
+        }
+
         return textResult(
           `Step ${params.step_id} of ${params.plan_id}: ${params.outcome}${params.result ? ` — ${params.result}` : ""}${params.next_step ? `\nNext: ${params.next_step}` : ""}`,
         );
