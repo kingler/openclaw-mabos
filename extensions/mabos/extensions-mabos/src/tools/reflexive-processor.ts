@@ -174,16 +174,17 @@ export async function runReflexiveProcessing(input: ReflexiveInput): Promise<Ref
       }
     }
 
-    // Classify directive by performative
+    // Classify directive by performative (case-insensitive)
     if (!caseMatched) {
-      if (meta.performative === "inform") {
+      const perf = (meta.performative || "").toUpperCase();
+      if (perf === "INFORM") {
         actions.push({
           type: "assert_fact",
           description: `Process inform from ${meta.from}`,
           data: { messageId: meta.messageId, from: meta.from, type: "inbox_inform" },
         });
-      } else if (meta.performative === "request" || meta.performative === "directive") {
-        // Requests and directives may need deeper processing
+      } else if (perf === "REQUEST" || perf === "DIRECTIVE" || perf === "QUERY" || perf === "CFP") {
+        // Requests, queries, and directives need deeper processing
         escalations.push({
           reason: `${meta.performative} from ${meta.from} requires deliberation`,
           severity: "info",

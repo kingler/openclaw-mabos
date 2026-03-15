@@ -69,6 +69,7 @@ interface InboxMessage {
   to: string;
   performative: string;
   subject?: string;
+  content?: string;
   body?: string;
   priority?: string;
   timestamp: string;
@@ -80,21 +81,21 @@ export async function scanInbox(
   agentId: string,
   since: string,
 ): Promise<CognitiveSignal[]> {
-  const inbox = (await readJson(join(agentDir, "inbox.json"))) as {
-    messages?: InboxMessage[];
-  } | null;
-  if (!inbox?.messages) return [];
+  const raw = await readJson(join(agentDir, "inbox.json"));
+  // Handle both flat array [...] and wrapped { messages: [...] } formats
+  const messages: InboxMessage[] = Array.isArray(raw) ? raw : raw?.messages || [];
+  if (messages.length === 0) return [];
 
   const sinceTime = new Date(since).getTime();
-  const unread = inbox.messages.filter(
-    (m) => !m.read && new Date(m.timestamp).getTime() > sinceTime,
-  );
+  const unread = messages.filter((m) => !m.read && new Date(m.timestamp).getTime() > sinceTime);
 
   return unread.map((msg) => {
     const priority = msg.priority || "normal";
     const urgency = normalizeUrgency("inbox", priority);
-    // Higher stakes for directives from supervisors
-    const stakes = msg.performative === "request" || msg.performative === "directive" ? 0.7 : 0.4;
+    // Higher stakes for directives from supervisors (case-insensitive)
+    const perf = (msg.performative || "").toUpperCase();
+    const stakes =
+      perf === "REQUEST" || perf === "DIRECTIVE" || perf === "QUERY" || perf === "CFP" ? 0.7 : 0.4;
     const novelty = 0.5; // Default; could be refined with CBR similarity
 
     const meta: InboxSignalMeta = {
@@ -109,7 +110,7 @@ export async function scanInbox(
       source: "inbox" as const,
       agentId,
       timestamp: msg.timestamp,
-      summary: `Inbox: ${msg.performative} from ${msg.from} — ${msg.subject || "(no subject)"}`,
+      summary: `Inbox: ${msg.performative} from ${msg.from} — ${msg.subject || msg.content?.slice(0, 80) || "(no subject)"}`,
       urgency,
       stakes,
       novelty,

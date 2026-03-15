@@ -197,6 +197,14 @@ export function applyDepthOverrides(
   );
   if (hasFailingGoal && minDepthIdx < 1) minDepthIdx = 1;
 
+  // Inbox REQUEST/QUERY/CFP → at least analytical (agents must compose a response)
+  const hasActionableInbox = signals.some((s) => {
+    if (s.source !== "inbox") return false;
+    const perf = ((s.metadata as any).performative || "").toUpperCase();
+    return perf === "REQUEST" || perf === "QUERY" || perf === "CFP" || perf === "DIRECTIVE";
+  });
+  if (hasActionableInbox && minDepthIdx < 1) minDepthIdx = 1;
+
   return depthOrder[minDepthIdx];
 }
 
@@ -498,6 +506,112 @@ export async function processWithEscalation(
   return result!;
 }
 
+// ── Inbox Response Pipeline ──────────────────────────────────
+
+/**
+ * After cognitive processing, compose replies for actionable inbox messages
+ * (REQUEST, QUERY, CFP) and mark all processed messages as read.
+ * Writes responses to the sender's inbox using the same flat-array format.
+ */
+async function processInboxResponses(
+  agentId: string,
+  agentDir: string,
+  workspaceDir: string,
+  signals: CognitiveSignal[],
+  result: ProcessingResult,
+  log: { debug: (...args: any[]) => void; warn?: (...args: any[]) => void },
+): Promise<void> {
+  const inboxSignals = signals.filter((s) => s.source === "inbox");
+  if (inboxSignals.length === 0) return;
+
+  const inboxPath = join(agentDir, "inbox.json");
+  const raw = await readJson(inboxPath);
+  const messages: any[] = Array.isArray(raw) ? raw : raw?.messages || [];
+  if (messages.length === 0) return;
+
+  // Collect message IDs from inbox signals
+  const signalMessageIds = new Set(
+    inboxSignals.map((s) => (s.metadata as any).messageId as string),
+  );
+
+  const now = new Date().toISOString();
+  let modified = false;
+  let repliesSent = 0;
+
+  for (const msg of messages) {
+    if (!msg.id || msg.read || !signalMessageIds.has(msg.id)) continue;
+
+    // Mark the message as read
+    msg.read = true;
+    msg.read_at = now;
+    modified = true;
+
+    const perf = (msg.performative || "").toUpperCase();
+
+    // For REQUEST, QUERY, CFP, DIRECTIVE: compose and send a response
+    if (perf === "REQUEST" || perf === "QUERY" || perf === "CFP" || perf === "DIRECTIVE") {
+      const responsePerf = perf === "QUERY" ? "INFORM" : "AGREE";
+      const msgPreview = (msg.content || msg.subject || "your message").slice(0, 300);
+
+      // Build response content from processing result
+      let responseContent: string;
+      if (result.depth === "reflexive") {
+        responseContent = [
+          `Acknowledged your ${perf}: ${msgPreview}`,
+          ``,
+          `Processing depth: ${result.depth} | Confidence: ${result.confidence.toFixed(2)}`,
+          `This message has been logged and will be addressed in the next deliberative cycle.`,
+        ].join("\n");
+      } else {
+        // Analytical/Deliberative: use the full analysis as response
+        responseContent = [
+          `Re: ${msgPreview.slice(0, 120)}`,
+          ``,
+          `Processing depth: ${result.depth} | Confidence: ${result.confidence.toFixed(2)}`,
+          `Methods used: ${result.methodsUsed.join(", ")}`,
+          ``,
+          result.conclusion,
+        ].join("\n");
+      }
+
+      // Write response to sender's inbox
+      try {
+        const senderInboxPath = join(workspaceDir, "agents", msg.from, "inbox.json");
+        const senderRaw = await readJson(senderInboxPath);
+        const senderInbox: any[] = Array.isArray(senderRaw) ? senderRaw : senderRaw?.messages || [];
+
+        senderInbox.push({
+          id: `REPLY-${msg.id}-${Date.now().toString(36)}`,
+          from: agentId,
+          to: msg.from,
+          performative: responsePerf,
+          content: responseContent,
+          reply_to: msg.id,
+          priority: msg.priority || "normal",
+          timestamp: now,
+          read: false,
+        });
+
+        await writeJson(senderInboxPath, senderInbox);
+        repliesSent++;
+      } catch (err) {
+        log.warn?.(
+          `[cognitive-router] Failed to send reply from ${agentId} to ${msg.from}: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+    }
+    // For INFORM, ACCEPT, REJECT, CONFIRM, CANCEL: just mark read, no response needed
+  }
+
+  // Save updated inbox with read marks
+  if (modified) {
+    await writeJson(inboxPath, messages);
+    log.debug(
+      `[cognitive-router] ${agentId}: marked ${signalMessageIds.size} message(s) read, sent ${repliesSent} reply(s)`,
+    );
+  }
+}
+
 // ── Router State Management ───────────────────────────────────
 
 function routerStatePath(workspaceDir: string): string {
@@ -621,7 +735,16 @@ export async function enhancedHeartbeatCycle(
         api,
       );
 
-      // 5. Update router state
+      // 5. Process inbox responses (reply to REQUEST/QUERY, mark messages read)
+      try {
+        await processInboxResponses(agentId, agentDir, workspaceDir, signals, result, log);
+      } catch (err) {
+        log.warn?.(
+          `[cognitive-router] Inbox response error for ${agentId}: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+
+      // 6. Update router state
       const newAgentState: AgentRouterState = {
         lastHeartbeatAt: now,
         lastFullCycleAt: result.depth === "deliberative" ? now : agentState.lastFullCycleAt,
@@ -632,7 +755,7 @@ export async function enhancedHeartbeatCycle(
       };
       routerState.agents[agentId] = newAgentState;
 
-      // 6. Also run legacy maintenance (prune intentions, sort desires)
+      // 7. Also run legacy maintenance (prune intentions, sort desires)
       try {
         const BDI_RUNTIME_PATH = "../../mabos/bdi-runtime/index.js";
         const { readAgentCognitiveState, runMaintenanceCycle } = (await import(
@@ -785,6 +908,20 @@ ${demand.peakSignal ? demand.peakSignal.summary : "None"}`);
           signals,
           thresholds,
           api,
+        );
+
+        // Process inbox responses (reply + mark read)
+        const routeLog = {
+          debug: () => {},
+          warn: () => {},
+        };
+        await processInboxResponses(
+          params.agent_id,
+          agentDir,
+          workspaceDir,
+          signals,
+          result,
+          routeLog,
         );
 
         // Update state
