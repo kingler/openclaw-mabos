@@ -260,7 +260,7 @@ function parseGoalsMd(content: string): ParsedGoal[] {
 
   for (const block of goalBlocks) {
     const firstLine = block.split("\n")[0] || "";
-    const idMatch = firstLine.match(/^(G-\d+):\s*(.*)/);
+    const idMatch = firstLine.match(/^(G-[\w-]+):\s*(.*)/);
     if (!idMatch) continue;
 
     const getField = (field: string): string => {
@@ -476,7 +476,7 @@ function parseIntentionsMd(content: string): ParsedIntention[] {
 
   for (const block of blocks) {
     const firstLine = block.split("\n")[0] || "";
-    const idMatch = firstLine.match(/^(I-\d+):/);
+    const idMatch = firstLine.match(/^(I-[\w-]+):/);
     if (!idMatch) continue;
 
     const getField = (field: string): string => {

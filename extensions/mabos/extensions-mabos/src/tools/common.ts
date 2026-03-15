@@ -129,8 +129,9 @@ export function checkAgentToAgentPolicy(
   // Same agent always allowed
   if (fromAgentId === toAgentId) return null;
 
-  // Feature flag check
-  if (!a2a?.enabled) {
+  // Feature flag check — default to enabled when config section is missing
+  // (MABOS is a multi-agent system; blocking by default breaks all coordination)
+  if (a2a && a2a.enabled === false) {
     return `Agent-to-agent messaging is disabled. Set tools.agentToAgent.enabled=true to allow cross-agent messages.`;
   }
 

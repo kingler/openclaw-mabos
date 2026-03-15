@@ -10,6 +10,7 @@ import { join, dirname } from "node:path";
 import { Type, type Static } from "@sinclair/typebox";
 import type { OpenClawPluginApi, AnyAgentTool } from "openclaw/plugin-sdk";
 import { textResult, resolveWorkspaceDir } from "./common.js";
+import { getToolsForRole } from "./tool-filter.js";
 
 // --- Category definitions (exported for reuse by HTTP endpoint) ---
 
@@ -53,6 +54,11 @@ export const TOOL_CATEGORIES: Record<string, RegExp[]> = {
     /^financial_/,
     /^workflow_/,
     /^work_package_/,
+    /^supply_chain_/,
+    /^vendor_/,
+    /^sla_/,
+    /^capacity_/,
+    /^inventory_/,
   ],
   "Marketing & Content": [
     /^content_/,
@@ -74,6 +80,9 @@ export const TOOL_CATEGORIES: Record<string, RegExp[]> = {
     /^webhook_/,
     /^typedb_/,
     /^setup_/,
+    /^cicd_/,
+    /^security_/,
+    /^apm_/,
   ],
   "E-commerce": [/^shopify_/, /^stripe_/, /^order_/, /^pictorem_/],
 };
@@ -207,9 +216,10 @@ export function createCapabilitiesSyncTools(
         // 2. Extract custom sections
         const customSections = extractCustomSections(existingContent);
 
-        // 3. Categorize registered MABOS tools
+        // 3. Filter tools by agent role, then categorize
+        const roleTools = getToolsForRole(params.agent_id, context.registeredToolNames);
         const categorized: Record<string, string[]> = {};
-        for (const toolName of context.registeredToolNames) {
+        for (const toolName of roleTools) {
           const cat = categorize(toolName);
           if (!categorized[cat]) categorized[cat] = [];
           categorized[cat].push(toolName);

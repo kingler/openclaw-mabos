@@ -149,28 +149,20 @@ async function callLlm(
   ];
 
   for (const provider of providers) {
-    if (_blockedProviders.has(provider.name)) {
-      console.log(`[callLlm] ${provider.name}: skipped (blocked)`);
-      continue;
-    }
+    if (_blockedProviders.has(provider.name)) continue;
     try {
       const auth = await api.runtime.modelAuth.resolveApiKeyForProvider({
         provider: provider.name,
         cfg: api.config,
       });
-      console.log(`[callLlm] ${provider.name}: auth hasKey=${!!auth?.apiKey}`);
       if (!auth?.apiKey) continue;
       const result = await provider.call(auth.apiKey);
-      console.log(`[callLlm] ${provider.name}: result=${result ? "ok" : "null"}`);
       if (result) return result;
-    } catch (err) {
-      console.log(
-        `[callLlm] ${provider.name}: error=${err instanceof Error ? err.message : String(err)}`,
-      );
+    } catch {
+      // Provider failed — try next
     }
   }
 
-  console.log("[callLlm] all providers exhausted");
   return null;
 }
 

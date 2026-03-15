@@ -20,6 +20,7 @@ import { createCronBridgeService } from "./src/cron-bridge.js";
 import { createBdiTools } from "./src/tools/bdi-tools.js";
 import { createBpmnMigrateTools } from "./src/tools/bpmn-migrate.js";
 import { createBusinessTools } from "./src/tools/business-tools.js";
+import { createCapabilitiesSyncTools } from "./src/tools/capabilities-sync.js";
 import { createCbrTools } from "./src/tools/cbr-tools.js";
 import {
   createCognitiveRouterTools,
@@ -31,6 +32,7 @@ import { createCrmTools } from "./src/tools/crm-tools.js";
 import { createDesireTools } from "./src/tools/desire-tools.js";
 import { createEmailTools } from "./src/tools/email-tools.js";
 import { createFactStoreTools } from "./src/tools/fact-store.js";
+import { createFinancialTools } from "./src/tools/financial-tools.js";
 import { createInferenceTools } from "./src/tools/inference-tools.js";
 import { createIntegrationTools } from "./src/tools/integration-tools.js";
 import { createKnowledgeTools } from "./src/tools/knowledge-tools.js";
@@ -41,6 +43,7 @@ import { createMemoryTools } from "./src/tools/memory-tools.js";
 import { createMetricsTools } from "./src/tools/metrics-tools.js";
 import { createOnboardingTools } from "./src/tools/onboarding-tools.js";
 import { createOntologyManagementTools } from "./src/tools/ontology-management-tools.js";
+import { createOperationsTools } from "./src/tools/operations-tools.js";
 import { createOutreachTools } from "./src/tools/outreach-tools.js";
 import { createPlanningTools } from "./src/tools/planning-tools.js";
 import { createReasoningTools } from "./src/tools/reasoning-tools.js";
@@ -50,6 +53,8 @@ import { createSalesResearchTools } from "./src/tools/sales-research-tools.js";
 import { createSeoAnalyticsTools } from "./src/tools/seo-analytics-tools.js";
 import { createSetupWizardTools } from "./src/tools/setup-wizard-tools.js";
 import { createStakeholderTools } from "./src/tools/stakeholder-tools.js";
+import { createTechOpsTools } from "./src/tools/techops-tools.js";
+import { isToolAllowedForRole } from "./src/tools/tool-filter.js";
 import { createTypeDBTools } from "./src/tools/typedb-tools.js";
 import { createWorkflowTools } from "./src/tools/workflow-tools.js";
 import { createWorkforceTools } from "./src/tools/workforce-tools.js";
@@ -61,7 +66,7 @@ const BDI_RUNTIME_PATH = "../../../mabos/bdi-runtime/index.js";
 export default function register(api: OpenClawPluginApi) {
   const log = api.logger;
 
-  // ── 1. Register all 99 tools ──────────────────────────────────
+  // ── 1. Register all tools ─────────────────────────────────────
   const factories = [
     createBdiTools,
     createPlanningTools,
@@ -95,14 +100,32 @@ export default function register(api: OpenClawPluginApi) {
     createLeadGenerationTools,
     createSalesResearchTools,
     createOutreachTools,
+    createFinancialTools,
+    createOperationsTools,
+    createTechOpsTools,
   ];
+
+  // Collect all tool names for capabilities_sync context
+  const registeredToolNames: string[] = [];
 
   for (const factory of factories) {
     const tools = factory(api);
     for (const tool of tools) {
       api.registerTool(tool);
+      registeredToolNames.push(tool.name);
     }
   }
+
+  // Register capabilities_sync (needs the tool name list)
+  const capSyncTools = createCapabilitiesSyncTools(api, { registeredToolNames });
+  for (const tool of capSyncTools) {
+    api.registerTool(tool);
+    registeredToolNames.push(tool.name);
+  }
+
+  // Export tool filter for per-agent scoping (used by cognitive router)
+  // Agents can check `isToolAllowedForRole(role, toolName)` at runtime
+  (api as any)._mabosToolFilter = { isToolAllowedForRole, registeredToolNames };
 
   // ── 2. BDI Background Service ─────────────────────────────────
   const workspaceDir = resolveWorkspaceDir(api);
