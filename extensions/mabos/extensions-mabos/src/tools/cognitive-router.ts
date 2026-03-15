@@ -88,101 +88,102 @@ const ROLE_TOOL_SCOPE: Record<string, string[]> = {
 
 // ── LLM Caller ─────────────────────────────────────────────────
 
+// Providers that returned 401/403 are blocked for the lifetime of this process
+// to avoid wasting ~200ms per call on known-bad credentials.
+const _blockedProviders = new Set<string>();
+
 async function callLlm(
   api: OpenClawPluginApi,
   systemPrompt: string,
   userPrompt: string,
   opts: { maxTokens?: number; temperature?: number } = {},
 ): Promise<string | null> {
-  // Guard: runtime may not have modelAuth
-  if (!api?.runtime?.modelAuth) {
-    console.log("[callLlm] DIAG: No runtime.modelAuth available");
-    return null;
-  }
+  if (!api?.runtime?.modelAuth) return null;
 
-  // Try Anthropic first
-  try {
-    const auth = await api.runtime.modelAuth.resolveApiKeyForProvider({
-      provider: "anthropic",
-      cfg: api.config,
-    });
-    console.log(
-      `[callLlm] DIAG: Anthropic auth: hasKey=${!!auth?.apiKey}, source=${(auth as any)?.source}`,
-    );
-    if (auth?.apiKey) {
-      const resp = await fetch("https://api.anthropic.com/v1/messages", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-api-key": auth.apiKey,
-          "anthropic-version": "2023-06-01",
-        },
-        body: JSON.stringify({
-          model: "claude-sonnet-4-20250514",
-          max_tokens: opts.maxTokens ?? 1024,
-          temperature: opts.temperature ?? 0.3,
-          system: systemPrompt,
-          messages: [{ role: "user", content: userPrompt }],
-        }),
+  // Provider list: try each in order, skip blocked ones
+  const providers: Array<{
+    name: string;
+    call: (apiKey: string) => Promise<string | null>;
+  }> = [
+    {
+      name: "anthropic",
+      call: async (apiKey) => {
+        const resp = await fetch("https://api.anthropic.com/v1/messages", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-api-key": apiKey,
+            "anthropic-version": "2023-06-01",
+          },
+          body: JSON.stringify({
+            model: "claude-sonnet-4-20250514",
+            max_tokens: opts.maxTokens ?? 1024,
+            temperature: opts.temperature ?? 0.3,
+            system: systemPrompt,
+            messages: [{ role: "user", content: userPrompt }],
+          }),
+        });
+        if (resp.ok) {
+          const data = (await resp.json()) as { content?: Array<{ text?: string }> };
+          return data.content?.[0]?.text ?? null;
+        }
+        if (resp.status === 401 || resp.status === 403) {
+          _blockedProviders.add("anthropic");
+          console.log(`[callLlm] Anthropic blocked (${resp.status}), skipping future calls`);
+        }
+        return null;
+      },
+    },
+    {
+      name: "openai",
+      call: async (apiKey) => {
+        const resp = await fetch("https://api.openai.com/v1/chat/completions", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${apiKey}`,
+          },
+          body: JSON.stringify({
+            model: "gpt-4o-mini",
+            max_tokens: opts.maxTokens ?? 1024,
+            temperature: opts.temperature ?? 0.3,
+            messages: [
+              { role: "system", content: systemPrompt },
+              { role: "user", content: userPrompt },
+            ],
+          }),
+        });
+        if (resp.ok) {
+          const data = (await resp.json()) as {
+            choices?: Array<{ message?: { content?: string } }>;
+          };
+          return data.choices?.[0]?.message?.content ?? null;
+        }
+        if (resp.status === 401 || resp.status === 403) {
+          _blockedProviders.add("openai");
+          console.log(`[callLlm] OpenAI blocked (${resp.status}), skipping future calls`);
+        }
+        return null;
+      },
+    },
+  ];
+
+  for (const provider of providers) {
+    if (_blockedProviders.has(provider.name)) continue;
+    try {
+      const auth = await api.runtime.modelAuth.resolveApiKeyForProvider({
+        provider: provider.name,
+        cfg: api.config,
       });
-      console.log(`[callLlm] DIAG: Anthropic resp status=${resp.status}`);
-      if (resp.ok) {
-        const data = (await resp.json()) as { content?: Array<{ text?: string }> };
-        const text = data.content?.[0]?.text ?? null;
-        console.log(`[callLlm] DIAG: Anthropic success: ${text ? text.length + " chars" : "null"}`);
-        return text;
-      }
-      const errBody = await resp.text().catch(() => "");
-      console.log(`[callLlm] DIAG: Anthropic non-ok: ${resp.status} ${errBody.slice(0, 200)}`);
+      if (!auth?.apiKey) continue;
+      const result = await provider.call(auth.apiKey);
+      if (result) return result;
+    } catch {
+      /* try next provider */
     }
-  } catch (err) {
-    console.log(
-      `[callLlm] DIAG: Anthropic error: ${err instanceof Error ? err.message : String(err)}`,
-    );
   }
 
-  // Fallback: OpenAI
-  try {
-    const auth = await api.runtime.modelAuth.resolveApiKeyForProvider({
-      provider: "openai",
-      cfg: api.config,
-    });
-    console.log(
-      `[callLlm] DIAG: OpenAI auth: hasKey=${!!auth?.apiKey}, source=${(auth as any)?.source}`,
-    );
-    if (auth?.apiKey) {
-      const resp = await fetch("https://api.openai.com/v1/chat/completions", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${auth.apiKey}`,
-        },
-        body: JSON.stringify({
-          model: "gpt-4o-mini",
-          max_tokens: opts.maxTokens ?? 1024,
-          temperature: opts.temperature ?? 0.3,
-          messages: [
-            { role: "system", content: systemPrompt },
-            { role: "user", content: userPrompt },
-          ],
-        }),
-      });
-      console.log(`[callLlm] DIAG: OpenAI resp status=${resp.status}`);
-      if (resp.ok) {
-        const data = (await resp.json()) as {
-          choices?: Array<{ message?: { content?: string } }>;
-        };
-        return data.choices?.[0]?.message?.content ?? null;
-      }
-    }
-  } catch (err) {
-    console.log(
-      `[callLlm] DIAG: OpenAI error: ${err instanceof Error ? err.message : String(err)}`,
-    );
-  }
-
-  console.log("[callLlm] DIAG: All providers failed");
-  return null; // Graceful degradation — callers use structured fallback
+  return null;
 }
 
 // ── Demand Scoring ────────────────────────────────────────────
@@ -1005,42 +1006,104 @@ interface LlmAction {
   data: Record<string, unknown>;
 }
 
+/**
+ * Extract a named section from structured LLM output.
+ * Handles variations: `BELIEF_UPDATES:`, `Belief Updates:`, `**BELIEF_UPDATES:**`, `## Belief Updates`
+ */
+function extractSection(text: string, sectionName: string): string | null {
+  // Build flexible patterns for the section header
+  const words = sectionName.split("_");
+  const camelCase = words
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+    .join(" ");
+  const upper = sectionName.toUpperCase();
+  // Match: `SECTION_NAME:`, `Section Name:`, `**SECTION_NAME:**`, `## Section Name`
+  const headerPattern = new RegExp(
+    `(?:#{1,3}\\s*)?(?:\\*\\*)?(?:${upper}|${camelCase})(?:\\*\\*)?:\\s*\\n`,
+    "i",
+  );
+  const match = text.match(headerPattern);
+  if (!match) return null;
+
+  const start = match.index! + match[0].length;
+  // Capture until next section header (UPPERCASE_WORD: or ## Heading) or end
+  const rest = text.slice(start);
+  const nextHeader = rest.match(/\n(?:#{1,3}\s+)?(?:\*\*)?[A-Z][A-Z_\s]+(?:\*\*)?:\s*\n/);
+  return nextHeader ? rest.slice(0, nextHeader.index!) : rest;
+}
+
+/** Extract list items from a section body. Handles `-`, `*`, and `1.` style lists. */
+function extractListItems(body: string): string[] {
+  return body
+    .split("\n")
+    .map((l) => l.trim())
+    .filter((l) => /^[-*]\s|^\d+[.)]\s/.test(l))
+    .map((l) => l.replace(/^[-*]\s*|^\d+[.)]\s*/, "").trim())
+    .filter(Boolean);
+}
+
+/** Check if a value is a "none" placeholder. */
+function isNone(s: string): boolean {
+  return /^(none|n\/a|no\s+updates?|no\s+changes?|no\s+new\s+|—|-|"none")$/i.test(s.trim());
+}
+
 function parseLlmActions(llmResponse: string): LlmAction[] {
   const actions: LlmAction[] = [];
 
   // Parse BELIEF_UPDATES section
-  const beliefMatch = llmResponse.match(/BELIEF_UPDATES:\s*\n([\s\S]*?)(?=\n[A-Z_]+:|$)/);
-  if (beliefMatch) {
-    for (const line of beliefMatch[1].split("\n").filter((l) => l.trim().startsWith("-"))) {
-      const content = line.replace(/^-\s*/, "").trim();
-      if (content && content.toLowerCase() !== "none") {
-        actions.push({ type: "belief_update", data: { content } });
+  const beliefBody = extractSection(llmResponse, "BELIEF_UPDATES");
+  if (beliefBody) {
+    for (const item of extractListItems(beliefBody)) {
+      if (!isNone(item)) {
+        actions.push({ type: "belief_update", data: { content: item } });
       }
     }
   }
 
   // Parse GOAL_UPDATES section
-  const goalMatch = llmResponse.match(/GOAL_UPDATES:\s*\n([\s\S]*?)(?=\n[A-Z_]+:|$)/);
-  if (goalMatch) {
-    for (const line of goalMatch[1].split("\n").filter((l) => l.trim().startsWith("-"))) {
-      const progressMatch = line.match(/(G-[\w-]+).*?(\d+)%/);
-      if (progressMatch) {
-        const reason = line.replace(/^-\s*/, "").replace(progressMatch[0], "").trim();
+  const goalBody = extractSection(llmResponse, "GOAL_UPDATES");
+  if (goalBody) {
+    for (const item of extractListItems(goalBody)) {
+      if (isNone(item)) continue;
+      // Flexible goal progress matching:
+      // "G-CFO-001: 20% reason", "G-CFO-001 → 20%", "20% on G-CFO-001", "G-CFO-001 (20%)"
+      const goalIdMatch = item.match(/(G-[\w-]+)/);
+      const progressMatch = item.match(/(\d+)\s*%/);
+      if (goalIdMatch && progressMatch) {
+        const reason = item
+          .replace(goalIdMatch[0], "")
+          .replace(progressMatch[0], "")
+          .replace(/[→:()]/g, "")
+          .trim();
         actions.push({
           type: "goal_progress",
-          data: { goalId: progressMatch[1], progress: parseInt(progressMatch[2]), reason },
+          data: {
+            goalId: goalIdMatch[1],
+            progress: parseInt(progressMatch[1]),
+            reason: reason || "LLM assessment",
+          },
         });
       }
     }
   }
 
   // Parse NEW_INTENTIONS section
-  const intentionMatch = llmResponse.match(/NEW_INTENTIONS:\s*\n([\s\S]*?)(?=\n[A-Z_]+:|$)/);
-  if (intentionMatch) {
-    for (const line of intentionMatch[1].split("\n").filter((l) => l.trim().startsWith("-"))) {
-      const content = line.replace(/^-\s*/, "").trim();
-      if (content && content.toLowerCase() !== "none") {
-        actions.push({ type: "new_intention", data: { content } });
+  const intentionBody = extractSection(llmResponse, "NEW_INTENTIONS");
+  if (intentionBody) {
+    for (const item of extractListItems(intentionBody)) {
+      if (!isNone(item)) {
+        actions.push({ type: "new_intention", data: { content: item } });
+      }
+    }
+  }
+
+  // Parse ACTIONS section (log for observability)
+  const actionsBody = extractSection(llmResponse, "ACTIONS");
+  if (actionsBody) {
+    for (const item of extractListItems(actionsBody)) {
+      if (!isNone(item)) {
+        // Store as new_intention since actions require tool execution context
+        actions.push({ type: "new_intention", data: { content: `[ACTION] ${item}` } });
       }
     }
   }
@@ -1071,18 +1134,28 @@ async function executeLlmActions(
             beliefs = `# Beliefs — ${agentId}\n\nLast updated: ${now}\n\n## Current Beliefs\n`;
           }
           const content = action.data.content as string;
+          // Ensure ## Current Beliefs section exists
+          if (!beliefs.includes("## Current Beliefs")) {
+            // Insert before first ## section or at end
+            const firstSection = beliefs.indexOf("\n## ");
+            if (firstSection !== -1) {
+              beliefs =
+                beliefs.slice(0, firstSection) +
+                `\n\n## Current Beliefs\n` +
+                beliefs.slice(firstSection);
+            } else {
+              beliefs += `\n\n## Current Beliefs\n`;
+            }
+          }
           // Append to Current Beliefs section
           const currentIdx = beliefs.indexOf("## Current Beliefs");
-          if (currentIdx !== -1) {
-            const nextSection = beliefs.indexOf("\n## ", currentIdx + 20);
-            const insertAt = nextSection !== -1 ? nextSection : beliefs.length;
-            beliefs = beliefs.slice(0, insertAt) + `\n- ${content}` + beliefs.slice(insertAt);
-          } else {
-            beliefs += `\n- ${content}`;
-          }
+          const nextSection = beliefs.indexOf("\n## ", currentIdx + 20);
+          const insertAt = nextSection !== -1 ? nextSection : beliefs.length;
+          beliefs = beliefs.slice(0, insertAt) + `\n- ${content}` + beliefs.slice(insertAt);
           beliefs = beliefs.replace(/Last updated: .*/, `Last updated: ${now}`);
           await writeMd(beliefsPath, beliefs);
           applied++;
+          log.debug(`[llm-action-executor] Belief added: ${content.slice(0, 80)}`);
           break;
         }
         case "goal_progress": {
@@ -1095,15 +1168,27 @@ async function executeLlmActions(
             `(### ${goalId}:[\\s\\S]*?)(?=### G-|## Achieved|## Completed|## Failed|$)`,
           );
           const goalBlock = goals.match(blockPattern)?.[1];
-          if (goalBlock && goalBlock.includes("**Progress:**")) {
-            const updatedBlock = goalBlock.replace(
-              /\*\*Progress:\*\*\s*\d+%/,
-              `**Progress:** ${progress}%`,
-            );
+          if (goalBlock) {
+            let updatedBlock: string;
+            if (goalBlock.includes("**Progress:**")) {
+              updatedBlock = goalBlock.replace(
+                /\*\*Progress:\*\*\s*\d+%/,
+                `**Progress:** ${progress}%`,
+              );
+            } else {
+              // Insert progress after Status line
+              updatedBlock = goalBlock.replace(
+                /(\*\*Status:\*\*\s*\w+)/,
+                `$1\n- **Progress:** ${progress}%`,
+              );
+            }
             goals = goals.replace(goalBlock, updatedBlock);
             goals = goals.replace(/Last evaluated: .*/, `Last evaluated: ${now}`);
             await writeMd(goalsPath, goals);
             applied++;
+            log.debug(`[llm-action-executor] Goal ${goalId}: progress → ${progress}%`);
+          } else {
+            log.debug(`[llm-action-executor] Goal ${goalId} not found in Goals.md`);
           }
           break;
         }
@@ -1330,6 +1415,9 @@ export async function enhancedHeartbeatCycle(
       if (result.depth !== "reflexive" && result.conclusion) {
         try {
           const llmActions = parseLlmActions(result.conclusion);
+          log.debug(
+            `[cognitive-router] ${agentId}: parsed ${llmActions.length} action(s) from LLM: ${llmActions.map((a) => a.type).join(", ") || "none"}`,
+          );
           if (llmActions.length > 0) {
             const applied = await executeLlmActions(
               agentId,
