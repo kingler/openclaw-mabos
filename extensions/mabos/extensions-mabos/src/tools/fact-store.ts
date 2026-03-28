@@ -51,6 +51,113 @@ type FactStore = {
   version: number;
 };
 
+// ── Direct API sync types ──
+
+export type DirectFactParams = {
+  agent_id: string;
+  subject: string;
+  predicate: string;
+  object: string;
+  confidence: number;
+  source: string;
+  valid_from?: string;
+  valid_until?: string;
+};
+
+export type DirectFactResult = {
+  factId: string;
+  action: "asserted" | "updated" | "blocked";
+  message: string;
+};
+
+/**
+ * Assert a fact directly without the tool wrapper.
+ * Used by sync scripts (Shopify, Stripe, etc.) for LLM-free fact writes.
+ */
+export async function assertFactDirect(
+  api: OpenClawPluginApi,
+  params: DirectFactParams,
+): Promise<DirectFactResult> {
+  const store = await loadFacts(api, params.agent_id);
+  const contradiction = detectContradiction(
+    store.facts,
+    params.subject,
+    params.predicate,
+    params.object,
+    params.source,
+  );
+
+  if (contradiction?.action === "BLOCK") {
+    return { factId: "", action: "blocked", message: contradiction.message };
+  }
+
+  let warning = "";
+  if (contradiction?.action === "WARN") {
+    warning = "\n" + contradiction.message;
+  }
+
+  const now = new Date().toISOString();
+  const existing = store.facts.findIndex(
+    (f) =>
+      f.subject === params.subject &&
+      f.predicate === params.predicate &&
+      f.object === params.object,
+  );
+
+  const factId = existing !== -1 ? store.facts[existing].id : generatePrefixedId("F");
+  const action: "asserted" | "updated" = existing !== -1 ? "updated" : "asserted";
+
+  const fact: Fact = {
+    id: factId,
+    subject: params.subject,
+    predicate: params.predicate,
+    object: params.object,
+    confidence: params.confidence,
+    source: params.source,
+    valid_from: params.valid_from || now,
+    valid_until: params.valid_until,
+    created_at: existing !== -1 ? store.facts[existing].created_at : now,
+    updated_at: now,
+  };
+
+  if (existing !== -1) {
+    store.facts[existing] = fact;
+  } else {
+    store.facts.push(fact);
+  }
+
+  await saveFacts(api, params.agent_id, store);
+
+  // Write-through to TypeDB (best-effort)
+  try {
+    const client = getTypeDBClient();
+    if (client.isAvailable()) {
+      const typeql = FactStoreQueries.assertFact(params.agent_id, {
+        id: factId,
+        subject: params.subject,
+        predicate: params.predicate,
+        object: params.object,
+        confidence: params.confidence,
+        source: params.source,
+        validFrom: params.valid_from,
+        validUntil: params.valid_until,
+      });
+      await client.insertData(typeql, `mabos_${params.agent_id.split("/")[0] || "default"}`);
+    }
+  } catch {
+    // TypeDB unavailable — JSON file is the source of truth
+  }
+
+  // Materialize to indexed Markdown for OpenClaw semantic search
+  materializeFacts(api, params.agent_id).catch(() => {});
+
+  return {
+    factId,
+    action,
+    message: `Fact ${factId} ${action}: (${params.subject}, ${params.predicate}, ${params.object}) [confidence: ${params.confidence}]${warning}`,
+  };
+}
+
 function factsPath(api: OpenClawPluginApi, agentId: string): string {
   const ws = resolveWorkspaceDir(api);
   return join(ws, "agents", agentId, "facts.json");
@@ -120,83 +227,8 @@ export function createFactStoreTools(api: OpenClawPluginApi): AnyAgentTool[] {
       description: "Add or update an SPO triple in the fact store with confidence and provenance.",
       parameters: FactAssertParams,
       async execute(_id: string, params: Static<typeof FactAssertParams>) {
-        // ── Contradiction detection: check for conflicting facts ──
-        const store = await loadFacts(api, params.agent_id);
-        const contradiction = detectContradiction(
-          store.facts,
-          params.subject,
-          params.predicate,
-          params.object,
-          params.source,
-        );
-
-        if (contradiction?.action === "BLOCK") {
-          return textResult(contradiction.message);
-        }
-
-        let warning = "";
-        if (contradiction?.action === "WARN") {
-          warning = "\n" + contradiction.message;
-        }
-        const now = new Date().toISOString();
-
-        // Check for existing triple
-        const existing = store.facts.findIndex(
-          (f) =>
-            f.subject === params.subject &&
-            f.predicate === params.predicate &&
-            f.object === params.object,
-        );
-
-        const factId = existing !== -1 ? store.facts[existing].id : generatePrefixedId("F");
-
-        const fact: Fact = {
-          id: factId,
-          subject: params.subject,
-          predicate: params.predicate,
-          object: params.object,
-          confidence: params.confidence,
-          source: params.source,
-          valid_from: params.valid_from || now,
-          valid_until: params.valid_until,
-          created_at: existing !== -1 ? store.facts[existing].created_at : now,
-          updated_at: now,
-        };
-
-        if (existing !== -1) {
-          store.facts[existing] = fact;
-        } else {
-          store.facts.push(fact);
-        }
-
-        await saveFacts(api, params.agent_id, store);
-
-        // Write-through to TypeDB (best-effort)
-        try {
-          const client = getTypeDBClient();
-          if (client.isAvailable()) {
-            const typeql = FactStoreQueries.assertFact(params.agent_id, {
-              id: factId,
-              subject: params.subject,
-              predicate: params.predicate,
-              object: params.object,
-              confidence: params.confidence,
-              source: params.source,
-              validFrom: params.valid_from,
-              validUntil: params.valid_until,
-            });
-            await client.insertData(typeql, `mabos_${params.agent_id.split("/")[0] || "default"}`);
-          }
-        } catch {
-          // TypeDB unavailable — JSON file is the source of truth
-        }
-
-        // Materialize to indexed Markdown for OpenClaw semantic search
-        materializeFacts(api, params.agent_id).catch(() => {});
-
-        return textResult(
-          `Fact ${factId} ${existing !== -1 ? "updated" : "asserted"}: (${params.subject}, ${params.predicate}, ${params.object}) [confidence: ${params.confidence}]${warning}`,
-        );
+        const result = await assertFactDirect(api, params);
+        return textResult(result.message);
       },
     },
 
