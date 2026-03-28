@@ -22,6 +22,10 @@ describe("resolveAuthorityTier", () => {
     expect(resolveAuthorityTier("stripe-webhook-2026-03")).toBe(AuthorityTier.T1_API_VERIFIED);
   });
 
+  it("classifies stripe-sync as T1_API_VERIFIED", () => {
+    expect(resolveAuthorityTier("stripe-sync-2026-03-28")).toBe(AuthorityTier.T1_API_VERIFIED);
+  });
+
   it("classifies google-analytics as T1_API_VERIFIED", () => {
     expect(resolveAuthorityTier("google-analytics-sync")).toBe(AuthorityTier.T1_API_VERIFIED);
   });
