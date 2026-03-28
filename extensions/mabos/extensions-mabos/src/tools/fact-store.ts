@@ -17,6 +17,7 @@ import { getTypeDBClient, TypeDBUnavailableError } from "../knowledge/typedb-cli
 import { FactStoreQueries } from "../knowledge/typedb-queries.js";
 import { textResult, resolveWorkspaceDir, generatePrefixedId } from "./common.js";
 import { materializeFacts } from "./memory-materializer.js";
+import { detectContradiction } from "./source-authority.js";
 
 async function readJson(p: string) {
   try {
@@ -119,7 +120,24 @@ export function createFactStoreTools(api: OpenClawPluginApi): AnyAgentTool[] {
       description: "Add or update an SPO triple in the fact store with confidence and provenance.",
       parameters: FactAssertParams,
       async execute(_id: string, params: Static<typeof FactAssertParams>) {
+        // ── Contradiction detection: check for conflicting facts ──
         const store = await loadFacts(api, params.agent_id);
+        const contradiction = detectContradiction(
+          store.facts,
+          params.subject,
+          params.predicate,
+          params.object,
+          params.source,
+        );
+
+        if (contradiction?.action === "BLOCK") {
+          return textResult(contradiction.message);
+        }
+
+        let warning = "";
+        if (contradiction?.action === "WARN") {
+          warning = "\n" + contradiction.message;
+        }
         const now = new Date().toISOString();
 
         // Check for existing triple
@@ -177,7 +195,7 @@ export function createFactStoreTools(api: OpenClawPluginApi): AnyAgentTool[] {
         materializeFacts(api, params.agent_id).catch(() => {});
 
         return textResult(
-          `Fact ${factId} ${existing !== -1 ? "updated" : "asserted"}: (${params.subject}, ${params.predicate}, ${params.object}) [confidence: ${params.confidence}]`,
+          `Fact ${factId} ${existing !== -1 ? "updated" : "asserted"}: (${params.subject}, ${params.predicate}, ${params.object}) [confidence: ${params.confidence}]${warning}`,
         );
       },
     },
