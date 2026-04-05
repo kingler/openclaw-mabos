@@ -268,15 +268,27 @@ export function WizardSteps() {
     );
   }, []);
 
+  // Build the workspace context in the format the backend expects
+  function buildSuggestContext() {
+    return {
+      company_name: workspace.companyName,
+      industry: workspace.industry,
+      stage: workspace.stage,
+      vision: workspace.vision || undefined,
+      mission: workspace.mission || undefined,
+      values: workspace.values.length > 0 ? workspace.values : undefined,
+      bmc_blocks: Object.keys(workspace.bmcBlocks).length > 0 ? workspace.bmcBlocks : undefined,
+    };
+  }
+
   // Fetch AI suggestions for text fields
   async function fetchSuggestion(suggestType: string) {
     setSuggestLoading(true);
     setSuggestions([]);
     try {
-      const res = (await api.onboard({
-        action: "suggest",
+      const res = (await api.onboardSuggest({
         suggest_type: suggestType,
-        workspace_context: workspace,
+        workspace_context: buildSuggestContext(),
       })) as { suggestions?: string[] };
       setSuggestions(res.suggestions ?? []);
     } catch {
@@ -291,10 +303,10 @@ export function WizardSteps() {
     setSuggestLoading(true);
     setBmcSuggestions([]);
     try {
-      const res = (await api.onboard({
-        action: "suggest",
-        suggest_type: blockKey,
-        workspace_context: workspace,
+      const res = (await api.onboardSuggest({
+        suggest_type: "bmc_block",
+        bmc_block_key: blockKey,
+        workspace_context: buildSuggestContext(),
       })) as { suggestions?: Array<{ title: string; description: string }> };
       setBmcSuggestions(
         (res.suggestions ?? []).map((s) =>

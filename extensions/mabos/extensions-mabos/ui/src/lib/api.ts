@@ -175,6 +175,7 @@ export const api = {
 
   // Onboarding
   onboard: (body: unknown) => post<unknown>("/onboard", body),
+  onboardSuggest: (body: unknown) => post<unknown>("/onboard/suggest", body),
 
   // Chat
   sendChatMessage: (body: {
