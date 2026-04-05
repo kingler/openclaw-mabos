@@ -14,10 +14,23 @@
 
 import { randomUUID } from "node:crypto";
 import { readFile, writeFile, mkdir, readdir } from "node:fs/promises";
+import { homedir } from "node:os";
 import { join, dirname } from "node:path";
 import type { OpenClawPluginApi } from "openclaw/plugin-sdk";
 import WebSocket from "ws";
-import { resolveDefaultAgentWorkspaceDir } from "../../../src/agents/workspace.js";
+
+/**
+ * Resolve default workspace dir inline to avoid importing from core src/
+ * which breaks when the plugin is loaded in an npm-installed gateway.
+ */
+function resolveDefaultAgentWorkspaceDir(env: NodeJS.ProcessEnv = process.env): string {
+  const home = env.HOME || env.USERPROFILE || homedir();
+  const profile = env.OPENCLAW_PROFILE?.trim();
+  if (profile && profile.toLowerCase() !== "default") {
+    return join(home, ".openclaw", `workspace-${profile}`);
+  }
+  return join(home, ".openclaw", "workspace");
+}
 
 // ---------------------------------------------------------------------------
 // Types
