@@ -1,26 +1,33 @@
 import { AlertCircle } from "lucide-react";
 import { AgentStatusGrid } from "@/components/dashboard/AgentStatusGrid";
 import { BdiStatusPanel } from "@/components/dashboard/BdiStatusPanel";
+import { OnboardingSummary } from "@/components/dashboard/OnboardingSummary";
 import { RecentActivity } from "@/components/dashboard/RecentActivity";
 import { StatusCards } from "@/components/dashboard/StatusCards";
+import { useBusinessContext } from "@/contexts/BusinessContext";
 import { useAgents } from "@/hooks/useAgents";
 import { useCronJobs } from "@/hooks/useCronJobs";
+import { useGoals } from "@/hooks/useGoals";
 import { useStatus } from "@/hooks/useStatus";
 import { useTasks } from "@/hooks/useTasks";
-import type { SystemStatus, Task, AgentListResponse, CronJob } from "@/lib/types";
+import type { SystemStatus, Task, AgentListResponse, CronJob, BusinessGoal } from "@/lib/types";
 
 const BUSINESS_ID = "vividwalls";
 
 export function OverviewPage() {
+  const { activeBusiness } = useBusinessContext();
   const { data: statusRaw, isLoading: statusLoading, error: statusError } = useStatus();
   const { data: agentsRaw, isLoading: agentsLoading, error: agentsError } = useAgents(BUSINESS_ID);
   const { data: tasksRaw, isLoading: tasksLoading } = useTasks(BUSINESS_ID);
   const { data: cronJobs } = useCronJobs(BUSINESS_ID);
+  const { data: goalsRaw } = useGoals(BUSINESS_ID);
 
   const status = statusRaw as SystemStatus | undefined;
   const agentsResponse = agentsRaw as AgentListResponse | undefined;
   const agents = agentsResponse?.agents;
   const tasks = tasksRaw as Task[] | undefined;
+  const goalsModel = goalsRaw as { goals?: BusinessGoal[] } | undefined;
+  const goalCount = goalsModel?.goals?.length ?? 0;
 
   const hasError = statusError || agentsError;
 
@@ -45,6 +52,19 @@ export function OverviewPage() {
             </p>
           </div>
         </div>
+      )}
+
+      {/* Post-onboarding summary */}
+      {activeBusiness && (
+        <OnboardingSummary
+          business={{
+            name: activeBusiness.name,
+            stage: activeBusiness.stage,
+            description: activeBusiness.description,
+          }}
+          agents={agents?.map((a) => ({ id: a.id, name: a.name, type: a.type }))}
+          goalCount={goalCount}
+        />
       )}
 
       {/* Status Cards */}
