@@ -18,7 +18,12 @@ import { onAgentEvent, type AgentEventPayload } from "../../../src/infra/agent-e
 import { readJsonBodyWithLimit } from "../../../src/infra/http-body.js";
 import { createCronBridgeService } from "./src/cron-bridge.js";
 import { registerExecutionSandbox } from "./src/execution-sandbox/index.js";
+import { writeCognitiveState } from "./src/gdc/cognitive-writer.js";
+import { generateDomainAgents } from "./src/gdc/domain-agent-generator.js";
 import { registerGdc } from "./src/gdc/index.js";
+import { GdcOrchestrator } from "./src/gdc/orchestrator.js";
+import { generatePersonaBatch } from "./src/gdc/persona-generator.js";
+import type { CompanyDNA, LlmCallFn } from "./src/gdc/types.js";
 // Unified MABOS modules (Paperclip + Hermes integration)
 import { registerGovernance } from "./src/governance/index.js";
 import { registerModelRouter } from "./src/model-router/index.js";
@@ -35,7 +40,7 @@ import {
   createCognitiveRouterTools,
   enhancedHeartbeatCycle,
 } from "./src/tools/cognitive-router.js";
-import { resolveWorkspaceDir, getPluginConfig } from "./src/tools/common.js";
+import { resolveWorkspaceDir, getPluginConfig, httpRequest } from "./src/tools/common.js";
 import { createCommunicationTools } from "./src/tools/communication-tools.js";
 import { createCompetitorMonitorTools } from "./src/tools/competitor-monitor-tools.js";
 import { createCrmTools } from "./src/tools/crm-tools.js";
@@ -1615,8 +1620,246 @@ export default function register(api: OpenClawPluginApi) {
           );
         }
 
+        // 7. GDC pipeline integration (optional enhancement)
+        let gdcSummary: { ran: boolean; goals?: number; domain_agents?: string[]; error?: string } =
+          { ran: false };
+        try {
+          const pluginConfig = getPluginConfig(api);
+          if (pluginConfig.gdcEnabled && process.env.ANTHROPIC_API_KEY) {
+            // Assemble CompanyDNA from the request body
+            const bmcFromBody: import("./src/gdc/types.js").BusinessModelCanvas = {
+              value_propositions: (params.value_propositions || []).map((v: string) => ({
+                title: v,
+                description: v,
+              })),
+              customer_segments: (params.customer_segments || []).map((v: string) => ({
+                title: v,
+                description: v,
+              })),
+              revenue_streams: (params.revenue_streams || []).map((v: string) => ({
+                title: v,
+                description: v,
+              })),
+              key_partners: (params.key_partners || []).map((v: string) => ({
+                title: v,
+                description: v,
+              })),
+              key_activities: (params.key_activities || []).map((v: string) => ({
+                title: v,
+                description: v,
+              })),
+              key_resources: (params.key_resources || []).map((v: string) => ({
+                title: v,
+                description: v,
+              })),
+              customer_relationships: (params.customer_relationships || []).map((v: string) => ({
+                title: v,
+                description: v,
+              })),
+              channels: (params.channels || []).map((v: string) => ({ title: v, description: v })),
+              cost_structure: (params.cost_structure || []).map((v: string) => ({
+                title: v,
+                description: v,
+              })),
+            };
+
+            const companyDNA: CompanyDNA = {
+              business_description:
+                params.description ?? `${params.name} — a ${params.type} business`,
+              mission: params.mission ?? `${params.name} mission`,
+              vision: params.vision ?? `${params.name} vision`,
+              industry: params.industry ?? params.type,
+              stage: params.stage ?? "mvp",
+              revenue: params.current_revenue ?? "",
+              team_size: typeof params.team_size === "number" ? params.team_size : 0,
+              key_products: params.key_products ?? [],
+              channels: params.primary_channels ?? params.channels ?? [],
+              constraints: params.constraints ?? [],
+              bmc: params.bmc ?? bmcFromBody,
+            };
+
+            // Create callLlm function (same pattern as src/gdc/index.ts)
+            const apiKey = process.env.ANTHROPIC_API_KEY;
+            const gdcCallLlm: LlmCallFn = async ({
+              model,
+              system,
+              user,
+              maxTokens,
+              temperature,
+            }) => {
+              const resp = await httpRequest(
+                "https://api.anthropic.com/v1/messages",
+                "POST",
+                {
+                  "x-api-key": apiKey!,
+                  "anthropic-version": "2023-06-01",
+                  "content-type": "application/json",
+                },
+                {
+                  model,
+                  max_tokens: maxTokens,
+                  temperature,
+                  system,
+                  messages: [{ role: "user", content: user }],
+                },
+                120_000,
+              );
+
+              if (resp.status !== 200) {
+                const errMsg =
+                  typeof resp.data === "object" ? JSON.stringify(resp.data) : String(resp.data);
+                throw new Error(`Anthropic API error (${resp.status}): ${errMsg}`);
+              }
+
+              const parsed = resp.data as { content?: { text?: string }[] };
+              return parsed.content?.[0]?.text ?? "";
+            };
+
+            // Run GDC pipeline
+            const gdcConfig = pluginConfig.gdc ?? {
+              enabled: true,
+              maxStage: 3 as const,
+              pattern: "sequential" as const,
+              maxParallelBranches: 1,
+              models: {},
+              checkpointDir: "",
+              enableCaching: false,
+            };
+            const orchestrator = new GdcOrchestrator(gdcConfig, gdcCallLlm);
+            const toolNames = (api as any)._mabosToolFilter?.registeredToolNames ?? [];
+            const toolInventory = toolNames.map((n: string) => ({
+              name: n,
+              description: "",
+              capabilities: [n],
+              auth_type: "internal",
+            }));
+            const gdcResult = await orchestrator.run(companyDNA, toolInventory);
+
+            // Generate domain agents if stage 1 completed
+            if (gdcResult.stage1) {
+              const domainAgents = await generateDomainAgents({
+                companyDNA,
+                stage1Goals: gdcResult.stage1,
+                stage3Projects: gdcResult.stage3,
+                toolInventory: toolNames,
+                callLlm: gdcCallLlm,
+                config: { maxAgents: 8 },
+              });
+              gdcResult.domain_agents = domainAgents;
+
+              // Generate personas for domain agents
+              const personas = await generatePersonaBatch({
+                agentSpecs: domainAgents,
+                companyDNA,
+                businessName: params.name,
+                coreAgentRoles: ROLES.map((r: string) => r.toUpperCase()),
+                callLlm: gdcCallLlm,
+              });
+
+              // Create domain agent directories + personas
+              for (const spec of domainAgents) {
+                const agentDir = join(bizDir, "agents", spec.id);
+                await mkdir(agentDir, { recursive: true });
+
+                // Write generated persona or fallback
+                const personaContent =
+                  personas.get(spec.id) ??
+                  `# Persona — ${spec.role}\n\n**Role:** ${spec.role}\n**Agent ID:** ${spec.id}\n**Type:** Domain-specific\n\n## Identity\n${spec.description}\n`;
+                await writeFile(join(agentDir, "Persona.md"), personaContent, "utf-8");
+
+                // Init cognitive files (same pattern as core agents above)
+                for (const f of [
+                  "Capabilities.md",
+                  "Beliefs.md",
+                  "Desires.md",
+                  "Goals.md",
+                  "Intentions.md",
+                  "Plans.md",
+                  "Playbooks.md",
+                  "Knowledge.md",
+                  "Memory.md",
+                ]) {
+                  await writeFile(
+                    join(agentDir, f),
+                    `# ${f.replace(".md", "")} — ${spec.role}\n\nInitialized: ${now.split("T")[0]}\nBusiness: ${params.name}\n`,
+                    "utf-8",
+                  );
+                }
+                await writeFile(join(agentDir, "inbox.json"), "[]", "utf-8");
+                await writeFile(join(agentDir, "cases.json"), "[]", "utf-8");
+                await writeFile(
+                  join(agentDir, "facts.json"),
+                  JSON.stringify({ facts: [], version: 0 }, null, 2),
+                  "utf-8",
+                );
+                await writeFile(
+                  join(agentDir, "rules.json"),
+                  JSON.stringify({ rules: [], version: 0 }, null, 2),
+                  "utf-8",
+                );
+                await writeFile(
+                  join(agentDir, "memory-store.json"),
+                  JSON.stringify(
+                    { working: [], short_term: [], long_term: [], version: 0 },
+                    null,
+                    2,
+                  ),
+                  "utf-8",
+                );
+              }
+
+              // Update manifest with domain agents
+              manifest.domain_agents = domainAgents.map((a: any) => a.id);
+              await writeFile(
+                join(bizDir, "manifest.json"),
+                JSON.stringify(manifest, null, 2),
+                "utf-8",
+              );
+            }
+
+            // Write cognitive state for ALL agents (core + domain)
+            const coreAgentIds = [...ROLES];
+            const domainAgentIds = gdcResult.domain_agents.map((a: any) => a.id);
+            const allAgentIds = [...coreAgentIds, ...domainAgentIds];
+            for (const agentId of allAgentIds) {
+              const agentDir = join(bizDir, "agents", agentId);
+              await writeCognitiveState({
+                agentDir,
+                agentRole: agentId,
+                gdcResult,
+                companyDNA,
+                businessName: params.name,
+              });
+            }
+
+            // Save GDC result for reference
+            await writeFile(
+              join(bizDir, "gdc-result.json"),
+              JSON.stringify(gdcResult, null, 2),
+              "utf-8",
+            );
+
+            // Save company DNA
+            await writeFile(
+              join(bizDir, "company_dna.json"),
+              JSON.stringify(companyDNA, null, 2),
+              "utf-8",
+            );
+
+            gdcSummary = {
+              ran: true,
+              goals: gdcResult.stage1?.goals.length ?? 0,
+              domain_agents: domainAgentIds,
+            };
+          }
+        } catch (gdcErr) {
+          log.warn(`[mabos] GDC pipeline failed during onboarding: ${gdcErr}`);
+          gdcSummary = { ran: false, error: String(gdcErr) };
+          // Continue — basic onboarding already succeeded
+        }
+
         res.setHeader("Content-Type", "application/json");
-        res.end(JSON.stringify({ ok: true, business: manifest }));
+        res.end(JSON.stringify({ ok: true, business: manifest, gdc: gdcSummary }));
       } catch (err) {
         res.setHeader("Content-Type", "application/json");
         res.statusCode = 500;
