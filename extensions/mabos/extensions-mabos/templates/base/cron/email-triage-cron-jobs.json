@@ -1,0 +1,41 @@
+[
+  {
+    "id": "email-triage-15min",
+    "name": "Email Inbox Triage (Every 15 Minutes)",
+    "schedule": "*/15 * * * *",
+    "timezone": "America/New_York",
+    "agentId": "customer-service",
+    "enabled": true,
+    "timeoutSeconds": 300,
+    "message": "Check the VividWalls inbox (kingler@vividwalls.co) for unread emails. For each unread email:\n\n1. Read the email content\n2. Classify the sender type using these rules:\n   - Customer (B2C): personal email domains (@gmail, @yahoo, @outlook, etc.), product/order questions\n   - Supplier: @pictorem.com, vendor domains, fulfillment/logistics content\n   - SaaS/Platform: @shopify.com, @stripe.com, tech platform domains, automated notifications\n   - B2B/Trade: design firm domains, mentions of 'client', 'project', 'spec', 'trade'\n   - Financial: invoice attached, payment references, billing, tax\n   - Legal: contract attached, compliance language, legal firm domains\n   - Marketing/Newsletter: unsubscribe links, bulk sender indicators\n   - Strategic/Executive: partnership proposals, high-value inquiries\n\n3. Apply the appropriate folder:\n   - Customer inquiries/product questions -> 'Customer Inquiries'\n   - Order status/tracking/delivery -> 'Orders & Shipping'\n   - Returns/refunds/exchanges -> 'Returns & Refunds'\n   - Interior designers/hotels/restaurants/corporate -> 'Corporate & B2B'\n   - Pictorem/vendor/logistics -> 'Supplier & Vendors'\n   - Shopify/Stripe/tech platforms -> 'SaaS & Platform'\n   - Invoices/billing/tax -> 'Finance & Billing'\n   - Contracts/compliance/TOS -> 'Legal & Compliance'\n   - Newsletters/marketing -> 'Newsletters & Marketing'\n\n4. Apply categories:\n   - Always add 'Auto-Routed'\n   - Add 'Urgent' if the email contains words like 'urgent', 'asap', 'immediately', 'critical', 'emergency'\n   - Add 'Action Required' if a response is needed from us\n   - Add 'FYI Only' if informational with no response needed\n   - Add 'New Customer' if no prior email history from this sender\n   - Add 'VIP' if sender is a known repeat buyer, trade partner, or corporate contact\n   - Add 'Supplier' if from Pictorem or a vendor\n   - Add 'SaaS Notification' if from a tech platform\n   - Add 'Invoice/Payment' if financial document referenced\n\n5. Route to the appropriate department agent via agent_message:\n   - Customer emails (inquiries, orders, returns): Handle directly — draft a response using the appropriate VividWalls email template (see docs/vividwalls/email-templates.md)\n   - Supplier emails: Route to COO with summary and priority\n   - SaaS/Platform emails: Route to CTO with summary\n   - Financial emails: Route to CFO with summary\n   - Legal emails: Route to Legal with summary\n   - Marketing emails: Route to CMO with summary\n   - B2B/Trade emails: Route to CMO with summary, cc CEO if high-value\n   - Strategic/Executive emails: Route to CEO with summary\n\n6. For URGENT or VIP emails: Send a high-priority agent_message to COO and CEO immediately with subject, sender, and brief summary.\n\n7. For customer emails requiring a response: Draft the response following VividWalls voice and tone guidelines. Use the template selection guide from email-templates.md. Send the draft via the email reply action.\n\nReport: At the end of the cycle, summarize what was processed (count by category, any urgent items, any responses sent).",
+    "delivery": {
+      "mode": "none"
+    }
+  },
+  {
+    "id": "email-pending-followup",
+    "name": "Pending Response Follow-Up (Every 6 Hours)",
+    "schedule": "0 */6 * * *",
+    "timezone": "America/New_York",
+    "agentId": "customer-service",
+    "enabled": true,
+    "timeoutSeconds": 180,
+    "message": "Check for emails that have been categorized as 'Pending Response' or 'Action Required' and have not been resolved.\n\n1. List emails with category 'Pending Response' that are older than 24 hours\n2. List emails with category 'Action Required' that are older than 12 hours\n3. For each stale email:\n   a. Check if a response has been sent (search for replies in the thread)\n   b. If no response sent and it's a customer email: Draft and send a follow-up response acknowledging the delay\n   c. If no response sent and it's routed to another agent: Send a reminder agent_message to that agent with high priority\n   d. If a response was sent: Re-categorize as 'Resolved' and remove 'Pending Response'\n4. For emails marked 'Needs Escalation' older than 4 hours: Send urgent agent_message to COO\n5. Report summary of pending items and actions taken.",
+    "delivery": {
+      "mode": "none"
+    }
+  },
+  {
+    "id": "email-daily-digest",
+    "name": "Daily Email Activity Digest",
+    "schedule": "0 8 * * *",
+    "timezone": "America/New_York",
+    "agentId": "customer-service",
+    "enabled": true,
+    "timeoutSeconds": 240,
+    "message": "Generate a daily email activity digest for the past 24 hours and report to COO and CEO.\n\n1. List all emails received in the past 24 hours (use filter: receivedDateTime ge [24 hours ago])\n2. Compile statistics:\n   - Total emails received\n   - Breakdown by folder (Customer Inquiries, Orders & Shipping, Returns & Refunds, Corporate & B2B, Supplier & Vendors, SaaS & Platform, Finance & Billing, Legal & Compliance, Newsletters & Marketing)\n   - Count of emails categorized as Urgent\n   - Count of emails still marked 'Pending Response' or 'Action Required'\n   - Count of responses sent by Customer Service\n   - Count of emails routed to other departments\n   - Any VIP or high-value emails received\n3. Highlight items needing attention:\n   - Unresolved urgent emails\n   - Emails pending response for >24 hours\n   - Any escalations that haven't been addressed\n4. Send the digest as an agent_message to COO (priority: normal)\n5. If there are urgent unresolved items, also send to CEO (priority: high)\n6. Send a summary email to kingler@vividwalls.co with subject 'VividWalls Daily Email Digest — [Date]' containing the report in a clean, readable format.",
+    "delivery": {
+      "mode": "none"
+    }
+  }
+]
