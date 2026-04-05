@@ -27,6 +27,7 @@ import { TasksPage } from "@/pages/TasksPage";
 import { TimelinePage } from "@/pages/TimelinePage";
 import { WorkflowEditorPage } from "@/pages/WorkflowEditorPage";
 import { WorkflowsPage } from "@/pages/WorkflowsPage";
+import { WorkspacePage } from "@/pages/WorkspacePage";
 
 // Root layout
 const rootRoute = createRootRoute({
@@ -37,10 +38,17 @@ const rootRoute = createRootRoute({
   ),
 });
 
-// Route tree
+// Route tree — workspace landing (no sidebar)
 const indexRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/",
+  component: WorkspacePage,
+});
+
+// Business dashboard overview (with sidebar)
+const overviewRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/overview",
   component: OverviewPage,
 });
 
@@ -196,6 +204,7 @@ const workflowEditorRoute = createRoute({
 
 const routeTree = rootRoute.addChildren([
   indexRoute,
+  overviewRoute,
   agentsLayoutRoute.addChildren([agentsIndexRoute, agentDetailRoute]),
   projectsRoute,
   performanceRoute,

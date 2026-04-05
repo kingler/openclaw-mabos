@@ -21,6 +21,23 @@ export function AppShell({ children }: { children: ReactNode }) {
   const { sidebarMode } = usePanels();
   const isMobile = useMediaQuery("(max-width: 768px)");
   const isPhone = useMediaQuery("(max-width: 320px)");
+  const currentPath = useRouterState({ select: (s) => s.location.pathname });
+
+  // Hide sidebar for workspace landing and onboarding pages
+  const basepath = "/mabos/dashboard";
+  const relative = currentPath.startsWith(basepath)
+    ? currentPath.slice(basepath.length) || "/"
+    : currentPath;
+  const hideSidebar = relative === "/" || relative.startsWith("/onboarding");
+
+  if (hideSidebar) {
+    return (
+      <div className="min-h-screen bg-[var(--bg-primary)]">
+        <RouteChangeHandler />
+        {children}
+      </div>
+    );
+  }
 
   if (isMobile) {
     return (

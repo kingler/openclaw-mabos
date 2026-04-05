@@ -142,6 +142,15 @@ export function Sidebar() {
                 <Plus className="w-4 h-4" />
                 <span>New Business</span>
               </button>
+              <button
+                onClick={() => {
+                  setSwitcherOpen(false);
+                  navigate({ to: "/" });
+                }}
+                className="flex items-center gap-3 px-3 py-2 w-full text-xs text-[var(--text-muted)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] transition-colors"
+              >
+                <span>All Businesses</span>
+              </button>
             </div>
           )}
         </div>

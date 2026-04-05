@@ -40,7 +40,7 @@ export const navSections: NavSection[] = [
   {
     title: "Strategy",
     items: [
-      { icon: LayoutDashboard, label: "Overview", path: "/" },
+      { icon: LayoutDashboard, label: "Overview", path: "/overview" },
       { icon: BarChart3, label: "Performance", path: "/performance" },
       { icon: Bell, label: "Decisions", path: "/decisions" },
       { icon: Target, label: "Goals", path: "/goals" },
