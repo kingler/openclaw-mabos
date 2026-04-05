@@ -155,7 +155,7 @@ export async function generateSuggestion(request: SuggestionRequest): Promise<Su
   const { system, user } = buildSuggestionPrompt(request);
 
   const body = {
-    model: "claude-haiku-4-5",
+    model: "claude-opus-4-6",
     max_tokens: 2048,
     temperature: 0.7,
     system,
