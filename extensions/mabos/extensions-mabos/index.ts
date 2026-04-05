@@ -1625,6 +1625,35 @@ export default function register(api: OpenClawPluginApi) {
     },
   });
 
+  // API: AI-powered onboarding suggestions (POST)
+  api.registerHttpRoute({
+    auth: "gateway",
+    path: "/mabos/api/onboard/suggest",
+    handler: async (req, res) => {
+      if (req.method !== "POST") {
+        res.statusCode = 405;
+        res.setHeader("Content-Type", "application/json");
+        res.end(JSON.stringify({ error: "Method not allowed" }));
+        return;
+      }
+      try {
+        const body = await readMabosJsonBody<
+          import("./src/onboarding/ai-suggestions.js").SuggestionRequest
+        >(req, res);
+        if (!body) return;
+
+        const { generateSuggestion } = await import("./src/onboarding/ai-suggestions.js");
+        const result = await generateSuggestion(body);
+
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify(result));
+      } catch (err) {
+        res.writeHead(500, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: String(err) }));
+      }
+    },
+  });
+
   // API: Chat — send message to an agent's inbox
   api.registerHttpRoute({
     auth: "gateway",
