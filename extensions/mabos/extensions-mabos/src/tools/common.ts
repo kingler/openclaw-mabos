@@ -39,6 +39,8 @@ export interface MabosPluginConfig {
   sandbox?: import("../execution-sandbox/types.js").ExecutionSandboxConfig;
   skillLoopEnabled?: boolean;
   skillLoop?: import("../skill-loop/types.js").SkillLoopConfig;
+  gdcEnabled?: boolean;
+  gdc?: import("../gdc/types.js").GdcPipelineConfig;
 }
 
 /**

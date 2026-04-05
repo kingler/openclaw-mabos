@@ -17,6 +17,14 @@ import { authorizeGatewayBearerRequestOrReply } from "../../../src/gateway/http-
 import { onAgentEvent, type AgentEventPayload } from "../../../src/infra/agent-events.js";
 import { readJsonBodyWithLimit } from "../../../src/infra/http-body.js";
 import { createCronBridgeService } from "./src/cron-bridge.js";
+import { registerExecutionSandbox } from "./src/execution-sandbox/index.js";
+import { registerGdc } from "./src/gdc/index.js";
+// Unified MABOS modules (Paperclip + Hermes integration)
+import { registerGovernance } from "./src/governance/index.js";
+import { registerModelRouter } from "./src/model-router/index.js";
+import { createSecurityModule } from "./src/security/index.js";
+import { registerSessionIntel } from "./src/session-intel/index.js";
+import { registerSkillLoop } from "./src/skill-loop/index.js";
 import { createBdiTools } from "./src/tools/bdi-tools.js";
 import { createBpmnMigrateTools } from "./src/tools/bpmn-migrate.js";
 import { createBusinessTools } from "./src/tools/business-tools.js";
@@ -5748,6 +5756,70 @@ export default function register(api: OpenClawPluginApi) {
       api.logger.info(`[mabos] BDI tool: ${event.toolName} (${event.durationMs ?? 0}ms)`);
     }
   });
+
+  // ── Unified MABOS Modules (Paperclip + Hermes) ──────────────
+  const pluginConfig = getPluginConfig(api);
+
+  // Module 6: Security Hardening (enabled by default — opt-out, not opt-in)
+  try {
+    createSecurityModule(api, pluginConfig);
+  } catch (err) {
+    log.warn(`[mabos] Security module failed to initialize: ${err}`);
+  }
+
+  // Module 1: Governance (budget, RBAC, audit, multi-company)
+  if (pluginConfig.governanceEnabled) {
+    try {
+      registerGovernance(api, pluginConfig);
+    } catch (err) {
+      log.warn(`[mabos] Governance module failed to initialize: ${err}`);
+    }
+  }
+
+  // Module 2: Model Router (multi-provider, fallback, MoA, prompt cache)
+  if (pluginConfig.modelRouterEnabled) {
+    try {
+      registerModelRouter(api, pluginConfig);
+    } catch (err) {
+      log.warn(`[mabos] Model router module failed to initialize: ${err}`);
+    }
+  }
+
+  // Module 3: Execution Sandbox (Docker, SSH, Modal)
+  if (pluginConfig.sandboxEnabled) {
+    try {
+      registerExecutionSandbox(api, pluginConfig);
+    } catch (err) {
+      log.warn(`[mabos] Execution sandbox module failed to initialize: ${err}`);
+    }
+  }
+
+  // Module 4: Skill Loop (auto-creation, marketplace)
+  if (pluginConfig.skillLoopEnabled) {
+    try {
+      registerSkillLoop(api, pluginConfig);
+    } catch (err) {
+      log.warn(`[mabos] Skill loop module failed to initialize: ${err}`);
+    }
+  }
+
+  // Module 5: Session Intelligence (FTS5, recall, user modeling)
+  if (pluginConfig.sessionIntelEnabled) {
+    try {
+      registerSessionIntel(api, pluginConfig);
+    } catch (err) {
+      log.warn(`[mabos] Session intel module failed to initialize: ${err}`);
+    }
+  }
+
+  // Module 6: GDC Pipeline (goal decomposition chain)
+  if (pluginConfig.gdcEnabled) {
+    try {
+      registerGdc(api, pluginConfig);
+    } catch (err) {
+      log.warn(`[mabos] GDC module failed to initialize: ${err}`);
+    }
+  }
 
   api.logger.info("[mabos] MABOS extension registered (bundled, deep integration)");
 }
