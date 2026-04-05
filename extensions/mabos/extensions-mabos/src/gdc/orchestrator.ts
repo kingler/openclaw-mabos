@@ -21,13 +21,13 @@ import { validate, ValidationError } from "./validator.js";
 // ---------------------------------------------------------------------------
 
 const DEFAULT_MODELS: Record<number, string> = {
-  1: "claude-sonnet-4-6", // Structured output
-  2: "claude-opus-4-6", // Complex reasoning
-  3: "claude-sonnet-4-6", // Structured output
-  4: "claude-opus-4-6", // Creative planning
-  5: "claude-sonnet-4-6", // Structured output
-  6: "claude-sonnet-4-6", // Structured output
-  7: "claude-opus-4-6", // Synthesis
+  1: "gpt-5.4", // Task execution: structured output
+  2: "claude-opus-4-6", // Orchestration: complex reasoning
+  3: "gpt-5.4", // Task execution: structured output
+  4: "claude-opus-4-6", // Orchestration: creative planning
+  5: "gpt-5.4", // Task execution: structured output
+  6: "gpt-5.4", // Task execution: structured output
+  7: "claude-opus-4-6", // Orchestration: synthesis
 };
 
 const DEFAULT_MAX_TOKENS: Record<number, number> = {

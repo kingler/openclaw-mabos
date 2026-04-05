@@ -20,10 +20,16 @@ import type {
 } from "./types.js";
 
 // ---------------------------------------------------------------------------
-// LLM call implementation via Anthropic Messages API
+// LLM call implementation — routes to Anthropic or OpenAI based on model name
 // ---------------------------------------------------------------------------
 
-const callLlm: LlmCallFn = async ({ model, system, user, maxTokens, temperature }) => {
+async function callAnthropicLlm(
+  model: string,
+  system: string,
+  user: string,
+  maxTokens: number,
+  temperature: number,
+): Promise<string> {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) throw new Error("ANTHROPIC_API_KEY not set");
 
@@ -52,6 +58,52 @@ const callLlm: LlmCallFn = async ({ model, system, user, maxTokens, temperature 
 
   const parsed = resp.data as { content?: { text?: string }[] };
   return parsed.content?.[0]?.text ?? "";
+}
+
+async function callOpenAiLlm(
+  model: string,
+  system: string,
+  user: string,
+  maxTokens: number,
+  temperature: number,
+): Promise<string> {
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) throw new Error("OPENAI_API_KEY not set");
+
+  const resp = await httpRequest(
+    "https://api.openai.com/v1/chat/completions",
+    "POST",
+    {
+      Authorization: `Bearer ${apiKey}`,
+      "content-type": "application/json",
+    },
+    {
+      model,
+      max_tokens: maxTokens,
+      temperature,
+      messages: [
+        { role: "system", content: system },
+        { role: "user", content: user },
+      ],
+    },
+    120_000,
+  );
+
+  if (resp.status !== 200) {
+    const errMsg = typeof resp.data === "object" ? JSON.stringify(resp.data) : String(resp.data);
+    throw new Error(`OpenAI API error (${resp.status}): ${errMsg}`);
+  }
+
+  const parsed = resp.data as { choices?: { message?: { content?: string } }[] };
+  return parsed.choices?.[0]?.message?.content ?? "";
+}
+
+const callLlm: LlmCallFn = async ({ model, system, user, maxTokens, temperature }) => {
+  // Route to OpenAI for GPT models, Anthropic for Claude models
+  if (model.startsWith("gpt-") || model.startsWith("o1") || model.startsWith("o3")) {
+    return callOpenAiLlm(model, system, user, maxTokens, temperature);
+  }
+  return callAnthropicLlm(model, system, user, maxTokens, temperature);
 };
 
 // ---------------------------------------------------------------------------

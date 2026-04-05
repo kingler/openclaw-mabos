@@ -59,7 +59,7 @@ Generate the persona with these sections:
 Format as clean markdown with ## headers. Do not include any preamble — start directly with the persona content.`;
 
   const response = await callLlm({
-    model: "claude-sonnet-4-6",
+    model: "gpt-5.4",
     system,
     user,
     maxTokens: 2048,

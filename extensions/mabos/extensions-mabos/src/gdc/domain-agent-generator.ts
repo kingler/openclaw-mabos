@@ -68,7 +68,7 @@ export async function generateDomainAgents(params: {
   });
 
   // Call LLM
-  const model = config?.model ?? "claude-sonnet-4-6";
+  const model = config?.model ?? "gpt-5.4";
   const response = await callLlm({
     model,
     system,
