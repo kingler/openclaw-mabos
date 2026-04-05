@@ -1,0 +1,23 @@
+{
+  "id": "customer-service",
+  "name": "Customer Service Manager",
+  "reportsTo": "coo",
+  "bdi": {
+    "commitmentStrategy": "single-minded",
+    "cycleFrequency": {
+      "fullCycleMinutes": 30,
+      "quickCheckMinutes": 10
+    },
+    "reasoningMethods": ["case-based", "heuristic", "pattern-matching", "analogical"],
+    "cognitiveRouter": {
+      "enabled": true,
+      "thresholds": {
+        "reflexiveCeiling": 0.5,
+        "deliberativeFloor": 0.7,
+        "reflexiveConfidenceMin": 0.7,
+        "analyticalConfidenceMin": 0.6,
+        "maxConsecutiveReflexive": 6
+      }
+    }
+  }
+}
