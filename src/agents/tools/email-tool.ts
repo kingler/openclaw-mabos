@@ -15,10 +15,35 @@ Actions:
 - send: Send a new email. Params: to (required, array), subject (required), body (required), cc?, bodyType? ("Text"|"HTML")
 - forward: Forward an email. Params: messageId (required), to (required, array), comment?
 - move: Move email to a folder. Params: messageId (required), folder (required, name or ID)
-- categorize: Set categories/tags on email. Params: messageId (required), categories (required, array). Available: Urgent, Pending Response, Resolved, New Customer, VIP, Custom Order, Follow Up
+- categorize: Set categories/tags on email. Params: messageId (required), categories (required, array)
 - listFolders: List mail folders. Params: parentFolder? (name or ID, omit for top-level)
 
-Inbox subfolders: Customer Inquiries, Orders & Shipping, Corporate & B2B, Returns & Refunds, Newsletters & Marketing`,
+Inbox subfolders:
+- Customer Inquiries — DTC customer questions, product inquiries
+- Orders & Shipping — Order status, tracking, delivery issues
+- Returns & Refunds — Return requests, refund processing, exchanges
+- Corporate & B2B — Trade program, interior designers, hospitality, commercial
+- Supplier & Vendors — Pictorem, logistics partners, vendor communications
+- SaaS & Platform — Shopify, Stripe, tech platform notifications
+- Finance & Billing — Invoices, payment confirmations, tax documents
+- Legal & Compliance — Contracts, TOS updates, compliance notices
+- Newsletters & Marketing — Marketing emails, industry newsletters
+
+Categories (labels):
+- Urgent — Needs immediate attention
+- Pending Response — Awaiting our reply
+- Action Required — Specific action needed from us
+- Needs Escalation — Requires higher authority or different department
+- Auto-Routed — Classified and routed by Customer Service agent
+- FYI Only — Informational, no response needed
+- Resolved — Handled, no further action
+- New Customer — First-time contact
+- VIP — High-value relationship (repeat buyers, trade partners, corporate)
+- Custom Order — Special/bespoke product request
+- Follow Up — Scheduled re-engagement needed
+- Supplier — From vendor or fulfillment partner
+- SaaS Notification — Platform alert or update
+- Invoice/Payment — Financial document attached or referenced`,
     parameters: Type.Object({
       action: Type.String({
         description:
