@@ -226,6 +226,19 @@ export async function listChildFolders(parentFolderId: string): Promise<GraphFol
   return result.value ?? [];
 }
 
+export async function createFolder(
+  parentFolderId: string,
+  displayName: string,
+): Promise<GraphFolder> {
+  return graphFetch<GraphFolder>(
+    `${userPath()}/mailFolders/${encodeURIComponent(parentFolderId)}/childFolders`,
+    {
+      method: "POST",
+      body: JSON.stringify({ displayName }),
+    },
+  );
+}
+
 export async function markAsRead(messageId: string, isRead: boolean): Promise<void> {
   await graphFetch(`${userPath()}/messages/${encodeURIComponent(messageId)}`, {
     method: "PATCH",
