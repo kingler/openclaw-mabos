@@ -2762,6 +2762,194 @@ export default function register(api: OpenClawPluginApi) {
     },
   });
 
+  // API: Microsoft Graph email webhook — receives change notifications for new mail
+  // Graph sends a validation request (POST with validationToken query param) on subscription creation,
+  // and change notifications (POST with JSON body) when new emails arrive.
+  let emailWebhookClientState = process.env.MS_GRAPH_WEBHOOK_SECRET || "vividwalls-email-webhook";
+  let emailSubscriptionId: string | null = null;
+
+  api.registerHttpRoute({
+    auth: "none",
+    path: "/mabos/api/webhook/email",
+    handler: async (req, res) => {
+      const url = new URL(req.url || "/", "http://localhost");
+
+      // Graph subscription validation handshake
+      const validationToken = url.searchParams.get("validationToken");
+      if (validationToken) {
+        res.setHeader("Content-Type", "text/plain");
+        res.end(validationToken);
+        return;
+      }
+
+      if (req.method !== "POST") {
+        res.statusCode = 405;
+        res.end();
+        return;
+      }
+
+      try {
+        const body = await readMabosJsonBody<any>(req, res);
+        if (!body) return;
+
+        const notifications = body.value;
+        if (!Array.isArray(notifications) || notifications.length === 0) {
+          res.statusCode = 202;
+          res.end();
+          return;
+        }
+
+        // Validate clientState to prevent spoofed notifications
+        const validNotifications = notifications.filter(
+          (n: any) => n.clientState === emailWebhookClientState,
+        );
+
+        if (validNotifications.length === 0) {
+          res.statusCode = 202;
+          res.end();
+          return;
+        }
+
+        // Respond 202 immediately — Graph requires <3s response time
+        res.statusCode = 202;
+        res.end();
+
+        // Process asynchronously: trigger customer-service agent BDI cycle
+        // Extract message IDs from notifications for targeted triage
+        const messageIds = validNotifications
+          .filter((n: any) => n.resourceData?.id)
+          .map((n: any) => n.resourceData.id as string);
+
+        const { join } = await import("node:path");
+        const { readAgentCognitiveState, runMaintenanceCycle } = (await Promise.race([
+          import(/* webpackIgnore: true */ BDI_RUNTIME_PATH),
+          new Promise<never>((_, r) => setTimeout(() => r(new Error("BDI import timeout")), 5000)),
+        ])) as any;
+
+        const agentDir = join(workspaceDir, "agents", "customer-service");
+        try {
+          const state = await readAgentCognitiveState(agentDir, "customer-service");
+          // Inject new email notification into agent beliefs for targeted processing
+          if (messageIds.length > 0) {
+            const beliefUpdate = {
+              id: `B-CS-WEBHOOK-${Date.now()}`,
+              belief: `New email(s) received via webhook: ${messageIds.length} message(s). Message IDs: ${messageIds.join(", ")}`,
+              confidence: 1.0,
+              source: "graph-webhook",
+              timestamp: new Date().toISOString(),
+            };
+            // Write to agent inbox for the next BDI cycle to pick up
+            const { readFile, writeFile, mkdir } = await import("node:fs/promises");
+            const { dirname } = await import("node:path");
+            const inboxPath = join(agentDir, "inbox.json");
+            let inbox: any[] = [];
+            try {
+              inbox = JSON.parse(await readFile(inboxPath, "utf-8"));
+            } catch {
+              // inbox doesn't exist yet
+            }
+            inbox.push({
+              id: `MSG-webhook-${Date.now()}`,
+              from: "system",
+              to: "customer-service",
+              performative: "INFORM",
+              content: `New email webhook notification: ${messageIds.length} new message(s) arrived. Process immediately using email tool. Message IDs: ${messageIds.join(", ")}`,
+              priority: "high",
+              timestamp: new Date().toISOString(),
+              read: false,
+              metadata: { messageIds, source: "graph-webhook" },
+            });
+            await mkdir(dirname(inboxPath), { recursive: true });
+            await writeFile(inboxPath, JSON.stringify(inbox, null, 2), "utf-8");
+          }
+          await runMaintenanceCycle(state);
+        } catch (err) {
+          // Log but don't fail — the fallback cron will catch missed emails
+          console.error("[email-webhook] Failed to trigger customer-service cycle:", err);
+        }
+      } catch (err) {
+        // Already sent 202 or need to send error
+        if (!res.headersSent) {
+          res.statusCode = 500;
+          res.end();
+        }
+        console.error("[email-webhook] Error processing notification:", err);
+      }
+    },
+  });
+
+  // API: Manage email webhook subscription
+  api.registerHttpRoute({
+    auth: "gateway",
+    path: "/mabos/api/webhook/email/subscription",
+    handler: async (req, res) => {
+      if (!(await requireAuth(req, res))) return;
+
+      try {
+        const {
+          createMailSubscription,
+          renewMailSubscription,
+          deleteMailSubscription,
+          listSubscriptions,
+        } = await import("../../src/agents/tools/email-graph-client.js");
+
+        if (req.method === "POST") {
+          // Create or renew subscription
+          const params = await readMabosJsonBody<any>(req, res);
+          if (!params) return;
+
+          const notificationUrl = params.notificationUrl;
+          if (!notificationUrl) {
+            res.statusCode = 400;
+            res.setHeader("Content-Type", "application/json");
+            res.end(JSON.stringify({ error: "notificationUrl is required" }));
+            return;
+          }
+
+          if (emailSubscriptionId && params.action === "renew") {
+            const sub = await renewMailSubscription(emailSubscriptionId);
+            res.setHeader("Content-Type", "application/json");
+            res.end(JSON.stringify({ ok: true, subscription: sub, action: "renewed" }));
+            return;
+          }
+
+          const sub = await createMailSubscription(notificationUrl, emailWebhookClientState);
+          emailSubscriptionId = sub.id;
+          res.setHeader("Content-Type", "application/json");
+          res.end(JSON.stringify({ ok: true, subscription: sub, action: "created" }));
+        } else if (req.method === "DELETE") {
+          if (emailSubscriptionId) {
+            await deleteMailSubscription(emailSubscriptionId);
+            const deletedId = emailSubscriptionId;
+            emailSubscriptionId = null;
+            res.setHeader("Content-Type", "application/json");
+            res.end(JSON.stringify({ ok: true, deleted: deletedId }));
+          } else {
+            res.setHeader("Content-Type", "application/json");
+            res.end(JSON.stringify({ ok: true, message: "No active subscription" }));
+          }
+        } else if (req.method === "GET") {
+          const subs = await listSubscriptions();
+          res.setHeader("Content-Type", "application/json");
+          res.end(
+            JSON.stringify({
+              activeSubscriptionId: emailSubscriptionId,
+              allSubscriptions: subs,
+            }),
+          );
+        } else {
+          res.statusCode = 405;
+          res.setHeader("Content-Type", "application/json");
+          res.end(JSON.stringify({ error: "Method not allowed" }));
+        }
+      } catch (err) {
+        res.statusCode = 500;
+        res.setHeader("Content-Type", "application/json");
+        res.end(JSON.stringify({ error: String(err) }));
+      }
+    },
+  });
+
   // API: Update agent config
   registerParamRoute("/mabos/api/businesses/:id/agents/:agentId", async (req, res) => {
     if (req.method !== "PUT" && req.method !== "POST") {
@@ -2893,9 +3081,9 @@ export default function register(api: OpenClawPluginApi) {
             status: "active",
           },
           {
-            id: "CRON-email-triage",
-            name: "Email Inbox Triage (Every 15 Minutes)",
-            schedule: "*/15 * * * *",
+            id: "CRON-email-triage-fallback",
+            name: "Email Inbox Triage Fallback (Every 60 Minutes)",
+            schedule: "0 * * * *",
             agentId: "customer-service",
             action: "email_triage",
             enabled: true,
@@ -2916,6 +3104,15 @@ export default function register(api: OpenClawPluginApi) {
             schedule: "0 8 * * *",
             agentId: "customer-service",
             action: "email_daily_digest",
+            enabled: true,
+            status: "active",
+          },
+          {
+            id: "CRON-email-webhook-renew",
+            name: "Renew Graph Email Webhook Subscription (Every 2 Days)",
+            schedule: "0 3 */2 * *",
+            agentId: "customer-service",
+            action: "email_webhook_renew",
             enabled: true,
             status: "active",
           },

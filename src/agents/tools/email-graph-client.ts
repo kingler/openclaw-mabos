@@ -245,3 +245,68 @@ export async function markAsRead(messageId: string, isRead: boolean): Promise<vo
     body: JSON.stringify({ isRead }),
   });
 }
+
+// --- Graph Change Notifications (Webhooks) ---
+
+export type GraphSubscription = {
+  id: string;
+  resource: string;
+  changeType: string;
+  notificationUrl: string;
+  expirationDateTime: string;
+  clientState?: string;
+};
+
+/**
+ * Create a Graph subscription for new mail notifications.
+ * Graph will POST to notificationUrl when new messages arrive.
+ * Max subscription lifetime for mail is 4230 minutes (~2.9 days).
+ */
+export async function createMailSubscription(
+  notificationUrl: string,
+  clientState: string,
+  expirationMinutes = 4200,
+): Promise<GraphSubscription> {
+  const expiration = new Date(Date.now() + expirationMinutes * 60 * 1000).toISOString();
+  return graphFetch<GraphSubscription>("/subscriptions", {
+    method: "POST",
+    body: JSON.stringify({
+      changeType: "created",
+      notificationUrl,
+      resource: `users/${resolveMailCredentials().userEmail}/messages`,
+      expirationDateTime: expiration,
+      clientState,
+    }),
+  });
+}
+
+/**
+ * Renew an existing subscription before it expires.
+ */
+export async function renewMailSubscription(
+  subscriptionId: string,
+  expirationMinutes = 4200,
+): Promise<GraphSubscription> {
+  const expiration = new Date(Date.now() + expirationMinutes * 60 * 1000).toISOString();
+  return graphFetch<GraphSubscription>(`/subscriptions/${encodeURIComponent(subscriptionId)}`, {
+    method: "PATCH",
+    body: JSON.stringify({ expirationDateTime: expiration }),
+  });
+}
+
+/**
+ * Delete a subscription.
+ */
+export async function deleteMailSubscription(subscriptionId: string): Promise<void> {
+  await graphFetch(`/subscriptions/${encodeURIComponent(subscriptionId)}`, {
+    method: "DELETE",
+  });
+}
+
+/**
+ * List all active subscriptions.
+ */
+export async function listSubscriptions(): Promise<GraphSubscription[]> {
+  const result = await graphFetch<{ value: GraphSubscription[] }>("/subscriptions");
+  return result.value ?? [];
+}
