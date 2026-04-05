@@ -1,81 +1,145 @@
-import { useMutation } from "@tanstack/react-query";
-import {
-  Star,
-  DollarSign,
-  Settings,
-  Megaphone,
-  Terminal,
-  Heart,
-  Scale,
-  Compass,
-  BookOpen,
-  Check,
-  ChevronLeft,
-  ChevronRight,
-  Loader2,
-  Pencil,
-  AlertCircle,
-  Rocket,
-  RefreshCw,
-} from "lucide-react";
-import type { LucideIcon } from "lucide-react";
-import { useState } from "react";
-import { Badge } from "@/components/ui/badge";
+import { Loader2, Rocket, Sparkles, Building2, Plus } from "lucide-react";
+import type { ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Separator } from "@/components/ui/separator";
 import { api } from "@/lib/api";
+import { BmcBlockEditor } from "./BmcBlockEditor";
+import { ChoiceCards } from "./ChoiceCards";
+import { InlineForm } from "./InlineForm";
+import { NeoMessage } from "./NeoMessage";
+import { ReviewCard } from "./ReviewCard";
+import { StepsOverview } from "./StepsOverview";
+import { SuggestionCards } from "./SuggestionCards";
+import type { BmcItem, FormField, WorkspaceData } from "./types";
+import { UserMessage } from "./UserMessage";
 
-// ---------- Types ----------
+// ---------- Step types ----------
 
-type OnboardingFormData = {
-  business_id: string;
-  name: string;
-  type: string;
-  description: string;
-  legal_name: string;
-  jurisdiction: string;
-  stage: "mvp" | "growth" | "scale";
-};
+type OnboardingStep =
+  | "welcome"
+  | "company"
+  | "vision"
+  | "mission"
+  | "values"
+  | "bmc_customer_segments"
+  | "bmc_value_propositions"
+  | "bmc_channels"
+  | "bmc_customer_relationships"
+  | "bmc_revenue_streams"
+  | "bmc_key_resources"
+  | "bmc_key_activities"
+  | "bmc_key_partners"
+  | "bmc_cost_structure"
+  | "review"
+  | "complete";
 
-type OnboardResult = {
-  ok: boolean;
-  business_id: string;
-  agents_created: string[];
-};
-
-// ---------- Constants ----------
-
-const STEPS = ["Business Info", "Details", "Agents", "Review", "Launch"] as const;
-
-const BUSINESS_TYPES = [
-  { value: "ecommerce", label: "E-Commerce" },
-  { value: "saas", label: "SaaS" },
-  { value: "consulting", label: "Consulting" },
-  { value: "retail", label: "Retail" },
-  { value: "agency", label: "Agency" },
+const STEP_ORDER: OnboardingStep[] = [
+  "welcome",
+  "company",
+  "vision",
+  "mission",
+  "values",
+  "bmc_customer_segments",
+  "bmc_value_propositions",
+  "bmc_channels",
+  "bmc_customer_relationships",
+  "bmc_revenue_streams",
+  "bmc_key_resources",
+  "bmc_key_activities",
+  "bmc_key_partners",
+  "bmc_cost_structure",
+  "review",
+  "complete",
 ];
 
-const STAGES: { value: OnboardingFormData["stage"]; label: string; desc: string }[] = [
-  { value: "mvp", label: "MVP", desc: "Early stage, validating product-market fit" },
-  { value: "growth", label: "Growth", desc: "Scaling revenue and customer base" },
-  { value: "scale", label: "Scale", desc: "Optimizing operations at scale" },
+const STEP_LABELS = [
+  "Welcome",
+  "Company",
+  "Vision",
+  "Mission",
+  "Values",
+  "Customer Segments",
+  "Value Propositions",
+  "Channels",
+  "Customer Relationships",
+  "Revenue Streams",
+  "Key Resources",
+  "Key Activities",
+  "Key Partners",
+  "Cost Structure",
+  "Review",
+  "Launch",
 ];
 
-const CORE_AGENTS: { role: string; icon: LucideIcon; description: string }[] = [
-  { role: "CEO", icon: Star, description: "Strategic leadership and decision coordination" },
-  { role: "CFO", icon: DollarSign, description: "Financial planning, budgets, and reporting" },
-  { role: "COO", icon: Settings, description: "Operations management and process optimization" },
-  { role: "CMO", icon: Megaphone, description: "Marketing strategy and campaign oversight" },
-  { role: "CTO", icon: Terminal, description: "Technology architecture and engineering" },
-  { role: "HR", icon: Heart, description: "Workforce management and talent operations" },
-  { role: "Legal", icon: Scale, description: "Compliance, contracts, and legal advisory" },
-  { role: "Strategy", icon: Compass, description: "Market analysis and strategic planning" },
-  { role: "Knowledge", icon: BookOpen, description: "Organizational knowledge and documentation" },
+const BMC_STEPS: {
+  step: OnboardingStep;
+  key: string;
+  label: string;
+  neoIntro: string;
+}[] = [
+  {
+    step: "bmc_customer_segments",
+    key: "customer_segments",
+    label: "Customer Segments",
+    neoIntro:
+      "Now let's map your business model. First: **Customer Segments** — who are your most important customers?",
+  },
+  {
+    step: "bmc_value_propositions",
+    key: "value_propositions",
+    label: "Value Propositions",
+    neoIntro: "Next: **Value Propositions** — what value do you deliver?",
+  },
+  {
+    step: "bmc_channels",
+    key: "channels",
+    label: "Channels",
+    neoIntro: "**Channels** — how do you reach your customers?",
+  },
+  {
+    step: "bmc_customer_relationships",
+    key: "customer_relationships",
+    label: "Customer Relationships",
+    neoIntro: "**Customer Relationships** — how do you acquire and retain customers?",
+  },
+  {
+    step: "bmc_revenue_streams",
+    key: "revenue_streams",
+    label: "Revenue Streams",
+    neoIntro: "**Revenue Streams** — how does your business make money?",
+  },
+  {
+    step: "bmc_key_resources",
+    key: "key_resources",
+    label: "Key Resources",
+    neoIntro: "**Key Resources** — what assets does your business need?",
+  },
+  {
+    step: "bmc_key_activities",
+    key: "key_activities",
+    label: "Key Activities",
+    neoIntro: "**Key Activities** — what must your company do to succeed?",
+  },
+  {
+    step: "bmc_key_partners",
+    key: "key_partners",
+    label: "Key Partners",
+    neoIntro: "**Key Partners** — who are your strategic allies?",
+  },
+  {
+    step: "bmc_cost_structure",
+    key: "cost_structure",
+    label: "Cost Structure",
+    neoIntro: "Last BMC block! **Cost Structure** — what are your biggest costs?",
+  },
 ];
 
-const BUSINESS_ID_REGEX = /^[a-zA-Z0-9_-]*$/;
+interface ChatMessage {
+  id: string;
+  role: "neo" | "user";
+  content: string;
+  component?: ReactNode;
+}
 
 // ---------- Helpers ----------
 
@@ -87,667 +151,553 @@ function slugify(name: string): string {
     .slice(0, 64);
 }
 
-function isValidBusinessId(id: string): boolean {
-  return BUSINESS_ID_REGEX.test(id) && id.length > 0 && id.length <= 64;
+let msgCounter = 0;
+function nextId(): string {
+  return `msg-${++msgCounter}-${Date.now()}`;
 }
 
-// ---------- Step Indicator ----------
+const COMPANY_FIELDS: FormField[] = [
+  {
+    name: "name",
+    label: "Company Name",
+    type: "text",
+    required: true,
+    placeholder: "e.g. Acme Corporation",
+  },
+  {
+    name: "industry",
+    label: "Industry",
+    type: "text",
+    required: true,
+    placeholder: "e.g. SaaS, E-Commerce, Consulting",
+  },
+  {
+    name: "stage",
+    label: "Business Stage",
+    type: "select",
+    required: true,
+    options: ["Pre-revenue", "Early", "Growth", "Scaling", "Mature"],
+  },
+];
 
-function StepIndicator({ currentStep }: { currentStep: number }) {
-  return (
-    <div className="flex items-center justify-center gap-0 mb-8">
-      {STEPS.map((label, i) => {
-        const isActive = i === currentStep;
-        const isCompleted = i < currentStep;
-        return (
-          <div key={label} className="flex items-center">
-            {/* Connecting line before */}
-            {i > 0 && (
-              <div
-                className="h-px w-8 sm:w-12"
-                style={{
-                  backgroundColor: isCompleted ? "var(--accent-green)" : "var(--border-mabos)",
-                }}
-              />
-            )}
-            {/* Step dot + label */}
-            <div className="flex flex-col items-center gap-1.5">
-              <div
-                className="flex items-center justify-center w-8 h-8 rounded-full text-xs font-bold transition-colors"
-                style={{
-                  backgroundColor: isCompleted
-                    ? "var(--accent-green)"
-                    : isActive
-                      ? "var(--accent-purple)"
-                      : "var(--bg-tertiary)",
-                  color: isCompleted || isActive ? "#ffffff" : "var(--text-muted)",
-                }}
-              >
-                {isCompleted ? <Check className="w-4 h-4" /> : i + 1}
-              </div>
-              <span
-                className="text-[10px] sm:text-xs whitespace-nowrap"
-                style={{
-                  color: isActive ? "var(--text-primary)" : "var(--text-muted)",
-                }}
-              >
-                {label}
-              </span>
-            </div>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
+// ---------- Main component ----------
 
-// ---------- Step 1: Business Info ----------
+export function WizardSteps() {
+  const [currentStep, setCurrentStep] = useState<OnboardingStep>("welcome");
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [isTyping, setIsTyping] = useState(false);
+  const [workspace, setWorkspace] = useState<WorkspaceData>({
+    businessType: "",
+    companyName: "",
+    businessId: "",
+    industry: "",
+    stage: "",
+    vision: "",
+    mission: "",
+    values: [],
+    bmcBlocks: {},
+  });
 
-function StepBusinessInfo({
-  data,
-  onChange,
-}: {
-  data: OnboardingFormData;
-  onChange: (patch: Partial<OnboardingFormData>) => void;
-}) {
-  const [idEdited, setIdEdited] = useState(false);
+  // Suggestion state for text steps (vision/mission/values)
+  const [suggestions, setSuggestions] = useState<string[]>([]);
+  const [suggestLoading, setSuggestLoading] = useState(false);
+  // Suggestion state for BMC steps
+  const [bmcSuggestions, setBmcSuggestions] = useState<BmcItem[]>([]);
 
-  function handleNameChange(name: string) {
-    const patch: Partial<OnboardingFormData> = { name };
-    if (!idEdited) {
-      patch.business_id = slugify(name);
+  // Launch state
+  const [launching, setLaunching] = useState(false);
+  const [launchResult, setLaunchResult] = useState<{
+    agents_created: number;
+    goals_generated: number;
+  } | null>(null);
+  const [launchError, setLaunchError] = useState<string | null>(null);
+
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const initRef = useRef(false);
+
+  const stepIndex = STEP_ORDER.indexOf(currentStep);
+  const completedSteps = Array.from({ length: stepIndex }, (_, i) => i);
+
+  // Auto-scroll to bottom
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (el) {
+      requestAnimationFrame(() => {
+        el.scrollTop = el.scrollHeight;
+      });
     }
-    onChange(patch);
+  }, [messages, isTyping]);
+
+  // Append a Neo message with a typing delay
+  const addNeoMessage = useCallback((content: string, component?: ReactNode) => {
+    setIsTyping(true);
+    setTimeout(() => {
+      setIsTyping(false);
+      setMessages((prev) => [...prev, { id: nextId(), role: "neo", content, component }]);
+    }, 400);
+  }, []);
+
+  // Append a user message
+  const addUserMessage = useCallback((content: string) => {
+    setMessages((prev) => [...prev, { id: nextId(), role: "user", content }]);
+  }, []);
+
+  // Initialize with welcome
+  useEffect(() => {
+    if (initRef.current) return;
+    initRef.current = true;
+    addNeoMessage(
+      "Welcome! I'm **Neo**, your MABOS Business Assistant. Let's set up your AI-powered business operating system.\n\nFirst, what type of business are you building?",
+      <ChoiceCards
+        options={[
+          {
+            value: "new",
+            label: "New Business",
+            description: "Starting from scratch",
+            icon: <Plus className="w-5 h-5" />,
+          },
+          {
+            value: "existing",
+            label: "Existing Business",
+            description: "Already operational",
+            icon: <Building2 className="w-5 h-5" />,
+          },
+        ]}
+        onSelect={handleWelcomeChoice}
+      />,
+    );
+  }, []);
+
+  // Fetch AI suggestions for text fields
+  async function fetchSuggestion(suggestType: string) {
+    setSuggestLoading(true);
+    setSuggestions([]);
+    try {
+      const res = (await api.onboard({
+        action: "suggest",
+        suggest_type: suggestType,
+        workspace_context: workspace,
+      })) as { suggestions?: string[] };
+      setSuggestions(res.suggestions ?? []);
+    } catch {
+      setSuggestions(["Could not generate suggestions. Please enter manually."]);
+    } finally {
+      setSuggestLoading(false);
+    }
   }
 
-  const idValid = data.business_id.length === 0 || isValidBusinessId(data.business_id);
+  // Fetch BMC suggestions
+  async function fetchBmcSuggestion(blockKey: string) {
+    setSuggestLoading(true);
+    setBmcSuggestions([]);
+    try {
+      const res = (await api.onboard({
+        action: "suggest",
+        suggest_type: blockKey,
+        workspace_context: workspace,
+      })) as { suggestions?: Array<{ title: string; description: string }> };
+      setBmcSuggestions(
+        (res.suggestions ?? []).map((s) =>
+          typeof s === "string" ? { title: s, description: "" } : s,
+        ),
+      );
+    } catch {
+      // Silently ignore
+    } finally {
+      setSuggestLoading(false);
+    }
+  }
 
-  return (
-    <div className="space-y-6">
-      {/* Business Name */}
-      <div className="space-y-2">
-        <label className="text-sm font-medium text-[var(--text-primary)]">
-          Business Name <span className="text-[var(--accent-red)]">*</span>
-        </label>
-        <Input
-          placeholder="e.g. Acme Corporation"
-          value={data.name}
-          onChange={(e) => handleNameChange(e.target.value)}
-          className="bg-[var(--bg-secondary)] border-[var(--border-mabos)] text-[var(--text-primary)] placeholder:text-[var(--text-muted)]"
-        />
-      </div>
+  function advanceTo(step: OnboardingStep) {
+    setCurrentStep(step);
+    setSuggestions([]);
+    setSuggestLoading(false);
+    setBmcSuggestions([]);
+  }
 
-      {/* Business ID */}
-      <div className="space-y-2">
-        <label className="text-sm font-medium text-[var(--text-primary)]">
-          Business ID <span className="text-[var(--accent-red)]">*</span>
-        </label>
-        <Input
-          placeholder="auto-generated-from-name"
-          value={data.business_id}
-          onChange={(e) => {
-            setIdEdited(true);
-            onChange({ business_id: e.target.value });
-          }}
-          className="bg-[var(--bg-secondary)] border-[var(--border-mabos)] text-[var(--text-primary)] placeholder:text-[var(--text-muted)] font-mono text-sm"
-        />
-        {!idValid && (
-          <p className="text-xs text-[var(--accent-red)]">
-            Only alphanumeric characters, hyphens, and underscores allowed (max 64 chars)
-          </p>
-        )}
-        <p className="text-xs text-[var(--text-muted)]">
-          Alphanumeric, hyphens, and underscores only. Auto-generated from name.
-        </p>
-      </div>
+  // ---------- Step handlers ----------
 
-      {/* Business Type */}
-      <div className="space-y-2">
-        <label className="text-sm font-medium text-[var(--text-primary)]">
-          Business Type <span className="text-[var(--accent-red)]">*</span>
-        </label>
-        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-          {BUSINESS_TYPES.map((bt) => (
-            <button
-              key={bt.value}
-              type="button"
-              onClick={() => onChange({ type: bt.value })}
-              className="px-4 py-2.5 rounded-lg text-sm font-medium transition-colors border"
-              style={{
-                backgroundColor:
-                  data.type === bt.value
-                    ? "color-mix(in srgb, var(--accent-purple) 20%, var(--bg-secondary))"
-                    : "var(--bg-secondary)",
-                borderColor:
-                  data.type === bt.value ? "var(--accent-purple)" : "var(--border-mabos)",
-                color: data.type === bt.value ? "var(--accent-purple)" : "var(--text-secondary)",
-              }}
-            >
-              {bt.label}
-            </button>
-          ))}
-        </div>
-      </div>
+  function handleWelcomeChoice(value: string) {
+    const label = value === "new" ? "New Business" : "Existing Business";
+    setWorkspace((prev) => ({ ...prev, businessType: value }));
+    addUserMessage(label);
+    advanceTo("company");
+    setTimeout(() => {
+      addNeoMessage(
+        "Great choice! Tell me about your business.",
+        <InlineForm fields={COMPANY_FIELDS} onSubmit={handleCompanySubmit} />,
+      );
+    }, 500);
+  }
 
-      {/* Description */}
-      <div className="space-y-2">
-        <label className="text-sm font-medium text-[var(--text-primary)]">Description</label>
-        <textarea
-          placeholder="Brief description of your business..."
-          value={data.description}
-          onChange={(e) => onChange({ description: e.target.value })}
-          rows={3}
-          className="w-full rounded-md border px-3 py-2 text-sm bg-[var(--bg-secondary)] border-[var(--border-mabos)] text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:ring-2 focus:ring-[var(--accent-purple)]/50 resize-none"
-        />
-      </div>
-    </div>
-  );
-}
+  function handleCompanySubmit(values: Record<string, string>) {
+    const name = values.name ?? "";
+    setWorkspace((prev) => ({
+      ...prev,
+      companyName: name,
+      businessId: slugify(name),
+      industry: values.industry ?? "",
+      stage: values.stage ?? "",
+    }));
+    addUserMessage(`${name} — ${values.industry}, ${values.stage}`);
+    advanceTo("vision");
+    setTimeout(() => {
+      showVisionStep();
+    }, 500);
+  }
 
-// ---------- Step 2: Details ----------
-
-function StepDetails({
-  data,
-  onChange,
-}: {
-  data: OnboardingFormData;
-  onChange: (patch: Partial<OnboardingFormData>) => void;
-}) {
-  return (
-    <div className="space-y-6">
-      {/* Legal Name */}
-      <div className="space-y-2">
-        <label className="text-sm font-medium text-[var(--text-primary)]">Legal Name</label>
-        <Input
-          placeholder={data.name || "Defaults to business name"}
-          value={data.legal_name}
-          onChange={(e) => onChange({ legal_name: e.target.value })}
-          className="bg-[var(--bg-secondary)] border-[var(--border-mabos)] text-[var(--text-primary)] placeholder:text-[var(--text-muted)]"
-        />
-        <p className="text-xs text-[var(--text-muted)]">
-          Official legal entity name. Defaults to business name if left blank.
-        </p>
-      </div>
-
-      {/* Jurisdiction */}
-      <div className="space-y-2">
-        <label className="text-sm font-medium text-[var(--text-primary)]">Jurisdiction</label>
-        <Input
-          placeholder="e.g. Delaware, USA"
-          value={data.jurisdiction}
-          onChange={(e) => onChange({ jurisdiction: e.target.value })}
-          className="bg-[var(--bg-secondary)] border-[var(--border-mabos)] text-[var(--text-primary)] placeholder:text-[var(--text-muted)]"
-        />
-      </div>
-
-      {/* Stage */}
-      <div className="space-y-3">
-        <label className="text-sm font-medium text-[var(--text-primary)]">Business Stage</label>
-        <div className="space-y-2">
-          {STAGES.map((s) => (
-            <button
-              key={s.value}
-              type="button"
-              onClick={() => onChange({ stage: s.value })}
-              className="w-full flex items-center gap-4 p-4 rounded-lg border transition-colors text-left"
-              style={{
-                backgroundColor:
-                  data.stage === s.value
-                    ? "color-mix(in srgb, var(--accent-green) 10%, var(--bg-secondary))"
-                    : "var(--bg-secondary)",
-                borderColor: data.stage === s.value ? "var(--accent-green)" : "var(--border-mabos)",
-              }}
-            >
-              <div
-                className="w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0"
-                style={{
-                  borderColor: data.stage === s.value ? "var(--accent-green)" : "var(--text-muted)",
-                }}
-              >
-                {data.stage === s.value && (
-                  <div
-                    className="w-2 h-2 rounded-full"
-                    style={{ backgroundColor: "var(--accent-green)" }}
-                  />
-                )}
-              </div>
-              <div>
-                <p className="text-sm font-medium text-[var(--text-primary)]">{s.label}</p>
-                <p className="text-xs text-[var(--text-muted)]">{s.desc}</p>
-              </div>
-            </button>
-          ))}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ---------- Step 3: Agent Preview ----------
-
-function StepAgentPreview() {
-  return (
-    <div className="space-y-4">
-      <p className="text-sm text-[var(--text-secondary)]">
-        The following 9 core AI agents will be created to manage your business:
-      </p>
-      <div className="grid gap-3">
-        {CORE_AGENTS.map((agent) => {
-          const Icon = agent.icon;
-          return (
-            <div
-              key={agent.role}
-              className="flex items-center gap-4 p-3 rounded-lg border border-[var(--border-mabos)] bg-[var(--bg-secondary)]"
-            >
-              <div
-                className="w-10 h-10 rounded-lg flex items-center justify-center shrink-0"
-                style={{
-                  backgroundColor: "color-mix(in srgb, var(--accent-purple) 15%, var(--bg-card))",
-                }}
-              >
-                <Icon className="w-5 h-5 text-[var(--accent-purple)]" />
-              </div>
-              <div className="min-w-0">
-                <p className="text-sm font-medium text-[var(--text-primary)]">{agent.role}</p>
-                <p className="text-xs text-[var(--text-muted)] truncate">{agent.description}</p>
-              </div>
-              <Badge className="ml-auto shrink-0 bg-[var(--accent-green)]/10 text-[var(--accent-green)] border-[var(--accent-green)]/20">
-                Auto
-              </Badge>
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-// ---------- Step 4: Review ----------
-
-function StepReview({
-  data,
-  onJumpTo,
-}: {
-  data: OnboardingFormData;
-  onJumpTo: (step: number) => void;
-}) {
-  const requiredMissing = !data.name.trim() || !data.business_id.trim() || !data.type;
-
-  return (
-    <div className="space-y-6">
-      {requiredMissing && (
-        <div className="flex items-center gap-3 p-3 rounded-lg bg-[color-mix(in_srgb,var(--accent-orange)_10%,var(--bg-card))] border border-[var(--accent-orange)]/20">
-          <AlertCircle className="w-4 h-4 text-[var(--accent-orange)] shrink-0" />
-          <p className="text-sm text-[var(--accent-orange)]">
-            Please fill in all required fields before launching.
-          </p>
-        </div>
-      )}
-
-      {/* Business Info section */}
-      <Card className="bg-[var(--bg-card)] border-[var(--border-mabos)]">
-        <CardHeader className="pb-0">
-          <div className="flex items-center justify-between">
-            <CardTitle className="text-sm text-[var(--text-primary)]">Business Info</CardTitle>
-            <Button
-              variant="ghost"
-              size="xs"
-              onClick={() => onJumpTo(0)}
-              className="text-[var(--accent-purple)] hover:text-[var(--accent-purple)] hover:bg-[var(--accent-purple)]/10"
-            >
-              <Pencil className="w-3 h-3 mr-1" />
-              Edit
-            </Button>
-          </div>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-2 gap-4 text-sm">
-            <div>
-              <p className="text-[var(--text-muted)] text-xs">Name</p>
-              <p className="text-[var(--text-primary)]">
-                {data.name || <span className="text-[var(--accent-red)]">Required</span>}
-              </p>
-            </div>
-            <div>
-              <p className="text-[var(--text-muted)] text-xs">ID</p>
-              <p className="text-[var(--text-primary)] font-mono text-xs">
-                {data.business_id || <span className="text-[var(--accent-red)]">Required</span>}
-              </p>
-            </div>
-            <div>
-              <p className="text-[var(--text-muted)] text-xs">Type</p>
-              <p className="text-[var(--text-primary)]">
-                {BUSINESS_TYPES.find((bt) => bt.value === data.type)?.label || (
-                  <span className="text-[var(--accent-red)]">Required</span>
-                )}
-              </p>
-            </div>
-            <div>
-              <p className="text-[var(--text-muted)] text-xs">Description</p>
-              <p className="text-[var(--text-primary)] truncate">
-                {data.description || <span className="text-[var(--text-muted)]">--</span>}
-              </p>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Details section */}
-      <Card className="bg-[var(--bg-card)] border-[var(--border-mabos)]">
-        <CardHeader className="pb-0">
-          <div className="flex items-center justify-between">
-            <CardTitle className="text-sm text-[var(--text-primary)]">Details</CardTitle>
-            <Button
-              variant="ghost"
-              size="xs"
-              onClick={() => onJumpTo(1)}
-              className="text-[var(--accent-purple)] hover:text-[var(--accent-purple)] hover:bg-[var(--accent-purple)]/10"
-            >
-              <Pencil className="w-3 h-3 mr-1" />
-              Edit
-            </Button>
-          </div>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-2 gap-4 text-sm">
-            <div>
-              <p className="text-[var(--text-muted)] text-xs">Legal Name</p>
-              <p className="text-[var(--text-primary)]">
-                {data.legal_name || data.name || (
-                  <span className="text-[var(--text-muted)]">--</span>
-                )}
-              </p>
-            </div>
-            <div>
-              <p className="text-[var(--text-muted)] text-xs">Jurisdiction</p>
-              <p className="text-[var(--text-primary)]">
-                {data.jurisdiction || <span className="text-[var(--text-muted)]">--</span>}
-              </p>
-            </div>
-            <div>
-              <p className="text-[var(--text-muted)] text-xs">Stage</p>
-              <p className="text-[var(--text-primary)]">
-                {STAGES.find((s) => s.value === data.stage)?.label ?? "MVP"}
-              </p>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Agents count */}
-      <Card className="bg-[var(--bg-card)] border-[var(--border-mabos)]">
-        <CardHeader className="pb-0">
-          <CardTitle className="text-sm text-[var(--text-primary)]">Agents</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <p className="text-sm text-[var(--text-secondary)]">
-            <span className="text-[var(--accent-green)] font-bold">{CORE_AGENTS.length}</span> core
-            agents will be created automatically.
-          </p>
-        </CardContent>
-      </Card>
-    </div>
-  );
-}
-
-// ---------- Step 5: Launch ----------
-
-function StepLaunch({
-  data,
-  result,
-  error,
-  isPending,
-  onSubmit,
-  onRetry,
-}: {
-  data: OnboardingFormData;
-  result: OnboardResult | null;
-  error: string | null;
-  isPending: boolean;
-  onSubmit: () => void;
-  onRetry: () => void;
-}) {
-  // Success state
-  if (result) {
-    return (
-      <div className="flex flex-col items-center text-center space-y-6 py-4">
-        <div
-          className="w-16 h-16 rounded-full flex items-center justify-center"
-          style={{
-            backgroundColor: "color-mix(in srgb, var(--accent-green) 15%, var(--bg-card))",
-          }}
-        >
-          <Check className="w-8 h-8 text-[var(--accent-green)]" />
-        </div>
-        <div className="space-y-2">
-          <h3 className="text-xl font-bold text-[var(--text-primary)]">Business Launched!</h3>
-          <p className="text-sm text-[var(--text-secondary)]">
-            <span className="font-medium text-[var(--text-primary)]">{data.name}</span> has been
-            successfully onboarded.
-          </p>
-        </div>
-        <Card className="bg-[var(--bg-card)] border-[var(--border-mabos)] w-full">
-          <CardContent className="pt-6">
-            <div className="space-y-3 text-sm">
-              <div className="flex justify-between">
-                <span className="text-[var(--text-muted)]">Business ID</span>
-                <span className="font-mono text-[var(--text-primary)]">{result.business_id}</span>
-              </div>
-              <Separator className="bg-[var(--border-mabos)]" />
-              <div className="flex justify-between">
-                <span className="text-[var(--text-muted)]">Agents Created</span>
-                <span className="text-[var(--accent-green)] font-bold">
-                  {result.agents_created.length}
-                </span>
-              </div>
-              <Separator className="bg-[var(--border-mabos)]" />
-              <div className="flex flex-wrap gap-1.5 pt-1">
-                {result.agents_created.map((agent) => (
-                  <Badge
-                    key={agent}
-                    className="bg-[var(--accent-purple)]/10 text-[var(--accent-purple)] border-[var(--accent-purple)]/20 text-xs"
-                  >
-                    {agent}
-                  </Badge>
-                ))}
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
+  function showVisionStep() {
+    addNeoMessage(
+      "What's your vision for the future? Describe the impact your business will have.",
+      <VisionMissionForm
+        placeholder="e.g. To become the world's most trusted platform for..."
+        onSubmit={(v) => handleTextSubmit("vision", v)}
+        onSuggest={() => fetchSuggestion("vision")}
+      />,
     );
   }
 
-  // Error state
-  if (error) {
+  function showMissionStep() {
+    addNeoMessage(
+      "What's your core mission? What do you do day-to-day to achieve your vision?",
+      <VisionMissionForm
+        placeholder="e.g. We empower small businesses by providing..."
+        onSubmit={(v) => handleTextSubmit("mission", v)}
+        onSuggest={() => fetchSuggestion("mission")}
+      />,
+    );
+  }
+
+  function showValuesStep() {
+    addNeoMessage(
+      "What values define your company culture? Enter them separated by commas.",
+      <VisionMissionForm
+        placeholder="e.g. Innovation, Integrity, Customer-first, Transparency"
+        onSubmit={(v) => handleTextSubmit("values", v)}
+        onSuggest={() => fetchSuggestion("values")}
+      />,
+    );
+  }
+
+  function handleTextSubmit(field: "vision" | "mission" | "values", value: string) {
+    if (!value.trim()) return;
+    addUserMessage(value);
+    if (field === "values") {
+      const vals = value
+        .split(",")
+        .map((v) => v.trim())
+        .filter(Boolean);
+      setWorkspace((prev) => ({ ...prev, values: vals }));
+    } else {
+      setWorkspace((prev) => ({ ...prev, [field]: value }));
+    }
+
+    // Advance to next step
+    const nextStepMap: Record<string, { step: OnboardingStep; show: () => void }> = {
+      vision: { step: "mission", show: () => setTimeout(showMissionStep, 500) },
+      mission: { step: "values", show: () => setTimeout(showValuesStep, 500) },
+      values: { step: "bmc_customer_segments", show: () => setTimeout(() => showBmcStep(0), 500) },
+    };
+    const next = nextStepMap[field];
+    if (next) {
+      advanceTo(next.step);
+      next.show();
+    }
+  }
+
+  function handleSuggestionAccept(value: string) {
+    // Determine which step we're on and fill the value
+    if (currentStep === "vision") {
+      setWorkspace((prev) => ({ ...prev, vision: value }));
+      addUserMessage(value);
+      advanceTo("mission");
+      setTimeout(showMissionStep, 500);
+    } else if (currentStep === "mission") {
+      setWorkspace((prev) => ({ ...prev, mission: value }));
+      addUserMessage(value);
+      advanceTo("values");
+      setTimeout(showValuesStep, 500);
+    } else if (currentStep === "values") {
+      const vals = value
+        .split(",")
+        .map((v) => v.trim())
+        .filter(Boolean);
+      setWorkspace((prev) => ({ ...prev, values: vals }));
+      addUserMessage(value);
+      advanceTo("bmc_customer_segments");
+      setTimeout(() => showBmcStep(0), 500);
+    }
+    setSuggestions([]);
+  }
+
+  // ---------- BMC steps ----------
+
+  function showBmcStep(bmcIndex: number) {
+    const cfg = BMC_STEPS[bmcIndex];
+    if (!cfg) return;
+    addNeoMessage(cfg.neoIntro, <BmcStepComponent bmcIndex={bmcIndex} />);
+  }
+
+  function BmcStepComponent({ bmcIndex }: { bmcIndex: number }) {
+    const cfg = BMC_STEPS[bmcIndex];
+    if (!cfg) return null;
+    const items = workspace.bmcBlocks[cfg.key] ?? [];
+
     return (
-      <div className="flex flex-col items-center text-center space-y-6 py-4">
-        <div
-          className="w-16 h-16 rounded-full flex items-center justify-center"
-          style={{
-            backgroundColor: "color-mix(in srgb, var(--accent-red) 15%, var(--bg-card))",
+      <div className="space-y-3">
+        <BmcBlockEditor
+          blockKey={cfg.key}
+          label={cfg.label}
+          description={`Add items for ${cfg.label}`}
+          items={items}
+          onChange={(updated) => {
+            setWorkspace((prev) => ({
+              ...prev,
+              bmcBlocks: { ...prev.bmcBlocks, [cfg.key]: updated },
+            }));
           }}
-        >
-          <AlertCircle className="w-8 h-8 text-[var(--accent-red)]" />
-        </div>
-        <div className="space-y-2">
-          <h3 className="text-xl font-bold text-[var(--text-primary)]">Onboarding Failed</h3>
-          <p className="text-sm text-[var(--accent-red)]">{error}</p>
-        </div>
+          onSuggest={() => fetchBmcSuggestion(cfg.key)}
+          suggestedItems={bmcSuggestions}
+        />
         <Button
-          onClick={onRetry}
-          className="bg-[var(--accent-red)] hover:bg-[var(--accent-red)]/80 text-white"
+          onClick={() => handleBmcContinue(bmcIndex)}
+          className="bg-[var(--accent-purple)] hover:bg-[var(--accent-purple)]/80 text-white"
         >
-          <RefreshCw className="w-4 h-4 mr-2" />
-          Retry
+          Continue
         </Button>
       </div>
     );
   }
 
-  // Ready to submit
+  function handleBmcContinue(bmcIndex: number) {
+    const cfg = BMC_STEPS[bmcIndex];
+    if (!cfg) return;
+    const items = workspace.bmcBlocks[cfg.key] ?? [];
+    const summary =
+      items.length > 0
+        ? `${cfg.label}: ${items.map((i) => i.title).join(", ")}`
+        : `${cfg.label}: (skipped)`;
+    addUserMessage(summary);
+
+    const nextBmc = bmcIndex + 1;
+    if (nextBmc < BMC_STEPS.length) {
+      advanceTo(BMC_STEPS[nextBmc].step);
+      setTimeout(() => showBmcStep(nextBmc), 500);
+    } else {
+      advanceTo("review");
+      setTimeout(showReviewStep, 500);
+    }
+  }
+
+  // ---------- Review & Launch ----------
+
+  function showReviewStep() {
+    addNeoMessage(
+      "Here's everything we've captured. Review your details and click **Launch** when ready.",
+      <div className="space-y-4">
+        <ReviewCard data={workspace} onEdit={handleReviewEdit} />
+        <Button
+          onClick={handleLaunch}
+          className="bg-[var(--accent-green)] hover:bg-[var(--accent-green)]/80 text-black font-semibold px-8 h-11"
+        >
+          <Rocket className="w-4 h-4 mr-2" />
+          Launch Business
+        </Button>
+      </div>,
+    );
+  }
+
+  function handleReviewEdit(section: string) {
+    // Map section to step for jump-back
+    const sectionMap: Record<string, OnboardingStep> = {
+      company: "company",
+      vision: "vision",
+      mission: "mission",
+      values: "values",
+      bmc: "bmc_customer_segments",
+    };
+    const target = sectionMap[section];
+    if (target) {
+      advanceTo(target);
+      // Re-show the appropriate step
+      if (target === "vision") setTimeout(showVisionStep, 300);
+      else if (target === "mission") setTimeout(showMissionStep, 300);
+      else if (target === "values") setTimeout(showValuesStep, 300);
+      else if (target === "bmc_customer_segments") setTimeout(() => showBmcStep(0), 300);
+      else if (target === "company") {
+        setTimeout(() => {
+          addNeoMessage(
+            "Let's update your company details.",
+            <InlineForm fields={COMPANY_FIELDS} onSubmit={handleCompanySubmit} />,
+          );
+        }, 300);
+      }
+    }
+  }
+
+  async function handleLaunch() {
+    advanceTo("complete");
+    setLaunching(true);
+    setLaunchError(null);
+    addUserMessage("Launch my business!");
+
+    setTimeout(() => {
+      addNeoMessage(
+        "Launching your business...",
+        <div className="flex items-center gap-3 py-4">
+          <Loader2 className="w-5 h-5 animate-spin text-[var(--accent-purple)]" />
+          <span className="text-sm text-[var(--text-secondary)]">
+            Creating agents, generating goals, setting up your workspace...
+          </span>
+        </div>,
+      );
+    }, 300);
+
+    try {
+      const payload = {
+        business_id: workspace.businessId,
+        name: workspace.companyName,
+        type: workspace.businessType,
+        industry: workspace.industry,
+        stage: workspace.stage,
+        vision: workspace.vision,
+        mission: workspace.mission,
+        values: workspace.values,
+        bmc: workspace.bmcBlocks,
+      };
+      const res = (await api.onboard(payload)) as {
+        ok: boolean;
+        business_id: string;
+        agents_created?: string[];
+        goals_generated?: number;
+      };
+      const agentCount = res.agents_created?.length ?? 9;
+      const goalCount = res.goals_generated ?? 0;
+      setLaunchResult({ agents_created: agentCount, goals_generated: goalCount });
+
+      setTimeout(() => {
+        addNeoMessage(
+          `Your business is live! **${agentCount}** agents created${goalCount > 0 ? `, **${goalCount}** goals generated` : ""}.\n\nYour MABOS-powered business **${workspace.companyName}** is ready to go.`,
+          <a
+            href={`/mabos/dashboard`}
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium text-white"
+            style={{ backgroundColor: "var(--accent-purple)" }}
+          >
+            <Rocket className="w-4 h-4" />
+            Go to Dashboard
+          </a>,
+        );
+      }, 800);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Unknown error";
+      setLaunchError(msg);
+      setTimeout(() => {
+        addNeoMessage(
+          `Something went wrong: ${msg}\n\nPlease try again or contact support.`,
+          <Button
+            onClick={() => {
+              advanceTo("review");
+              setTimeout(showReviewStep, 300);
+            }}
+            className="bg-[var(--accent-red)] hover:bg-[var(--accent-red)]/80 text-white"
+          >
+            Go back to Review
+          </Button>,
+        );
+      }, 400);
+    } finally {
+      setLaunching(false);
+    }
+  }
+
+  // ---------- Render ----------
+
   return (
-    <div className="flex flex-col items-center text-center space-y-6 py-4">
-      <div
-        className="w-16 h-16 rounded-full flex items-center justify-center"
-        style={{
-          backgroundColor: "color-mix(in srgb, var(--accent-purple) 15%, var(--bg-card))",
-        }}
-      >
-        <Rocket className="w-8 h-8 text-[var(--accent-purple)]" />
+    <div className="flex gap-6">
+      {/* Sidebar progress */}
+      <div className="hidden lg:block shrink-0">
+        <StepsOverview
+          steps={STEP_LABELS}
+          currentStep={stepIndex}
+          completedSteps={completedSteps}
+        />
       </div>
-      <div className="space-y-2">
-        <h3 className="text-xl font-bold text-[var(--text-primary)]">Ready to Launch</h3>
-        <p className="text-sm text-[var(--text-secondary)]">
-          Everything looks good. Click below to create{" "}
-          <span className="font-medium text-[var(--text-primary)]">{data.name}</span> and provision{" "}
-          {CORE_AGENTS.length} AI agents.
-        </p>
+
+      {/* Chat area */}
+      <div className="flex-1 min-w-0">
+        <div
+          ref={scrollRef}
+          className="space-y-6 overflow-y-auto pr-2"
+          style={{ maxHeight: "calc(100vh - 200px)" }}
+        >
+          {messages.map((msg) =>
+            msg.role === "neo" ? (
+              <NeoMessage key={msg.id} content={msg.content} component={msg.component} />
+            ) : (
+              <UserMessage key={msg.id} content={msg.content} />
+            ),
+          )}
+          {isTyping && <NeoMessage content="" isTyping />}
+
+          {/* Show suggestion cards for text steps */}
+          {(currentStep === "vision" || currentStep === "mission" || currentStep === "values") &&
+            (suggestLoading || suggestions.length > 0) && (
+              <SuggestionCards
+                suggestions={suggestions}
+                loading={suggestLoading}
+                onAccept={handleSuggestionAccept}
+                onDismiss={() => setSuggestions([])}
+              />
+            )}
+        </div>
       </div>
-      <Button
-        onClick={onSubmit}
-        disabled={isPending}
-        className="bg-[var(--accent-green)] hover:bg-[var(--accent-green)]/80 text-black font-semibold px-8 h-11"
-      >
-        {isPending ? (
-          <>
-            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-            Launching...
-          </>
-        ) : (
-          <>
-            <Rocket className="w-4 h-4 mr-2" />
-            Launch Business
-          </>
-        )}
-      </Button>
     </div>
   );
 }
 
-// ---------- Main WizardSteps ----------
+// ---------- Sub-component: text entry with AI suggest ----------
 
-export function WizardSteps() {
-  const [step, setStep] = useState(0);
-  const [formData, setFormData] = useState<OnboardingFormData>({
-    business_id: "",
-    name: "",
-    type: "",
-    description: "",
-    legal_name: "",
-    jurisdiction: "",
-    stage: "mvp",
-  });
-
-  const mutation = useMutation({
-    mutationFn: () => api.onboard(buildPayload()),
-  });
-
-  function buildPayload() {
-    const payload: Record<string, string> = {
-      business_id: formData.business_id.trim(),
-      name: formData.name.trim(),
-      type: formData.type,
-    };
-    if (formData.legal_name.trim()) payload.legal_name = formData.legal_name.trim();
-    if (formData.description.trim()) payload.description = formData.description.trim();
-    if (formData.jurisdiction.trim()) payload.jurisdiction = formData.jurisdiction.trim();
-    if (formData.stage) payload.stage = formData.stage;
-    return payload;
-  }
-
-  function updateFormData(patch: Partial<OnboardingFormData>) {
-    setFormData((prev) => ({ ...prev, ...patch }));
-  }
-
-  const canGoNext = (() => {
-    if (step === 0) {
-      return (
-        formData.name.trim().length > 0 &&
-        isValidBusinessId(formData.business_id) &&
-        formData.type.length > 0
-      );
-    }
-    return true;
-  })();
-
-  const isLastNavStep = step === 3; // step 4 (Review) is the last navigable step before Launch
-  const isLaunchStep = step === 4;
-
-  function handleNext() {
-    if (step < STEPS.length - 1) setStep(step + 1);
-  }
-
-  function handleBack() {
-    if (step > 0) setStep(step - 1);
-  }
-
-  function handleJumpTo(target: number) {
-    setStep(target);
-  }
-
-  function handleSubmit() {
-    mutation.mutate();
-  }
-
-  function handleRetry() {
-    mutation.reset();
-  }
-
-  // Extract result/error from mutation
-  const mutResult = mutation.data as OnboardResult | undefined;
-  const mutError = mutation.error ? (mutation.error as Error).message : null;
+function VisionMissionForm({
+  placeholder,
+  onSubmit,
+  onSuggest,
+}: {
+  placeholder: string;
+  onSubmit: (value: string) => void;
+  onSuggest: () => void;
+}) {
+  const [value, setValue] = useState("");
 
   return (
-    <Card className="bg-[var(--bg-card)] border-[var(--border-mabos)]">
-      <CardContent className="pt-6">
-        {/* Step Indicator */}
-        <StepIndicator currentStep={step} />
-
-        {/* Step Content */}
-        <div className="min-h-[360px]">
-          {step === 0 && <StepBusinessInfo data={formData} onChange={updateFormData} />}
-          {step === 1 && <StepDetails data={formData} onChange={updateFormData} />}
-          {step === 2 && <StepAgentPreview />}
-          {step === 3 && <StepReview data={formData} onJumpTo={handleJumpTo} />}
-          {step === 4 && (
-            <StepLaunch
-              data={formData}
-              result={mutResult ?? null}
-              error={mutError}
-              isPending={mutation.isPending}
-              onSubmit={handleSubmit}
-              onRetry={handleRetry}
-            />
-          )}
-        </div>
-
-        {/* Navigation */}
-        {!isLaunchStep && (
-          <>
-            <Separator className="bg-[var(--border-mabos)] my-6" />
-            <div className="flex justify-between">
-              <Button
-                variant="outline"
-                onClick={handleBack}
-                disabled={step === 0}
-                className="border-[var(--border-mabos)] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
-              >
-                <ChevronLeft className="w-4 h-4 mr-1" />
-                Back
-              </Button>
-              <Button
-                onClick={handleNext}
-                disabled={!canGoNext}
-                className="bg-[var(--accent-purple)] hover:bg-[var(--accent-purple)]/80 text-white"
-              >
-                {isLastNavStep ? "Launch" : "Next"}
-                <ChevronRight className="w-4 h-4 ml-1" />
-              </Button>
-            </div>
-          </>
-        )}
-      </CardContent>
-    </Card>
+    <div className="rounded-xl border border-[var(--border-mabos)] bg-[var(--bg-card)] p-5 max-w-lg">
+      <textarea
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        placeholder={placeholder}
+        rows={3}
+        className="w-full rounded-md border px-3 py-2 text-sm bg-[var(--bg-secondary)] border-[var(--border-mabos)] text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:ring-2 focus:ring-[var(--accent-purple)]/50 resize-none"
+      />
+      <div className="flex gap-2 mt-3 justify-end">
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          onClick={onSuggest}
+          className="text-[var(--accent-purple)] hover:text-[var(--accent-purple)] hover:bg-[var(--accent-purple)]/10"
+        >
+          <Sparkles className="w-3 h-3 mr-1" />
+          AI Suggest
+        </Button>
+        <Button
+          type="button"
+          size="sm"
+          onClick={() => onSubmit(value)}
+          disabled={!value.trim()}
+          className="bg-[var(--accent-purple)] hover:bg-[var(--accent-purple)]/80 text-white"
+        >
+          Continue
+        </Button>
+      </div>
+    </div>
   );
 }
