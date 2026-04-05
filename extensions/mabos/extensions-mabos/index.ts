@@ -2892,6 +2892,33 @@ export default function register(api: OpenClawPluginApi) {
             enabled: true,
             status: "active",
           },
+          {
+            id: "CRON-email-triage",
+            name: "Email Inbox Triage (Every 15 Minutes)",
+            schedule: "*/15 * * * *",
+            agentId: "customer-service",
+            action: "email_triage",
+            enabled: true,
+            status: "active",
+          },
+          {
+            id: "CRON-email-pending-followup",
+            name: "Pending Response Follow-Up (Every 6 Hours)",
+            schedule: "0 */6 * * *",
+            agentId: "customer-service",
+            action: "email_pending_followup",
+            enabled: true,
+            status: "active",
+          },
+          {
+            id: "CRON-email-daily-digest",
+            name: "Daily Email Activity Digest",
+            schedule: "0 8 * * *",
+            agentId: "customer-service",
+            action: "email_daily_digest",
+            enabled: true,
+            status: "active",
+          },
         ];
         await mkdir(dirname(cronPath), { recursive: true });
         await writeFile(cronPath, JSON.stringify(jobs, null, 2), "utf-8");
