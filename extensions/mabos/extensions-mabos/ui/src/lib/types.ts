@@ -24,10 +24,13 @@ export type ChatMessage = {
 export type Business = {
   id: string;
   name: string;
-  description: string;
-  stage: string;
+  description?: string;
+  industry?: string;
+  type?: string;
+  stage?: string;
+  status?: string;
   agentCount: number;
-  healthScore: number;
+  healthScore?: number;
 };
 
 export type Task = {

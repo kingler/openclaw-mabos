@@ -1,26 +1,87 @@
-import { createContext, useContext, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
+import { api } from "@/lib/api";
 import type { Business } from "@/lib/types";
 
+const STORAGE_KEY = "mabos-active-business-id";
+
 interface BusinessContextValue {
+  /** All onboarded businesses. */
+  businesses: Business[];
+  /** Currently selected business (null if none selected or loading). */
   activeBusiness: Business | null;
-  setActiveBusiness: (b: Business | null) => void;
+  /** ID of the active business. */
+  activeBusinessId: string | null;
+  /** Switch to a different business by ID. */
+  setActiveBusinessId: (id: string) => void;
+  /** Whether the business list is loading. */
+  isLoading: boolean;
+  /** Re-fetch the business list (e.g. after onboarding a new one). */
+  refresh: () => void;
 }
 
 const BusinessContext = createContext<BusinessContextValue | null>(null);
 
-const DEFAULT_BUSINESS: Business = {
-  id: "vividwalls",
-  name: "VividWalls",
-  description: "Premium wall art e-commerce platform with AI-powered multi-agent system",
-  stage: "mvp",
-  agentCount: 20,
-  healthScore: 100,
-};
-
 export function BusinessProvider({ children }: { children: ReactNode }) {
-  const [activeBusiness, setActiveBusiness] = useState<Business | null>(DEFAULT_BUSINESS);
+  const [businesses, setBusinesses] = useState<Business[]>([]);
+  const [activeBusinessId, setActiveBusinessIdRaw] = useState<string | null>(() => {
+    try {
+      return localStorage.getItem(STORAGE_KEY);
+    } catch {
+      return null;
+    }
+  });
+  const [isLoading, setIsLoading] = useState(true);
+
+  const fetchBusinesses = useCallback(async () => {
+    setIsLoading(true);
+    try {
+      const { businesses: list } = await api.getBusinesses();
+      setBusinesses(list);
+
+      // If no active business selected, or selected one no longer exists, pick the first
+      if (list.length > 0) {
+        const currentValid = activeBusinessId && list.some((b) => b.id === activeBusinessId);
+        if (!currentValid) {
+          setActiveBusinessIdRaw(list[0].id);
+          try {
+            localStorage.setItem(STORAGE_KEY, list[0].id);
+          } catch {}
+        }
+      } else {
+        setActiveBusinessIdRaw(null);
+      }
+    } catch {
+      // API not available — keep existing state
+    } finally {
+      setIsLoading(false);
+    }
+  }, [activeBusinessId]);
+
+  // Fetch on mount
+  useEffect(() => {
+    fetchBusinesses();
+  }, []);
+
+  const setActiveBusinessId = useCallback((id: string) => {
+    setActiveBusinessIdRaw(id);
+    try {
+      localStorage.setItem(STORAGE_KEY, id);
+    } catch {}
+  }, []);
+
+  const activeBusiness = businesses.find((b) => b.id === activeBusinessId) ?? null;
+
   return (
-    <BusinessContext.Provider value={{ activeBusiness, setActiveBusiness }}>
+    <BusinessContext.Provider
+      value={{
+        businesses,
+        activeBusiness,
+        activeBusinessId,
+        setActiveBusinessId,
+        isLoading,
+        refresh: fetchBusinesses,
+      }}
+    >
       {children}
     </BusinessContext.Provider>
   );
@@ -33,6 +94,6 @@ export function useBusinessContext(): BusinessContextValue {
 }
 
 export function useActiveBusinessId(): string {
-  const { activeBusiness } = useBusinessContext();
-  return activeBusiness?.id ?? "default";
+  const { activeBusinessId } = useBusinessContext();
+  return activeBusinessId ?? "default";
 }
