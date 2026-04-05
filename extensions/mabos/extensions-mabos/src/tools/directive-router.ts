@@ -139,6 +139,25 @@ const AGENT_KEYWORD_MAP: AgentKeywordEntry[] = [
     label: "Knowledge Management",
     keywords: ["ontolog", "knowledge", "taxonomy", "schema", "typedb", "reasoning", "inference"],
   },
+  {
+    agent: "customer-service",
+    label: "Customer Service",
+    keywords: [
+      "support",
+      "complaint",
+      "return",
+      "refund",
+      "exchange",
+      "damage",
+      "shipping issue",
+      "order status",
+      "tracking",
+      "customer inquiry",
+      "review",
+      "feedback",
+      "satisfaction",
+    ],
+  },
 ];
 
 // ── Classification ───────────────────────────────────────────

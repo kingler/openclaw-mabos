@@ -99,6 +99,15 @@ export const ROLE_TOOL_SCOPE: Record<string, string[]> = {
   "lead-gen": ["lead_*", "crm_*", "outreach_*"],
   "sales-research": ["lead_*", "crm_*", "market_*", "competitive_*"],
   outreach: ["outreach_*", "email_*", "lead_*", "crm_*"],
+  "customer-service": [
+    "email_*",
+    "crm_*",
+    "customer_*",
+    "support_*",
+    "knowledge_*",
+    "order_*",
+    "product_catalog_*",
+  ],
 };
 
 // ── Pattern Matching ─────────────────────────────────────────
