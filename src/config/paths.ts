@@ -282,3 +282,15 @@ export function resolveGatewayPort(
   }
   return DEFAULT_GATEWAY_PORT;
 }
+
+/**
+ * Returns true when running in a MABOS product context.
+ * Checks OPENCLAW_MABOS env var or falls back to true for this fork.
+ */
+export function isMabosProduct(env: NodeJS.ProcessEnv = process.env): boolean {
+  const explicit = env.OPENCLAW_MABOS?.trim();
+  if (explicit !== undefined) {
+    return explicit !== "0" && explicit.toLowerCase() !== "false";
+  }
+  return true;
+}

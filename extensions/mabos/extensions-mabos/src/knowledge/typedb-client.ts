@@ -54,8 +54,13 @@ export class TypeDBClient {
     try {
       const { TypeDBHttpDriver } = await import("typedb-driver-http");
       this.driver = new TypeDBHttpDriver(this.driverParams);
-      // Verify connectivity by listing databases
-      const res = await this.driver.getDatabases();
+      // Verify connectivity by listing databases (with 5s timeout)
+      const res = await Promise.race([
+        this.driver.getDatabases(),
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error("TypeDB connect timeout")), 5_000),
+        ),
+      ]);
       unwrap(res);
       this.available = true;
       return true;
@@ -122,7 +127,12 @@ export class TypeDBClient {
     const db = database || this.currentDatabase;
     if (!db) throw new Error("No database selected. Call ensureDatabase() first.");
 
-    const res = await this.driver!.oneShotQuery(typeql, false, db, "read");
+    const res = await Promise.race([
+      this.driver!.oneShotQuery(typeql, false, db, "read"),
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error("TypeDB query timeout")), 10_000),
+      ),
+    ]);
     return unwrap(res) as QueryResponse;
   }
 
@@ -173,6 +183,13 @@ let clientInstance: TypeDBClient | null = null;
  * First call triggers connection attempt (non-blocking on failure).
  */
 export function getTypeDBClient(serverUrl?: string): TypeDBClient {
+  // Skip TypeDB entirely when TYPEDB_SKIP=1
+  if (process.env.TYPEDB_SKIP === "1") {
+    if (!clientInstance) {
+      clientInstance = new TypeDBClient({ addresses: ["http://127.0.0.1:1"] });
+    }
+    return clientInstance;
+  }
   if (!clientInstance) {
     const addresses = serverUrl
       ? [serverUrl.startsWith("http") ? serverUrl : `http://${serverUrl}`]

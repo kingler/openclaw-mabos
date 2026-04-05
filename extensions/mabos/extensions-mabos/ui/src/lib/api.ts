@@ -13,6 +13,31 @@ import type {
   TroposGoalModel,
   CronJob,
   CronJobsResponse,
+  Product,
+  Order,
+  Contact,
+  StockItem,
+  StockAlert,
+  StockMovement,
+  Supplier,
+  PurchaseOrder,
+  Shipment,
+  ShippingRoute,
+  LegalContract,
+  CorporateDocument,
+  LegalStructure,
+  ComplianceGuardrail,
+  MarketingCampaign,
+  CampaignMetrics,
+  MarketingKpi,
+  AnalyticsReport,
+  ReportSnapshot,
+  AnalyticsDashboard,
+  Invoice,
+  Account,
+  FinancialStatement,
+  CompliancePolicy,
+  ComplianceViolation,
 } from "./types";
 
 const BASE = "/mabos/api";
@@ -233,4 +258,178 @@ export const api = {
       `/workflows/${workflowId}/validate`,
       {},
     ),
+
+  // --- ERP: E-Commerce ---
+  getProducts: (params?: { category?: string; status?: string }) => {
+    const qs = new URLSearchParams();
+    if (params?.category) qs.set("category", params.category);
+    if (params?.status) qs.set("status", params.status);
+    const q = qs.toString();
+    return get<{ products: Product[] }>(`/erp/products${q ? `?${q}` : ""}`);
+  },
+  getOrders: (params?: { status?: string }) => {
+    const qs = new URLSearchParams();
+    if (params?.status) qs.set("status", params.status);
+    const q = qs.toString();
+    return get<{ orders: Order[] }>(`/erp/orders${q ? `?${q}` : ""}`);
+  },
+  getOrder: (id: string) => get<Order>(`/erp/orders/${id}`),
+  updateOrderStatus: (id: string, status: string) =>
+    put<{ ok: boolean }>(`/erp/orders/${id}/status`, { status }),
+
+  // --- ERP: Customers ---
+  getContacts: (params?: { segment?: string; lifecycle_stage?: string }) => {
+    const qs = new URLSearchParams();
+    if (params?.segment) qs.set("segment", params.segment);
+    if (params?.lifecycle_stage) qs.set("lifecycle_stage", params.lifecycle_stage);
+    const q = qs.toString();
+    return get<{ contacts: Contact[] }>(`/erp/contacts${q ? `?${q}` : ""}`);
+  },
+  searchContacts: (q: string) =>
+    get<{ contacts: Contact[] }>(`/erp/contacts/search?q=${encodeURIComponent(q)}`),
+  getContact: (id: string) => get<Contact>(`/erp/contacts/${id}`),
+
+  // --- ERP: Inventory ---
+  getStockItems: (params?: { status?: string }) => {
+    const qs = new URLSearchParams();
+    if (params?.status) qs.set("status", params.status);
+    const q = qs.toString();
+    return get<{ items: StockItem[] }>(`/erp/inventory/items${q ? `?${q}` : ""}`);
+  },
+  getLowStockAlerts: () => get<{ alerts: StockAlert[] }>("/erp/inventory/alerts"),
+  getStockMovements: (itemId: string) =>
+    get<{ movements: StockMovement[] }>(`/erp/inventory/movements/${itemId}`),
+
+  // --- ERP: Suppliers ---
+  getSuppliers: (params?: { status?: string; category?: string }) => {
+    const qs = new URLSearchParams();
+    if (params?.status) qs.set("status", params.status);
+    if (params?.category) qs.set("category", params.category);
+    const q = qs.toString();
+    return get<{ suppliers: Supplier[] }>(`/erp/suppliers${q ? `?${q}` : ""}`);
+  },
+  getPurchaseOrders: (params?: { supplier_id?: string; status?: string }) => {
+    const qs = new URLSearchParams();
+    if (params?.supplier_id) qs.set("supplier_id", params.supplier_id);
+    if (params?.status) qs.set("status", params.status);
+    const q = qs.toString();
+    return get<{ orders: PurchaseOrder[] }>(`/erp/purchase-orders${q ? `?${q}` : ""}`);
+  },
+  getSupplier: (id: string) => get<Supplier>(`/erp/suppliers/${id}`),
+
+  // --- ERP: Supply Chain ---
+  getShipments: (params?: { status?: string }) => {
+    const qs = new URLSearchParams();
+    if (params?.status) qs.set("status", params.status);
+    const q = qs.toString();
+    return get<{ shipments: Shipment[] }>(`/erp/shipments${q ? `?${q}` : ""}`);
+  },
+  getShipment: (id: string) => get<Shipment>(`/erp/shipments/${id}`),
+  getRoutes: (params?: { status?: string }) => {
+    const qs = new URLSearchParams();
+    if (params?.status) qs.set("status", params.status);
+    const q = qs.toString();
+    return get<{ routes: ShippingRoute[] }>(`/erp/routes${q ? `?${q}` : ""}`);
+  },
+
+  // --- ERP: Legal ---
+  getPartnershipContracts: (params?: { status?: string }) => {
+    const qs = new URLSearchParams();
+    if (params?.status) qs.set("status", params.status);
+    const q = qs.toString();
+    return get<{ contracts: LegalContract[] }>(
+      `/erp/legal/contracts/partnership${q ? `?${q}` : ""}`,
+    );
+  },
+  getFreelancerContracts: (params?: { status?: string }) => {
+    const qs = new URLSearchParams();
+    if (params?.status) qs.set("status", params.status);
+    const q = qs.toString();
+    return get<{ contracts: LegalContract[] }>(
+      `/erp/legal/contracts/freelancer${q ? `?${q}` : ""}`,
+    );
+  },
+  getCorporateDocuments: (params?: { doc_type?: string }) => {
+    const qs = new URLSearchParams();
+    if (params?.doc_type) qs.set("doc_type", params.doc_type);
+    const q = qs.toString();
+    return get<{ documents: CorporateDocument[] }>(`/erp/legal/documents${q ? `?${q}` : ""}`);
+  },
+  getLegalStructure: () => get<LegalStructure>("/erp/legal/structure"),
+  getComplianceGuardrails: (params?: { active?: boolean; category?: string }) => {
+    const qs = new URLSearchParams();
+    if (params?.active !== undefined) qs.set("active", String(params.active));
+    if (params?.category) qs.set("category", params.category);
+    const q = qs.toString();
+    return get<{ guardrails: ComplianceGuardrail[] }>(`/erp/legal/guardrails${q ? `?${q}` : ""}`);
+  },
+
+  // --- ERP: Marketing ---
+  getMarketingCampaigns: (params?: { status?: string; type?: string }) => {
+    const qs = new URLSearchParams();
+    if (params?.status) qs.set("status", params.status);
+    if (params?.type) qs.set("type", params.type);
+    const q = qs.toString();
+    return get<{ campaigns: MarketingCampaign[] }>(`/erp/marketing/campaigns${q ? `?${q}` : ""}`);
+  },
+  getCampaignMetrics: (id: string) =>
+    get<CampaignMetrics>(`/erp/marketing/campaigns/${id}/metrics`),
+  getMarketingKpis: () => get<{ kpis: MarketingKpi[] }>("/erp/marketing/kpis"),
+
+  // --- ERP: Analytics ---
+  getReports: (params?: { type?: string; status?: string }) => {
+    const qs = new URLSearchParams();
+    if (params?.type) qs.set("type", params.type);
+    if (params?.status) qs.set("status", params.status);
+    const q = qs.toString();
+    return get<{ reports: AnalyticsReport[] }>(`/erp/analytics/reports${q ? `?${q}` : ""}`);
+  },
+  getReportSnapshots: (reportId: string) =>
+    get<{ snapshots: ReportSnapshot[] }>(`/erp/analytics/reports/${reportId}/snapshots`),
+  getDashboards: (params?: { owner_id?: string }) => {
+    const qs = new URLSearchParams();
+    if (params?.owner_id) qs.set("owner_id", params.owner_id);
+    const q = qs.toString();
+    return get<{ dashboards: AnalyticsDashboard[] }>(
+      `/erp/analytics/dashboards${q ? `?${q}` : ""}`,
+    );
+  },
+  runReport: (id: string) => post<{ ok: boolean }>(`/erp/analytics/reports/${id}/run`, {}),
+
+  // --- ERP: Accounting ---
+  getInvoices: (params?: { status?: string }) => {
+    const qs = new URLSearchParams();
+    if (params?.status) qs.set("status", params.status);
+    const q = qs.toString();
+    return get<{ invoices: Invoice[] }>(`/erp/accounting/invoices${q ? `?${q}` : ""}`);
+  },
+  getAccounts: () => get<{ accounts: Account[] }>("/erp/accounting/accounts"),
+  getProfitLoss: (from: string, to: string) =>
+    get<FinancialStatement>(`/erp/accounting/profit-loss?from=${from}&to=${to}`),
+  getBalanceSheet: () => get<FinancialStatement>("/erp/accounting/balance-sheet"),
+  getCashFlow: (from: string, to: string) =>
+    get<FinancialStatement>(`/erp/accounting/cash-flow?from=${from}&to=${to}`),
+  getExpenseReport: (from: string, to: string) =>
+    get<FinancialStatement>(`/erp/accounting/expense-report?from=${from}&to=${to}`),
+  getBudgetVsActual: (from: string, to: string) =>
+    get<FinancialStatement>(`/erp/accounting/budget-vs-actual?from=${from}&to=${to}`),
+
+  // --- ERP: Compliance ---
+  getPolicies: (params?: { status?: string; category?: string }) => {
+    const qs = new URLSearchParams();
+    if (params?.status) qs.set("status", params.status);
+    if (params?.category) qs.set("category", params.category);
+    const q = qs.toString();
+    return get<{ policies: CompliancePolicy[] }>(`/erp/compliance/policies${q ? `?${q}` : ""}`);
+  },
+  getViolations: (params?: { status?: string; severity?: string }) => {
+    const qs = new URLSearchParams();
+    if (params?.status) qs.set("status", params.status);
+    if (params?.severity) qs.set("severity", params.severity);
+    const q = qs.toString();
+    return get<{ violations: ComplianceViolation[] }>(
+      `/erp/compliance/violations${q ? `?${q}` : ""}`,
+    );
+  },
+  getViolation: (id: string) => get<ComplianceViolation>(`/erp/compliance/violations/${id}`),
 };

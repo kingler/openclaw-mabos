@@ -327,3 +327,265 @@ export type ChatAction = {
     entityData?: unknown;
   };
 };
+
+// --- ERP: E-Commerce ---
+export type Product = {
+  id: string;
+  name: string;
+  sku: string;
+  price: number;
+  currency: string;
+  category: string;
+  status: "active" | "draft" | "archived";
+  stock: number;
+  images: string[];
+  description?: string;
+};
+
+export type Order = {
+  id: string;
+  customer_name: string;
+  customer_email: string;
+  status: "pending" | "processing" | "shipped" | "delivered" | "cancelled" | "refunded";
+  total: number;
+  currency: string;
+  items: Array<{ product_id: string; name: string; quantity: number; price: number }>;
+  created_at: string;
+  updated_at: string;
+};
+
+// --- ERP: Customers ---
+export type Contact = {
+  id: string;
+  name: string;
+  email: string;
+  phone?: string;
+  company?: string;
+  segment: string;
+  lifecycle_stage: "lead" | "prospect" | "customer" | "churned";
+  total_spent: number;
+  order_count: number;
+  last_interaction?: string;
+  tags: string[];
+};
+
+// --- ERP: Inventory ---
+export type StockItem = {
+  id: string;
+  product_id: string;
+  name: string;
+  sku: string;
+  quantity: number;
+  reorder_point: number;
+  status: "in_stock" | "low_stock" | "out_of_stock";
+  warehouse: string;
+  last_restocked?: string;
+};
+
+export type StockAlert = {
+  id: string;
+  item_id: string;
+  name: string;
+  sku: string;
+  current_qty: number;
+  reorder_point: number;
+  severity: "warning" | "critical";
+};
+
+export type StockMovement = {
+  id: string;
+  item_id: string;
+  type: "inbound" | "outbound" | "adjustment";
+  quantity: number;
+  reason: string;
+  timestamp: string;
+};
+
+// --- ERP: Suppliers ---
+export type Supplier = {
+  id: string;
+  name: string;
+  contact_email: string;
+  category: string;
+  status: "active" | "inactive" | "pending";
+  rating: number;
+  lead_time_days: number;
+  total_orders: number;
+};
+
+export type PurchaseOrder = {
+  id: string;
+  supplier_id: string;
+  supplier_name: string;
+  status: "draft" | "sent" | "confirmed" | "received" | "cancelled";
+  total: number;
+  items: Array<{ product_id: string; name: string; quantity: number; unit_price: number }>;
+  created_at: string;
+  expected_delivery?: string;
+};
+
+// --- ERP: Supply Chain ---
+export type Shipment = {
+  id: string;
+  order_id: string;
+  carrier: string;
+  tracking_number?: string;
+  status: "preparing" | "in_transit" | "delivered" | "returned";
+  origin: string;
+  destination: string;
+  estimated_delivery?: string;
+  actual_delivery?: string;
+};
+
+export type ShippingRoute = {
+  id: string;
+  name: string;
+  origin: string;
+  destination: string;
+  carrier: string;
+  avg_transit_days: number;
+  cost: number;
+  status: "active" | "inactive";
+};
+
+// --- ERP: Legal ---
+export type LegalContract = {
+  id: string;
+  title: string;
+  type: "partnership" | "freelancer";
+  counterparty: string;
+  status: "draft" | "active" | "expired" | "terminated";
+  start_date: string;
+  end_date?: string;
+  value?: number;
+};
+
+export type CorporateDocument = {
+  id: string;
+  title: string;
+  doc_type: string;
+  status: "current" | "archived" | "draft";
+  last_updated: string;
+  url?: string;
+};
+
+export type LegalStructure = {
+  entity_type: string;
+  jurisdiction: string;
+  registration_number: string;
+  officers: Array<{ name: string; title: string }>;
+};
+
+export type ComplianceGuardrail = {
+  id: string;
+  rule: string;
+  category: string;
+  severity: "info" | "warning" | "critical";
+  active: boolean;
+  description?: string;
+};
+
+// --- ERP: Marketing ---
+export type MarketingCampaign = {
+  id: string;
+  name: string;
+  type: string;
+  status: "draft" | "active" | "paused" | "completed";
+  budget: number;
+  spent: number;
+  start_date: string;
+  end_date?: string;
+  channels: string[];
+};
+
+export type CampaignMetrics = {
+  campaign_id: string;
+  impressions: number;
+  clicks: number;
+  conversions: number;
+  ctr: number;
+  conversion_rate: number;
+  cost_per_acquisition: number;
+  roi: number;
+};
+
+export type MarketingKpi = {
+  id: string;
+  name: string;
+  value: number;
+  target: number;
+  unit: string;
+  trend: "up" | "down" | "flat";
+  period: string;
+};
+
+// --- ERP: Analytics ---
+export type AnalyticsReport = {
+  id: string;
+  title: string;
+  type: string;
+  status: "ready" | "generating" | "error";
+  created_at: string;
+  last_run?: string;
+};
+
+export type ReportSnapshot = {
+  id: string;
+  report_id: string;
+  timestamp: string;
+  data: Record<string, unknown>;
+};
+
+export type AnalyticsDashboard = {
+  id: string;
+  name: string;
+  owner_id: string;
+  widgets: Array<{ type: string; config: Record<string, unknown> }>;
+};
+
+// --- ERP: Accounting ---
+export type Invoice = {
+  id: string;
+  number: string;
+  customer_name: string;
+  status: "draft" | "sent" | "paid" | "overdue" | "cancelled";
+  amount: number;
+  currency: string;
+  due_date: string;
+  issued_date: string;
+};
+
+export type Account = {
+  id: string;
+  name: string;
+  type: "asset" | "liability" | "equity" | "revenue" | "expense";
+  balance: number;
+  currency: string;
+};
+
+export type FinancialStatement = {
+  period: { from: string; to: string };
+  rows: Array<{ label: string; amount: number; category: string }>;
+  total: number;
+};
+
+// --- ERP: Compliance ---
+export type CompliancePolicy = {
+  id: string;
+  name: string;
+  category: string;
+  status: "active" | "draft" | "archived";
+  description: string;
+  last_reviewed: string;
+};
+
+export type ComplianceViolation = {
+  id: string;
+  policy_id: string;
+  policy_name: string;
+  severity: "low" | "medium" | "high" | "critical";
+  status: "open" | "investigating" | "resolved" | "dismissed";
+  description: string;
+  detected_at: string;
+  resolved_at?: string;
+};

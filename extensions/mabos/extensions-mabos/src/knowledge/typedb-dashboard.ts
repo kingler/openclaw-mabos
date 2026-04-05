@@ -10,6 +10,9 @@
 import type { QueryResponse, ConceptRowAnswer, Concept } from "typedb-driver-http";
 import { getTypeDBClient } from "./typedb-client.js";
 
+/** When TYPEDB_SKIP=1, all query functions bail out immediately. */
+const TYPEDB_DISABLED = process.env.TYPEDB_SKIP === "1";
+
 // ── Types (mirroring ui/src/lib/types.ts) ───────────────────────────────
 
 interface AgentListItem {
@@ -144,6 +147,7 @@ async function resolveTypeDBAgentUid(
 // ── Query Functions ─────────────────────────────────────────────────────
 
 export async function queryAgentListFromTypeDB(dbName: string): Promise<AgentListItem[] | null> {
+  if (TYPEDB_DISABLED) return null;
   try {
     const client = getTypeDBClient();
     if (!client.isAvailable()) {
@@ -218,6 +222,7 @@ export async function queryAgentDetailFromTypeDB(
   agentId: string,
   dbName: string,
 ): Promise<AgentDetail | null> {
+  if (TYPEDB_DISABLED) return null;
   try {
     const client = getTypeDBClient();
     if (!client.isAvailable()) {
@@ -339,6 +344,7 @@ interface DashboardTask {
 }
 
 export async function queryDecisionsFromTypeDB(dbName: string): Promise<Decision[] | null> {
+  if (TYPEDB_DISABLED) return null;
   try {
     const client = getTypeDBClient();
     if (!client.isAvailable()) {
@@ -416,6 +422,7 @@ export async function queryDecisionsFromTypeDB(dbName: string): Promise<Decision
 export async function queryWorkflowsFromTypeDB(
   dbName: string,
 ): Promise<DashboardWorkflow[] | null> {
+  if (TYPEDB_DISABLED) return null;
   try {
     const client = getTypeDBClient();
     if (!client.isAvailable()) {
@@ -464,6 +471,7 @@ export async function queryWorkflowsFromTypeDB(
 }
 
 export async function queryTasksFromTypeDB(dbName: string): Promise<DashboardTask[] | null> {
+  if (TYPEDB_DISABLED) return null;
   try {
     const client = getTypeDBClient();
     if (!client.isAvailable()) {
@@ -544,6 +552,7 @@ export async function writeBdiCycleResultToTypeDB(
   dbName: string,
   result: { newBeliefs?: string[]; newIntentions?: string[]; updatedGoals?: string[] },
 ): Promise<boolean> {
+  if (TYPEDB_DISABLED) return null;
   try {
     const client = getTypeDBClient();
     if (!client.isAvailable()) return false;
@@ -644,10 +653,14 @@ export async function queryKnowledgeStatsFromTypeDB(
 }
 
 export async function queryGoalModelFromTypeDB(dbName: string): Promise<TroposGoalModel | null> {
+  if (process.env.TYPEDB_SKIP === "1") return null;
   try {
     const client = getTypeDBClient();
     if (!client.isAvailable()) {
-      const ok = await client.connect();
+      const ok = await Promise.race([
+        client.connect(),
+        new Promise<false>((resolve) => setTimeout(() => resolve(false), 5_000)),
+      ]);
       if (!ok) return null;
     }
 

@@ -2625,6 +2625,1908 @@ export default function register(api: OpenClawPluginApi) {
     }
   });
 
+  // ── ERP Module Routes ──────────────────────────────────────────
+  // All routes live under /mabos/api/erp/* and read from workspace JSON
+  // files where available, falling back to realistic seed data for VividWalls.
+
+  // workspaceDir is already resolved above; construct the vividwalls business path
+  const bizDir = `${workspaceDir}/businesses/vividwalls`;
+
+  // --- E-Commerce: Products ---
+  api.registerHttpRoute({
+    auth: "gateway",
+    path: "/mabos/api/erp/products",
+    handler: async (_req, res) => {
+      if (!(await requireAuth(_req, res))) return;
+      try {
+        const { join } = await import("node:path");
+        const catalogPath = join(bizDir, "product-catalog-live.json");
+        const catalog = await readJsonSafe(catalogPath);
+        const products = Array.isArray(catalog)
+          ? catalog
+          : (catalog?.products ?? catalog?.items ?? []);
+        res.setHeader("Content-Type", "application/json");
+        res.end(JSON.stringify({ products }));
+      } catch (err) {
+        res.setHeader("Content-Type", "application/json");
+        res.statusCode = 500;
+        res.end(JSON.stringify({ error: String(err) }));
+      }
+    },
+  });
+
+  // --- E-Commerce: Orders list ---
+  api.registerHttpRoute({
+    auth: "gateway",
+    path: "/mabos/api/erp/orders",
+    handler: async (_req, res) => {
+      if (!(await requireAuth(_req, res))) return;
+      try {
+        const { join } = await import("node:path");
+        const url = new URL(_req.url || "", "http://localhost");
+        const status = url.searchParams.get("status");
+        const conversionsPath = join(bizDir, "conversions.json");
+        let orders = (await readJsonSafe(conversionsPath)) ?? [];
+        if (!Array.isArray(orders)) orders = orders?.orders ?? [];
+        // Seed fallback
+        if (orders.length === 0) {
+          orders = [
+            {
+              id: "ORD-001",
+              customer: "Aria Chen",
+              product: "Midnight Bloom Canvas",
+              qty: 1,
+              total: 189.0,
+              status: "shipped",
+              date: "2026-03-28",
+            },
+            {
+              id: "ORD-002",
+              customer: "Marcus Webb",
+              product: "Urban Geometry Set",
+              qty: 2,
+              total: 340.0,
+              status: "processing",
+              date: "2026-03-30",
+            },
+            {
+              id: "ORD-003",
+              customer: "Lina Petrova",
+              product: "Ocean Whisper Triptych",
+              qty: 1,
+              total: 520.0,
+              status: "delivered",
+              date: "2026-03-25",
+            },
+            {
+              id: "ORD-004",
+              customer: "James Okafor",
+              product: "Neon Skyline Poster",
+              qty: 3,
+              total: 135.0,
+              status: "pending",
+              date: "2026-04-01",
+            },
+            {
+              id: "ORD-005",
+              customer: "Sophie Laurent",
+              product: "Abstract Harmony XL",
+              qty: 1,
+              total: 275.0,
+              status: "shipped",
+              date: "2026-03-29",
+            },
+          ];
+        }
+        if (status) orders = orders.filter((o: any) => o.status === status);
+        res.setHeader("Content-Type", "application/json");
+        res.end(JSON.stringify({ orders }));
+      } catch (err) {
+        res.setHeader("Content-Type", "application/json");
+        res.statusCode = 500;
+        res.end(JSON.stringify({ error: String(err) }));
+      }
+    },
+  });
+
+  // --- E-Commerce: Single order & status update ---
+  registerParamRoute("/mabos/api/erp/orders/:id", async (req, res) => {
+    try {
+      const { join } = await import("node:path");
+      const url = new URL(req.url || "", "http://localhost");
+      const segments = url.pathname.split("/");
+      const orderId = segments[segments.length - 1];
+
+      const conversionsPath = join(bizDir, "conversions.json");
+      let orders = (await readJsonSafe(conversionsPath)) ?? [];
+      if (!Array.isArray(orders)) orders = orders?.orders ?? [];
+      if (orders.length === 0) {
+        orders = [
+          {
+            id: "ORD-001",
+            customer: "Aria Chen",
+            product: "Midnight Bloom Canvas",
+            qty: 1,
+            total: 189.0,
+            status: "shipped",
+            date: "2026-03-28",
+          },
+          {
+            id: "ORD-002",
+            customer: "Marcus Webb",
+            product: "Urban Geometry Set",
+            qty: 2,
+            total: 340.0,
+            status: "processing",
+            date: "2026-03-30",
+          },
+          {
+            id: "ORD-003",
+            customer: "Lina Petrova",
+            product: "Ocean Whisper Triptych",
+            qty: 1,
+            total: 520.0,
+            status: "delivered",
+            date: "2026-03-25",
+          },
+          {
+            id: "ORD-004",
+            customer: "James Okafor",
+            product: "Neon Skyline Poster",
+            qty: 3,
+            total: 135.0,
+            status: "pending",
+            date: "2026-04-01",
+          },
+          {
+            id: "ORD-005",
+            customer: "Sophie Laurent",
+            product: "Abstract Harmony XL",
+            qty: 1,
+            total: 275.0,
+            status: "shipped",
+            date: "2026-03-29",
+          },
+        ];
+      }
+      const order = orders.find((o: any) => o.id === orderId);
+      if (!order) {
+        res.statusCode = 404;
+        res.setHeader("Content-Type", "application/json");
+        res.end(JSON.stringify({ error: "Order not found" }));
+        return;
+      }
+      res.setHeader("Content-Type", "application/json");
+      res.end(JSON.stringify({ order }));
+    } catch (err) {
+      res.setHeader("Content-Type", "application/json");
+      res.statusCode = 500;
+      res.end(JSON.stringify({ error: String(err) }));
+    }
+  });
+
+  // --- E-Commerce: Update order status ---
+  registerParamRoute("/mabos/api/erp/orders/:id/status", async (req, res) => {
+    if (req.method !== "PUT") {
+      res.statusCode = 405;
+      res.setHeader("Content-Type", "application/json");
+      res.end(JSON.stringify({ error: "Method not allowed" }));
+      return;
+    }
+    try {
+      const { join } = await import("node:path");
+      const { readFile, writeFile } = await import("node:fs/promises");
+      const url = new URL(req.url || "", "http://localhost");
+      const segments = url.pathname.split("/");
+      // .../orders/:id/status → id is at segments.length - 2
+      const orderId = segments[segments.length - 2];
+      const body = await readMabosJsonBody<{ status: string }>(req, res);
+      if (!body) return;
+
+      const conversionsPath = join(bizDir, "conversions.json");
+      let orders = (await readJsonSafe(conversionsPath)) ?? [];
+      if (!Array.isArray(orders)) orders = orders?.orders ?? [];
+      const idx = orders.findIndex((o: any) => o.id === orderId);
+      if (idx === -1) {
+        res.statusCode = 404;
+        res.setHeader("Content-Type", "application/json");
+        res.end(JSON.stringify({ error: "Order not found" }));
+        return;
+      }
+      orders[idx].status = body.status;
+      await writeFile(conversionsPath, JSON.stringify(orders, null, 2));
+      res.setHeader("Content-Type", "application/json");
+      res.end(JSON.stringify({ ok: true, order: orders[idx] }));
+    } catch (err) {
+      res.setHeader("Content-Type", "application/json");
+      res.statusCode = 500;
+      res.end(JSON.stringify({ error: String(err) }));
+    }
+  });
+
+  // --- Contacts list ---
+  api.registerHttpRoute({
+    auth: "gateway",
+    path: "/mabos/api/erp/contacts",
+    handler: async (_req, res) => {
+      if (!(await requireAuth(_req, res))) return;
+      try {
+        const { join } = await import("node:path");
+        const personasPath = join(bizDir, "sales-personas.json");
+        let contacts = (await readJsonSafe(personasPath)) ?? [];
+        if (!Array.isArray(contacts)) contacts = contacts?.personas ?? contacts?.contacts ?? [];
+        if (contacts.length === 0) {
+          contacts = [
+            {
+              id: "CON-001",
+              name: "Aria Chen",
+              email: "aria@designstudio.co",
+              type: "wholesale",
+              lifetime_value: 4200,
+            },
+            {
+              id: "CON-002",
+              name: "Marcus Webb",
+              email: "marcus@interiorsplus.com",
+              type: "retail",
+              lifetime_value: 1350,
+            },
+            {
+              id: "CON-003",
+              name: "Lina Petrova",
+              email: "lina.p@artcollective.eu",
+              type: "wholesale",
+              lifetime_value: 8900,
+            },
+            {
+              id: "CON-004",
+              name: "James Okafor",
+              email: "james@okafor.ng",
+              type: "retail",
+              lifetime_value: 670,
+            },
+            {
+              id: "CON-005",
+              name: "Sophie Laurent",
+              email: "sophie@maisonlaurent.fr",
+              type: "wholesale",
+              lifetime_value: 12400,
+            },
+          ];
+        }
+        res.setHeader("Content-Type", "application/json");
+        res.end(JSON.stringify({ contacts }));
+      } catch (err) {
+        res.setHeader("Content-Type", "application/json");
+        res.statusCode = 500;
+        res.end(JSON.stringify({ error: String(err) }));
+      }
+    },
+  });
+
+  // --- Contacts search ---
+  api.registerHttpRoute({
+    auth: "gateway",
+    path: "/mabos/api/erp/contacts/search",
+    handler: async (_req, res) => {
+      if (!(await requireAuth(_req, res))) return;
+      try {
+        const { join } = await import("node:path");
+        const url = new URL(_req.url || "", "http://localhost");
+        const q = (url.searchParams.get("q") || "").toLowerCase();
+        const personasPath = join(bizDir, "sales-personas.json");
+        let contacts = (await readJsonSafe(personasPath)) ?? [];
+        if (!Array.isArray(contacts)) contacts = contacts?.personas ?? contacts?.contacts ?? [];
+        if (contacts.length === 0) {
+          contacts = [
+            {
+              id: "CON-001",
+              name: "Aria Chen",
+              email: "aria@designstudio.co",
+              type: "wholesale",
+              lifetime_value: 4200,
+            },
+            {
+              id: "CON-002",
+              name: "Marcus Webb",
+              email: "marcus@interiorsplus.com",
+              type: "retail",
+              lifetime_value: 1350,
+            },
+            {
+              id: "CON-003",
+              name: "Lina Petrova",
+              email: "lina.p@artcollective.eu",
+              type: "wholesale",
+              lifetime_value: 8900,
+            },
+            {
+              id: "CON-004",
+              name: "James Okafor",
+              email: "james@okafor.ng",
+              type: "retail",
+              lifetime_value: 670,
+            },
+            {
+              id: "CON-005",
+              name: "Sophie Laurent",
+              email: "sophie@maisonlaurent.fr",
+              type: "wholesale",
+              lifetime_value: 12400,
+            },
+          ];
+        }
+        const results = q
+          ? contacts.filter(
+              (c: any) =>
+                (c.name || "").toLowerCase().includes(q) ||
+                (c.email || "").toLowerCase().includes(q),
+            )
+          : contacts;
+        res.setHeader("Content-Type", "application/json");
+        res.end(JSON.stringify({ contacts: results }));
+      } catch (err) {
+        res.setHeader("Content-Type", "application/json");
+        res.statusCode = 500;
+        res.end(JSON.stringify({ error: String(err) }));
+      }
+    },
+  });
+
+  // --- Single contact ---
+  registerParamRoute("/mabos/api/erp/contacts/:id", async (req, res) => {
+    try {
+      const { join } = await import("node:path");
+      const url = new URL(req.url || "", "http://localhost");
+      const contactId = url.pathname.split("/").pop() || "";
+      const personasPath = join(bizDir, "sales-personas.json");
+      let contacts = (await readJsonSafe(personasPath)) ?? [];
+      if (!Array.isArray(contacts)) contacts = contacts?.personas ?? contacts?.contacts ?? [];
+      if (contacts.length === 0) {
+        contacts = [
+          {
+            id: "CON-001",
+            name: "Aria Chen",
+            email: "aria@designstudio.co",
+            type: "wholesale",
+            lifetime_value: 4200,
+          },
+          {
+            id: "CON-002",
+            name: "Marcus Webb",
+            email: "marcus@interiorsplus.com",
+            type: "retail",
+            lifetime_value: 1350,
+          },
+          {
+            id: "CON-003",
+            name: "Lina Petrova",
+            email: "lina.p@artcollective.eu",
+            type: "wholesale",
+            lifetime_value: 8900,
+          },
+        ];
+      }
+      const contact = contacts.find((c: any) => c.id === contactId);
+      if (!contact) {
+        res.statusCode = 404;
+        res.setHeader("Content-Type", "application/json");
+        res.end(JSON.stringify({ error: "Contact not found" }));
+        return;
+      }
+      res.setHeader("Content-Type", "application/json");
+      res.end(JSON.stringify({ contact }));
+    } catch (err) {
+      res.setHeader("Content-Type", "application/json");
+      res.statusCode = 500;
+      res.end(JSON.stringify({ error: String(err) }));
+    }
+  });
+
+  // --- Inventory: Items ---
+  api.registerHttpRoute({
+    auth: "gateway",
+    path: "/mabos/api/erp/inventory/items",
+    handler: async (_req, res) => {
+      if (!(await requireAuth(_req, res))) return;
+      try {
+        const { join } = await import("node:path");
+        const catalogPath = join(bizDir, "product-catalog-live.json");
+        const catalog = await readJsonSafe(catalogPath);
+        const raw = Array.isArray(catalog) ? catalog : (catalog?.products ?? catalog?.items ?? []);
+        const items = raw.map((p: any, i: number) => ({
+          id: p.id ?? p.sku ?? `INV-${String(i + 1).padStart(3, "0")}`,
+          name: p.name ?? p.title ?? "Unknown",
+          sku: p.sku ?? `VW-${String(i + 1).padStart(4, "0")}`,
+          stock: p.stock ?? p.quantity ?? Math.floor(Math.random() * 200),
+          reorder_point: p.reorder_point ?? 10,
+          unit_cost: p.unit_cost ?? p.cost ?? (p.price ? p.price * 0.4 : 25),
+        }));
+        res.setHeader("Content-Type", "application/json");
+        res.end(JSON.stringify({ items }));
+      } catch (err) {
+        res.setHeader("Content-Type", "application/json");
+        res.statusCode = 500;
+        res.end(JSON.stringify({ error: String(err) }));
+      }
+    },
+  });
+
+  // --- Inventory: Low-stock alerts ---
+  api.registerHttpRoute({
+    auth: "gateway",
+    path: "/mabos/api/erp/inventory/alerts",
+    handler: async (_req, res) => {
+      if (!(await requireAuth(_req, res))) return;
+      try {
+        const { join } = await import("node:path");
+        const catalogPath = join(bizDir, "product-catalog-live.json");
+        const catalog = await readJsonSafe(catalogPath);
+        const raw = Array.isArray(catalog) ? catalog : (catalog?.products ?? catalog?.items ?? []);
+        const alerts = raw
+          .map((p: any, i: number) => ({
+            id: p.id ?? `INV-${String(i + 1).padStart(3, "0")}`,
+            name: p.name ?? p.title ?? "Unknown",
+            stock: p.stock ?? p.quantity ?? Math.floor(Math.random() * 20),
+            reorder_point: p.reorder_point ?? 10,
+          }))
+          .filter((item: any) => item.stock <= item.reorder_point);
+
+        // Seed fallback if no catalog data
+        const finalAlerts =
+          alerts.length > 0
+            ? alerts
+            : [
+                { id: "INV-003", name: "Ocean Whisper Triptych", stock: 2, reorder_point: 10 },
+                { id: "INV-007", name: "Neon Skyline Poster", stock: 5, reorder_point: 15 },
+                { id: "INV-012", name: "Botanical Dreams Set", stock: 0, reorder_point: 8 },
+              ];
+        res.setHeader("Content-Type", "application/json");
+        res.end(JSON.stringify({ alerts: finalAlerts }));
+      } catch (err) {
+        res.setHeader("Content-Type", "application/json");
+        res.statusCode = 500;
+        res.end(JSON.stringify({ error: String(err) }));
+      }
+    },
+  });
+
+  // --- Inventory: Movements for a product ---
+  registerParamRoute("/mabos/api/erp/inventory/movements/:id", async (req, res) => {
+    try {
+      const url = new URL(req.url || "", "http://localhost");
+      const productId = url.pathname.split("/").pop() || "";
+      // Generate realistic movement history
+      const movements = [
+        {
+          id: "MOV-001",
+          product_id: productId,
+          type: "inbound",
+          qty: 50,
+          date: "2026-03-15",
+          source: "Supplier: ArtPrint Co.",
+        },
+        {
+          id: "MOV-002",
+          product_id: productId,
+          type: "outbound",
+          qty: 12,
+          date: "2026-03-18",
+          destination: "Order ORD-001",
+        },
+        {
+          id: "MOV-003",
+          product_id: productId,
+          type: "outbound",
+          qty: 8,
+          date: "2026-03-22",
+          destination: "Order ORD-003",
+        },
+        {
+          id: "MOV-004",
+          product_id: productId,
+          type: "adjustment",
+          qty: -2,
+          date: "2026-03-25",
+          reason: "Damaged in transit",
+        },
+        {
+          id: "MOV-005",
+          product_id: productId,
+          type: "inbound",
+          qty: 30,
+          date: "2026-04-01",
+          source: "Supplier: CanvasWorld",
+        },
+      ];
+      res.setHeader("Content-Type", "application/json");
+      res.end(JSON.stringify({ movements }));
+    } catch (err) {
+      res.setHeader("Content-Type", "application/json");
+      res.statusCode = 500;
+      res.end(JSON.stringify({ error: String(err) }));
+    }
+  });
+
+  // --- Suppliers list ---
+  api.registerHttpRoute({
+    auth: "gateway",
+    path: "/mabos/api/erp/suppliers",
+    handler: async (_req, res) => {
+      if (!(await requireAuth(_req, res))) return;
+      try {
+        const suppliers = [
+          {
+            id: "SUP-001",
+            name: "ArtPrint Co.",
+            contact: "orders@artprint.co",
+            category: "canvas-printing",
+            lead_time_days: 5,
+            rating: 4.8,
+          },
+          {
+            id: "SUP-002",
+            name: "CanvasWorld",
+            contact: "supply@canvasworld.com",
+            category: "raw-materials",
+            lead_time_days: 7,
+            rating: 4.5,
+          },
+          {
+            id: "SUP-003",
+            name: "FrameCraft Ltd.",
+            contact: "b2b@framecraft.co.uk",
+            category: "framing",
+            lead_time_days: 10,
+            rating: 4.7,
+          },
+          {
+            id: "SUP-004",
+            name: "EcoPack Solutions",
+            contact: "hello@ecopack.io",
+            category: "packaging",
+            lead_time_days: 3,
+            rating: 4.9,
+          },
+          {
+            id: "SUP-005",
+            name: "ChromaInk Supplies",
+            contact: "sales@chromaink.com",
+            category: "printing-ink",
+            lead_time_days: 4,
+            rating: 4.3,
+          },
+        ];
+        res.setHeader("Content-Type", "application/json");
+        res.end(JSON.stringify({ suppliers }));
+      } catch (err) {
+        res.setHeader("Content-Type", "application/json");
+        res.statusCode = 500;
+        res.end(JSON.stringify({ error: String(err) }));
+      }
+    },
+  });
+
+  // --- Purchase orders ---
+  api.registerHttpRoute({
+    auth: "gateway",
+    path: "/mabos/api/erp/purchase-orders",
+    handler: async (_req, res) => {
+      if (!(await requireAuth(_req, res))) return;
+      try {
+        const orders = [
+          {
+            id: "PO-001",
+            supplier: "ArtPrint Co.",
+            items: [{ name: "Premium Canvas Roll 60in", qty: 20, unit_price: 45 }],
+            total: 900,
+            status: "delivered",
+            date: "2026-03-10",
+          },
+          {
+            id: "PO-002",
+            supplier: "FrameCraft Ltd.",
+            items: [{ name: "Oak Frame 24x36", qty: 50, unit_price: 18 }],
+            total: 900,
+            status: "in_transit",
+            date: "2026-03-28",
+          },
+          {
+            id: "PO-003",
+            supplier: "EcoPack Solutions",
+            items: [{ name: "Eco Mailer Box Large", qty: 200, unit_price: 2.5 }],
+            total: 500,
+            status: "pending",
+            date: "2026-04-02",
+          },
+          {
+            id: "PO-004",
+            supplier: "ChromaInk Supplies",
+            items: [{ name: "Archival Pigment Ink Set", qty: 10, unit_price: 85 }],
+            total: 850,
+            status: "delivered",
+            date: "2026-03-05",
+          },
+        ];
+        res.setHeader("Content-Type", "application/json");
+        res.end(JSON.stringify({ orders }));
+      } catch (err) {
+        res.setHeader("Content-Type", "application/json");
+        res.statusCode = 500;
+        res.end(JSON.stringify({ error: String(err) }));
+      }
+    },
+  });
+
+  // --- Single supplier ---
+  registerParamRoute("/mabos/api/erp/suppliers/:id", async (req, res) => {
+    try {
+      const url = new URL(req.url || "", "http://localhost");
+      const supplierId = url.pathname.split("/").pop() || "";
+      const suppliers = [
+        {
+          id: "SUP-001",
+          name: "ArtPrint Co.",
+          contact: "orders@artprint.co",
+          category: "canvas-printing",
+          lead_time_days: 5,
+          rating: 4.8,
+          address: "123 Print Ave, Portland OR",
+        },
+        {
+          id: "SUP-002",
+          name: "CanvasWorld",
+          contact: "supply@canvasworld.com",
+          category: "raw-materials",
+          lead_time_days: 7,
+          rating: 4.5,
+          address: "456 Canvas Blvd, Austin TX",
+        },
+        {
+          id: "SUP-003",
+          name: "FrameCraft Ltd.",
+          contact: "b2b@framecraft.co.uk",
+          category: "framing",
+          lead_time_days: 10,
+          rating: 4.7,
+          address: "78 Craft Lane, London UK",
+        },
+        {
+          id: "SUP-004",
+          name: "EcoPack Solutions",
+          contact: "hello@ecopack.io",
+          category: "packaging",
+          lead_time_days: 3,
+          rating: 4.9,
+          address: "90 Green St, Denver CO",
+        },
+        {
+          id: "SUP-005",
+          name: "ChromaInk Supplies",
+          contact: "sales@chromaink.com",
+          category: "printing-ink",
+          lead_time_days: 4,
+          rating: 4.3,
+          address: "22 Ink Row, Seattle WA",
+        },
+      ];
+      const supplier = suppliers.find((s) => s.id === supplierId);
+      if (!supplier) {
+        res.statusCode = 404;
+        res.setHeader("Content-Type", "application/json");
+        res.end(JSON.stringify({ error: "Supplier not found" }));
+        return;
+      }
+      res.setHeader("Content-Type", "application/json");
+      res.end(JSON.stringify({ supplier }));
+    } catch (err) {
+      res.setHeader("Content-Type", "application/json");
+      res.statusCode = 500;
+      res.end(JSON.stringify({ error: String(err) }));
+    }
+  });
+
+  // --- Supply Chain: Shipments list ---
+  api.registerHttpRoute({
+    auth: "gateway",
+    path: "/mabos/api/erp/shipments",
+    handler: async (_req, res) => {
+      if (!(await requireAuth(_req, res))) return;
+      try {
+        const shipments = [
+          {
+            id: "SHP-001",
+            order_id: "ORD-001",
+            carrier: "FedEx",
+            tracking: "FX9283746501",
+            status: "in_transit",
+            origin: "Portland OR",
+            destination: "San Francisco CA",
+            eta: "2026-04-05",
+          },
+          {
+            id: "SHP-002",
+            order_id: "ORD-003",
+            carrier: "UPS",
+            tracking: "1Z999AA10123456784",
+            status: "delivered",
+            origin: "Portland OR",
+            destination: "Paris FR",
+            eta: "2026-03-27",
+          },
+          {
+            id: "SHP-003",
+            order_id: "ORD-005",
+            carrier: "DHL",
+            tracking: "DHL1234567890",
+            status: "in_transit",
+            origin: "Portland OR",
+            destination: "Lyon FR",
+            eta: "2026-04-06",
+          },
+          {
+            id: "SHP-004",
+            order_id: "PO-002",
+            carrier: "FreightCo",
+            tracking: "FC00228374",
+            status: "in_transit",
+            origin: "London UK",
+            destination: "Portland OR",
+            eta: "2026-04-08",
+          },
+        ];
+        res.setHeader("Content-Type", "application/json");
+        res.end(JSON.stringify({ shipments }));
+      } catch (err) {
+        res.setHeader("Content-Type", "application/json");
+        res.statusCode = 500;
+        res.end(JSON.stringify({ error: String(err) }));
+      }
+    },
+  });
+
+  // --- Supply Chain: Single shipment ---
+  registerParamRoute("/mabos/api/erp/shipments/:id", async (req, res) => {
+    try {
+      const url = new URL(req.url || "", "http://localhost");
+      const shipmentId = url.pathname.split("/").pop() || "";
+      const shipments = [
+        {
+          id: "SHP-001",
+          order_id: "ORD-001",
+          carrier: "FedEx",
+          tracking: "FX9283746501",
+          status: "in_transit",
+          origin: "Portland OR",
+          destination: "San Francisco CA",
+          eta: "2026-04-05",
+          items: [{ name: "Midnight Bloom Canvas", qty: 1 }],
+        },
+        {
+          id: "SHP-002",
+          order_id: "ORD-003",
+          carrier: "UPS",
+          tracking: "1Z999AA10123456784",
+          status: "delivered",
+          origin: "Portland OR",
+          destination: "Paris FR",
+          eta: "2026-03-27",
+          items: [{ name: "Ocean Whisper Triptych", qty: 1 }],
+        },
+        {
+          id: "SHP-003",
+          order_id: "ORD-005",
+          carrier: "DHL",
+          tracking: "DHL1234567890",
+          status: "in_transit",
+          origin: "Portland OR",
+          destination: "Lyon FR",
+          eta: "2026-04-06",
+          items: [{ name: "Abstract Harmony XL", qty: 1 }],
+        },
+      ];
+      const shipment = shipments.find((s) => s.id === shipmentId);
+      if (!shipment) {
+        res.statusCode = 404;
+        res.setHeader("Content-Type", "application/json");
+        res.end(JSON.stringify({ error: "Shipment not found" }));
+        return;
+      }
+      res.setHeader("Content-Type", "application/json");
+      res.end(JSON.stringify({ shipment }));
+    } catch (err) {
+      res.setHeader("Content-Type", "application/json");
+      res.statusCode = 500;
+      res.end(JSON.stringify({ error: String(err) }));
+    }
+  });
+
+  // --- Supply Chain: Routes ---
+  api.registerHttpRoute({
+    auth: "gateway",
+    path: "/mabos/api/erp/routes",
+    handler: async (_req, res) => {
+      if (!(await requireAuth(_req, res))) return;
+      try {
+        const routes = [
+          {
+            id: "RT-001",
+            name: "US West Coast",
+            origin: "Portland OR",
+            destinations: ["San Francisco CA", "Los Angeles CA", "Seattle WA"],
+            carrier: "FedEx",
+            avg_days: 3,
+          },
+          {
+            id: "RT-002",
+            name: "US East Coast",
+            origin: "Portland OR",
+            destinations: ["New York NY", "Miami FL", "Boston MA"],
+            carrier: "UPS",
+            avg_days: 5,
+          },
+          {
+            id: "RT-003",
+            name: "Europe Express",
+            origin: "Portland OR",
+            destinations: ["London UK", "Paris FR", "Berlin DE"],
+            carrier: "DHL",
+            avg_days: 8,
+          },
+          {
+            id: "RT-004",
+            name: "Inbound Supplier",
+            origin: "Various",
+            destinations: ["Portland OR"],
+            carrier: "FreightCo",
+            avg_days: 7,
+          },
+        ];
+        res.setHeader("Content-Type", "application/json");
+        res.end(JSON.stringify({ routes }));
+      } catch (err) {
+        res.setHeader("Content-Type", "application/json");
+        res.statusCode = 500;
+        res.end(JSON.stringify({ error: String(err) }));
+      }
+    },
+  });
+
+  // --- Legal: Partnership contracts ---
+  api.registerHttpRoute({
+    auth: "gateway",
+    path: "/mabos/api/erp/legal/contracts/partnership",
+    handler: async (_req, res) => {
+      if (!(await requireAuth(_req, res))) return;
+      try {
+        const contracts = [
+          {
+            id: "LC-P001",
+            title: "ArtPrint Co. Supply Agreement",
+            counterparty: "ArtPrint Co.",
+            type: "partnership",
+            status: "active",
+            start: "2025-06-01",
+            end: "2027-06-01",
+            value: 120000,
+          },
+          {
+            id: "LC-P002",
+            title: "FrameCraft Exclusive Distribution",
+            counterparty: "FrameCraft Ltd.",
+            type: "partnership",
+            status: "active",
+            start: "2025-09-15",
+            end: "2026-09-15",
+            value: 85000,
+          },
+          {
+            id: "LC-P003",
+            title: "EcoPack Sustainability Initiative",
+            counterparty: "EcoPack Solutions",
+            type: "partnership",
+            status: "under_review",
+            start: "2026-04-01",
+            end: "2028-04-01",
+            value: 45000,
+          },
+        ];
+        res.setHeader("Content-Type", "application/json");
+        res.end(JSON.stringify({ contracts }));
+      } catch (err) {
+        res.setHeader("Content-Type", "application/json");
+        res.statusCode = 500;
+        res.end(JSON.stringify({ error: String(err) }));
+      }
+    },
+  });
+
+  // --- Legal: Freelancer contracts ---
+  api.registerHttpRoute({
+    auth: "gateway",
+    path: "/mabos/api/erp/legal/contracts/freelancer",
+    handler: async (_req, res) => {
+      if (!(await requireAuth(_req, res))) return;
+      try {
+        const contracts = [
+          {
+            id: "LC-F001",
+            title: "Digital Art Commission",
+            contractor: "Elena Rossi",
+            type: "freelancer",
+            status: "active",
+            start: "2026-01-15",
+            end: "2026-07-15",
+            rate: "150/hr",
+            scope: "Original digital artwork for seasonal collections",
+          },
+          {
+            id: "LC-F002",
+            title: "Photography Services",
+            contractor: "David Kim",
+            type: "freelancer",
+            status: "active",
+            start: "2026-02-01",
+            end: "2026-12-31",
+            rate: "200/hr",
+            scope: "Product photography and lifestyle shoots",
+          },
+          {
+            id: "LC-F003",
+            title: "Brand Copywriting",
+            contractor: "Mia Torres",
+            type: "freelancer",
+            status: "completed",
+            start: "2025-10-01",
+            end: "2026-03-31",
+            rate: "95/hr",
+            scope: "Product descriptions and brand storytelling",
+          },
+        ];
+        res.setHeader("Content-Type", "application/json");
+        res.end(JSON.stringify({ contracts }));
+      } catch (err) {
+        res.setHeader("Content-Type", "application/json");
+        res.statusCode = 500;
+        res.end(JSON.stringify({ error: String(err) }));
+      }
+    },
+  });
+
+  // --- Legal: Documents ---
+  api.registerHttpRoute({
+    auth: "gateway",
+    path: "/mabos/api/erp/legal/documents",
+    handler: async (_req, res) => {
+      if (!(await requireAuth(_req, res))) return;
+      try {
+        const documents = [
+          {
+            id: "LD-001",
+            title: "Terms of Service",
+            category: "customer-facing",
+            version: "2.1",
+            last_updated: "2026-02-15",
+            status: "published",
+          },
+          {
+            id: "LD-002",
+            title: "Privacy Policy",
+            category: "customer-facing",
+            version: "3.0",
+            last_updated: "2026-01-20",
+            status: "published",
+          },
+          {
+            id: "LD-003",
+            title: "Return & Refund Policy",
+            category: "customer-facing",
+            version: "1.4",
+            last_updated: "2025-11-10",
+            status: "published",
+          },
+          {
+            id: "LD-004",
+            title: "Intellectual Property Policy",
+            category: "internal",
+            version: "1.0",
+            last_updated: "2025-08-01",
+            status: "draft",
+          },
+          {
+            id: "LD-005",
+            title: "Supplier Code of Conduct",
+            category: "supplier",
+            version: "1.2",
+            last_updated: "2026-03-01",
+            status: "published",
+          },
+        ];
+        res.setHeader("Content-Type", "application/json");
+        res.end(JSON.stringify({ documents }));
+      } catch (err) {
+        res.setHeader("Content-Type", "application/json");
+        res.statusCode = 500;
+        res.end(JSON.stringify({ error: String(err) }));
+      }
+    },
+  });
+
+  // --- Legal: Structure ---
+  api.registerHttpRoute({
+    auth: "gateway",
+    path: "/mabos/api/erp/legal/structure",
+    handler: async (_req, res) => {
+      if (!(await requireAuth(_req, res))) return;
+      try {
+        const structure = {
+          entity_name: "VividWalls LLC",
+          jurisdiction: "Oregon, United States",
+          formation_date: "2024-03-15",
+          type: "Limited Liability Company",
+          registered_agent: "Northwest Registered Agent",
+          ein: "XX-XXXXXXX",
+          members: [{ name: "Founding Member", role: "Managing Member", ownership: "100%" }],
+          licenses: [
+            {
+              type: "Business License",
+              jurisdiction: "Portland, OR",
+              status: "active",
+              renewal: "2027-03-15",
+            },
+            {
+              type: "Sales Tax Permit",
+              jurisdiction: "Oregon",
+              status: "active",
+              renewal: "2026-12-31",
+            },
+          ],
+        };
+        res.setHeader("Content-Type", "application/json");
+        res.end(JSON.stringify(structure));
+      } catch (err) {
+        res.setHeader("Content-Type", "application/json");
+        res.statusCode = 500;
+        res.end(JSON.stringify({ error: String(err) }));
+      }
+    },
+  });
+
+  // --- Legal: Guardrails ---
+  api.registerHttpRoute({
+    auth: "gateway",
+    path: "/mabos/api/erp/legal/guardrails",
+    handler: async (_req, res) => {
+      if (!(await requireAuth(_req, res))) return;
+      try {
+        const guardrails = [
+          {
+            id: "GR-001",
+            rule: "All artwork must have verified licensing before listing",
+            category: "intellectual-property",
+            severity: "critical",
+          },
+          {
+            id: "GR-002",
+            rule: "Customer data must be encrypted at rest and in transit",
+            category: "data-privacy",
+            severity: "critical",
+          },
+          {
+            id: "GR-003",
+            rule: "Refund requests must be processed within 14 business days",
+            category: "consumer-protection",
+            severity: "high",
+          },
+          {
+            id: "GR-004",
+            rule: "Supplier contracts require legal review for amounts over $10,000",
+            category: "procurement",
+            severity: "high",
+          },
+          {
+            id: "GR-005",
+            rule: "Marketing claims must be substantiated and non-deceptive",
+            category: "advertising",
+            severity: "medium",
+          },
+          {
+            id: "GR-006",
+            rule: "International shipments must comply with destination customs regulations",
+            category: "trade-compliance",
+            severity: "high",
+          },
+        ];
+        res.setHeader("Content-Type", "application/json");
+        res.end(JSON.stringify({ guardrails }));
+      } catch (err) {
+        res.setHeader("Content-Type", "application/json");
+        res.statusCode = 500;
+        res.end(JSON.stringify({ error: String(err) }));
+      }
+    },
+  });
+
+  // --- Marketing: Campaigns ---
+  api.registerHttpRoute({
+    auth: "gateway",
+    path: "/mabos/api/erp/marketing/campaigns",
+    handler: async (_req, res) => {
+      if (!(await requireAuth(_req, res))) return;
+      try {
+        const { join } = await import("node:path");
+        const marketingPath = join(bizDir, "marketing.json");
+        const marketing = await readJsonSafe(marketingPath);
+        let campaigns = marketing?.campaigns ?? [];
+        if (campaigns.length === 0) {
+          campaigns = [
+            {
+              id: "MC-001",
+              name: "Spring Collection Launch",
+              channel: "instagram",
+              status: "active",
+              budget: 5000,
+              spent: 3200,
+              start: "2026-03-15",
+              end: "2026-04-15",
+            },
+            {
+              id: "MC-002",
+              name: "Home Office Refresh",
+              channel: "google-ads",
+              status: "active",
+              budget: 8000,
+              spent: 4100,
+              start: "2026-03-01",
+              end: "2026-05-01",
+            },
+            {
+              id: "MC-003",
+              name: "Earth Day Eco Collection",
+              channel: "email",
+              status: "scheduled",
+              budget: 2000,
+              spent: 0,
+              start: "2026-04-15",
+              end: "2026-04-30",
+            },
+            {
+              id: "MC-004",
+              name: "Influencer Collab Q1",
+              channel: "tiktok",
+              status: "completed",
+              budget: 12000,
+              spent: 11800,
+              start: "2026-01-10",
+              end: "2026-03-10",
+            },
+          ];
+        }
+        res.setHeader("Content-Type", "application/json");
+        res.end(JSON.stringify({ campaigns }));
+      } catch (err) {
+        res.setHeader("Content-Type", "application/json");
+        res.statusCode = 500;
+        res.end(JSON.stringify({ error: String(err) }));
+      }
+    },
+  });
+
+  // --- Marketing: Campaign metrics ---
+  registerParamRoute("/mabos/api/erp/marketing/campaigns/:id/metrics", async (req, res) => {
+    try {
+      const url = new URL(req.url || "", "http://localhost");
+      const segments = url.pathname.split("/");
+      // .../campaigns/:id/metrics → id is at segments.length - 2
+      const campaignId = segments[segments.length - 2];
+      const metrics = {
+        campaign_id: campaignId,
+        impressions: 145000,
+        clicks: 4350,
+        ctr: 3.0,
+        conversions: 87,
+        conversion_rate: 2.0,
+        revenue_attributed: 15660,
+        cost_per_acquisition: 36.78,
+        roas: 4.89,
+        period: { from: "2026-03-15", to: "2026-04-04" },
+      };
+      res.setHeader("Content-Type", "application/json");
+      res.end(JSON.stringify(metrics));
+    } catch (err) {
+      res.setHeader("Content-Type", "application/json");
+      res.statusCode = 500;
+      res.end(JSON.stringify({ error: String(err) }));
+    }
+  });
+
+  // --- Marketing: KPIs ---
+  api.registerHttpRoute({
+    auth: "gateway",
+    path: "/mabos/api/erp/marketing/kpis",
+    handler: async (_req, res) => {
+      if (!(await requireAuth(_req, res))) return;
+      try {
+        const { join } = await import("node:path");
+        const kpisPath = join(bizDir, "kpis.json");
+        let kpis = await readJsonSafe(kpisPath);
+        if (!kpis || (Array.isArray(kpis) && kpis.length === 0)) {
+          kpis = [
+            {
+              id: "KPI-001",
+              name: "Monthly Revenue",
+              value: 42500,
+              target: 50000,
+              unit: "USD",
+              trend: "up",
+            },
+            {
+              id: "KPI-002",
+              name: "Customer Acquisition Cost",
+              value: 34.2,
+              target: 30,
+              unit: "USD",
+              trend: "down",
+            },
+            {
+              id: "KPI-003",
+              name: "Average Order Value",
+              value: 178,
+              target: 160,
+              unit: "USD",
+              trend: "up",
+            },
+            {
+              id: "KPI-004",
+              name: "Email List Growth Rate",
+              value: 4.2,
+              target: 5,
+              unit: "%",
+              trend: "stable",
+            },
+            {
+              id: "KPI-005",
+              name: "Social Media Engagement",
+              value: 6.8,
+              target: 5,
+              unit: "%",
+              trend: "up",
+            },
+          ];
+        }
+        const result = Array.isArray(kpis) ? kpis : (kpis?.kpis ?? [kpis]);
+        res.setHeader("Content-Type", "application/json");
+        res.end(JSON.stringify({ kpis: result }));
+      } catch (err) {
+        res.setHeader("Content-Type", "application/json");
+        res.statusCode = 500;
+        res.end(JSON.stringify({ error: String(err) }));
+      }
+    },
+  });
+
+  // --- Analytics: Reports list ---
+  api.registerHttpRoute({
+    auth: "gateway",
+    path: "/mabos/api/erp/analytics/reports",
+    handler: async (_req, res) => {
+      if (!(await requireAuth(_req, res))) return;
+      try {
+        const reports = [
+          {
+            id: "RPT-001",
+            name: "Monthly Sales Summary",
+            type: "sales",
+            frequency: "monthly",
+            last_run: "2026-04-01",
+            status: "ready",
+          },
+          {
+            id: "RPT-002",
+            name: "Customer Cohort Analysis",
+            type: "customer",
+            frequency: "quarterly",
+            last_run: "2026-03-31",
+            status: "ready",
+          },
+          {
+            id: "RPT-003",
+            name: "Inventory Turnover Report",
+            type: "inventory",
+            frequency: "weekly",
+            last_run: "2026-04-03",
+            status: "ready",
+          },
+          {
+            id: "RPT-004",
+            name: "Marketing ROI Dashboard",
+            type: "marketing",
+            frequency: "monthly",
+            last_run: "2026-04-01",
+            status: "ready",
+          },
+          {
+            id: "RPT-005",
+            name: "Supplier Performance Review",
+            type: "procurement",
+            frequency: "quarterly",
+            last_run: "2026-03-31",
+            status: "stale",
+          },
+        ];
+        res.setHeader("Content-Type", "application/json");
+        res.end(JSON.stringify({ reports }));
+      } catch (err) {
+        res.setHeader("Content-Type", "application/json");
+        res.statusCode = 500;
+        res.end(JSON.stringify({ error: String(err) }));
+      }
+    },
+  });
+
+  // --- Analytics: Report snapshots ---
+  registerParamRoute("/mabos/api/erp/analytics/reports/:id/snapshots", async (req, res) => {
+    try {
+      const url = new URL(req.url || "", "http://localhost");
+      const segments = url.pathname.split("/");
+      const reportId = segments[segments.length - 2];
+      const snapshots = [
+        {
+          id: `${reportId}-S1`,
+          report_id: reportId,
+          generated_at: "2026-04-01T08:00:00Z",
+          rows: 142,
+          summary: "Revenue up 12% MoM",
+        },
+        {
+          id: `${reportId}-S2`,
+          report_id: reportId,
+          generated_at: "2026-03-01T08:00:00Z",
+          rows: 128,
+          summary: "Steady growth trajectory",
+        },
+        {
+          id: `${reportId}-S3`,
+          report_id: reportId,
+          generated_at: "2026-02-01T08:00:00Z",
+          rows: 115,
+          summary: "Post-holiday normalization",
+        },
+      ];
+      res.setHeader("Content-Type", "application/json");
+      res.end(JSON.stringify({ snapshots }));
+    } catch (err) {
+      res.setHeader("Content-Type", "application/json");
+      res.statusCode = 500;
+      res.end(JSON.stringify({ error: String(err) }));
+    }
+  });
+
+  // --- Analytics: Dashboards ---
+  api.registerHttpRoute({
+    auth: "gateway",
+    path: "/mabos/api/erp/analytics/dashboards",
+    handler: async (_req, res) => {
+      if (!(await requireAuth(_req, res))) return;
+      try {
+        const dashboards = [
+          {
+            id: "DASH-001",
+            name: "Executive Overview",
+            widgets: ["revenue-chart", "orders-funnel", "top-products", "customer-map"],
+            updated_at: "2026-04-04T06:00:00Z",
+          },
+          {
+            id: "DASH-002",
+            name: "Operations Hub",
+            widgets: [
+              "inventory-levels",
+              "shipment-tracker",
+              "supplier-status",
+              "fulfillment-rate",
+            ],
+            updated_at: "2026-04-04T06:00:00Z",
+          },
+          {
+            id: "DASH-003",
+            name: "Marketing Command Center",
+            widgets: [
+              "campaign-performance",
+              "channel-attribution",
+              "social-engagement",
+              "email-metrics",
+            ],
+            updated_at: "2026-04-04T06:00:00Z",
+          },
+        ];
+        res.setHeader("Content-Type", "application/json");
+        res.end(JSON.stringify({ dashboards }));
+      } catch (err) {
+        res.setHeader("Content-Type", "application/json");
+        res.statusCode = 500;
+        res.end(JSON.stringify({ error: String(err) }));
+      }
+    },
+  });
+
+  // --- Analytics: Run report ---
+  registerParamRoute("/mabos/api/erp/analytics/reports/:id/run", async (req, res) => {
+    if (req.method !== "POST") {
+      res.statusCode = 405;
+      res.setHeader("Content-Type", "application/json");
+      res.end(JSON.stringify({ error: "Method not allowed" }));
+      return;
+    }
+    try {
+      const url = new URL(req.url || "", "http://localhost");
+      const segments = url.pathname.split("/");
+      const reportId = segments[segments.length - 2];
+      res.setHeader("Content-Type", "application/json");
+      res.end(
+        JSON.stringify({
+          ok: true,
+          report_id: reportId,
+          status: "running",
+          started_at: new Date().toISOString(),
+        }),
+      );
+    } catch (err) {
+      res.setHeader("Content-Type", "application/json");
+      res.statusCode = 500;
+      res.end(JSON.stringify({ error: String(err) }));
+    }
+  });
+
+  // --- Accounting: Invoices ---
+  api.registerHttpRoute({
+    auth: "gateway",
+    path: "/mabos/api/erp/accounting/invoices",
+    handler: async (_req, res) => {
+      if (!(await requireAuth(_req, res))) return;
+      try {
+        const invoices = [
+          {
+            id: "INV-2026-001",
+            customer: "Aria Chen",
+            amount: 189.0,
+            status: "paid",
+            issued: "2026-03-28",
+            due: "2026-04-28",
+            paid_date: "2026-03-30",
+          },
+          {
+            id: "INV-2026-002",
+            customer: "Marcus Webb",
+            amount: 340.0,
+            status: "sent",
+            issued: "2026-03-30",
+            due: "2026-04-30",
+          },
+          {
+            id: "INV-2026-003",
+            customer: "Lina Petrova",
+            amount: 520.0,
+            status: "paid",
+            issued: "2026-03-25",
+            due: "2026-04-25",
+            paid_date: "2026-03-26",
+          },
+          {
+            id: "INV-2026-004",
+            customer: "James Okafor",
+            amount: 135.0,
+            status: "draft",
+            issued: "2026-04-01",
+            due: "2026-05-01",
+          },
+          {
+            id: "INV-2026-005",
+            customer: "Sophie Laurent",
+            amount: 275.0,
+            status: "sent",
+            issued: "2026-03-29",
+            due: "2026-04-29",
+          },
+        ];
+        res.setHeader("Content-Type", "application/json");
+        res.end(JSON.stringify({ invoices }));
+      } catch (err) {
+        res.setHeader("Content-Type", "application/json");
+        res.statusCode = 500;
+        res.end(JSON.stringify({ error: String(err) }));
+      }
+    },
+  });
+
+  // --- Accounting: Chart of accounts ---
+  api.registerHttpRoute({
+    auth: "gateway",
+    path: "/mabos/api/erp/accounting/accounts",
+    handler: async (_req, res) => {
+      if (!(await requireAuth(_req, res))) return;
+      try {
+        const accounts = [
+          { code: "1000", name: "Cash & Bank", type: "asset", balance: 87400 },
+          { code: "1200", name: "Accounts Receivable", type: "asset", balance: 15200 },
+          { code: "1400", name: "Inventory", type: "asset", balance: 34600 },
+          { code: "2000", name: "Accounts Payable", type: "liability", balance: 12300 },
+          { code: "2100", name: "Sales Tax Payable", type: "liability", balance: 2890 },
+          { code: "3000", name: "Owner Equity", type: "equity", balance: 100000 },
+          { code: "4000", name: "Product Revenue", type: "revenue", balance: 185000 },
+          { code: "5000", name: "Cost of Goods Sold", type: "expense", balance: 74000 },
+          { code: "6000", name: "Operating Expenses", type: "expense", balance: 38500 },
+          { code: "6100", name: "Marketing & Advertising", type: "expense", balance: 18200 },
+        ];
+        res.setHeader("Content-Type", "application/json");
+        res.end(JSON.stringify({ accounts }));
+      } catch (err) {
+        res.setHeader("Content-Type", "application/json");
+        res.statusCode = 500;
+        res.end(JSON.stringify({ error: String(err) }));
+      }
+    },
+  });
+
+  // --- Accounting: Profit & Loss ---
+  api.registerHttpRoute({
+    auth: "gateway",
+    path: "/mabos/api/erp/accounting/profit-loss",
+    handler: async (_req, res) => {
+      if (!(await requireAuth(_req, res))) return;
+      try {
+        const url = new URL(_req.url || "", "http://localhost");
+        const from = url.searchParams.get("from") || "2026-01-01";
+        const to = url.searchParams.get("to") || "2026-03-31";
+        const statement = {
+          period: { from, to },
+          revenue: { product_sales: 185000, shipping_income: 4200, total: 189200 },
+          cost_of_goods: { materials: 42000, printing: 22000, framing: 10000, total: 74000 },
+          gross_profit: 115200,
+          operating_expenses: {
+            marketing: 18200,
+            payroll: 12000,
+            rent: 4500,
+            software: 2800,
+            shipping: 8400,
+            misc: 1600,
+            total: 47500,
+          },
+          net_income: 67700,
+        };
+        res.setHeader("Content-Type", "application/json");
+        res.end(JSON.stringify(statement));
+      } catch (err) {
+        res.setHeader("Content-Type", "application/json");
+        res.statusCode = 500;
+        res.end(JSON.stringify({ error: String(err) }));
+      }
+    },
+  });
+
+  // --- Accounting: Balance Sheet ---
+  api.registerHttpRoute({
+    auth: "gateway",
+    path: "/mabos/api/erp/accounting/balance-sheet",
+    handler: async (_req, res) => {
+      if (!(await requireAuth(_req, res))) return;
+      try {
+        const statement = {
+          as_of: "2026-04-04",
+          assets: {
+            current: {
+              cash: 87400,
+              accounts_receivable: 15200,
+              inventory: 34600,
+              prepaid: 3200,
+              total: 140400,
+            },
+            fixed: { equipment: 18000, furniture: 5500, less_depreciation: -4700, total: 18800 },
+            total: 159200,
+          },
+          liabilities: {
+            current: {
+              accounts_payable: 12300,
+              sales_tax: 2890,
+              accrued_expenses: 4100,
+              total: 19290,
+            },
+            long_term: { loan: 0, total: 0 },
+            total: 19290,
+          },
+          equity: { owner_equity: 100000, retained_earnings: 39910, total: 139910 },
+        };
+        res.setHeader("Content-Type", "application/json");
+        res.end(JSON.stringify(statement));
+      } catch (err) {
+        res.setHeader("Content-Type", "application/json");
+        res.statusCode = 500;
+        res.end(JSON.stringify({ error: String(err) }));
+      }
+    },
+  });
+
+  // --- Accounting: Cash Flow ---
+  api.registerHttpRoute({
+    auth: "gateway",
+    path: "/mabos/api/erp/accounting/cash-flow",
+    handler: async (_req, res) => {
+      if (!(await requireAuth(_req, res))) return;
+      try {
+        const url = new URL(_req.url || "", "http://localhost");
+        const from = url.searchParams.get("from") || "2026-01-01";
+        const to = url.searchParams.get("to") || "2026-03-31";
+        const statement = {
+          period: { from, to },
+          operating: {
+            net_income: 67700,
+            depreciation: 1175,
+            change_ar: -3200,
+            change_inventory: -5400,
+            change_ap: 2100,
+            net_cash_operating: 62375,
+          },
+          investing: { equipment_purchases: -4500, net_cash_investing: -4500 },
+          financing: { owner_draws: -8000, net_cash_financing: -8000 },
+          net_change: 49875,
+          beginning_cash: 37525,
+          ending_cash: 87400,
+        };
+        res.setHeader("Content-Type", "application/json");
+        res.end(JSON.stringify(statement));
+      } catch (err) {
+        res.setHeader("Content-Type", "application/json");
+        res.statusCode = 500;
+        res.end(JSON.stringify({ error: String(err) }));
+      }
+    },
+  });
+
+  // --- Accounting: Expense Report ---
+  api.registerHttpRoute({
+    auth: "gateway",
+    path: "/mabos/api/erp/accounting/expense-report",
+    handler: async (_req, res) => {
+      if (!(await requireAuth(_req, res))) return;
+      try {
+        const url = new URL(_req.url || "", "http://localhost");
+        const from = url.searchParams.get("from") || "2026-01-01";
+        const to = url.searchParams.get("to") || "2026-03-31";
+        const statement = {
+          period: { from, to },
+          categories: [
+            { name: "Marketing & Advertising", amount: 18200, pct: 38.3 },
+            { name: "Payroll & Contractors", amount: 12000, pct: 25.3 },
+            { name: "Shipping & Fulfillment", amount: 8400, pct: 17.7 },
+            { name: "Rent & Utilities", amount: 4500, pct: 9.5 },
+            { name: "Software & Tools", amount: 2800, pct: 5.9 },
+            { name: "Miscellaneous", amount: 1600, pct: 3.4 },
+          ],
+          total: 47500,
+        };
+        res.setHeader("Content-Type", "application/json");
+        res.end(JSON.stringify(statement));
+      } catch (err) {
+        res.setHeader("Content-Type", "application/json");
+        res.statusCode = 500;
+        res.end(JSON.stringify({ error: String(err) }));
+      }
+    },
+  });
+
+  // --- Accounting: Budget vs Actual ---
+  api.registerHttpRoute({
+    auth: "gateway",
+    path: "/mabos/api/erp/accounting/budget-vs-actual",
+    handler: async (_req, res) => {
+      if (!(await requireAuth(_req, res))) return;
+      try {
+        const url = new URL(_req.url || "", "http://localhost");
+        const from = url.searchParams.get("from") || "2026-01-01";
+        const to = url.searchParams.get("to") || "2026-03-31";
+        const statement = {
+          period: { from, to },
+          line_items: [
+            {
+              category: "Revenue",
+              budget: 200000,
+              actual: 189200,
+              variance: -10800,
+              variance_pct: -5.4,
+            },
+            { category: "COGS", budget: 80000, actual: 74000, variance: 6000, variance_pct: 7.5 },
+            {
+              category: "Marketing",
+              budget: 20000,
+              actual: 18200,
+              variance: 1800,
+              variance_pct: 9.0,
+            },
+            {
+              category: "Payroll",
+              budget: 15000,
+              actual: 12000,
+              variance: 3000,
+              variance_pct: 20.0,
+            },
+            {
+              category: "Shipping",
+              budget: 10000,
+              actual: 8400,
+              variance: 1600,
+              variance_pct: 16.0,
+            },
+            { category: "Software", budget: 3000, actual: 2800, variance: 200, variance_pct: 6.7 },
+            { category: "Rent", budget: 4500, actual: 4500, variance: 0, variance_pct: 0 },
+          ],
+          summary: { total_budget: 132500, total_actual: 119900, net_variance: 12600 },
+        };
+        res.setHeader("Content-Type", "application/json");
+        res.end(JSON.stringify(statement));
+      } catch (err) {
+        res.setHeader("Content-Type", "application/json");
+        res.statusCode = 500;
+        res.end(JSON.stringify({ error: String(err) }));
+      }
+    },
+  });
+
+  // --- Compliance: Policies ---
+  api.registerHttpRoute({
+    auth: "gateway",
+    path: "/mabos/api/erp/compliance/policies",
+    handler: async (_req, res) => {
+      if (!(await requireAuth(_req, res))) return;
+      try {
+        const policies = [
+          {
+            id: "POL-001",
+            name: "Data Protection & Privacy",
+            category: "data",
+            status: "active",
+            last_review: "2026-02-01",
+            next_review: "2026-08-01",
+          },
+          {
+            id: "POL-002",
+            name: "Anti-Money Laundering",
+            category: "financial",
+            status: "active",
+            last_review: "2025-12-15",
+            next_review: "2026-06-15",
+          },
+          {
+            id: "POL-003",
+            name: "Intellectual Property Rights",
+            category: "legal",
+            status: "active",
+            last_review: "2026-01-10",
+            next_review: "2026-07-10",
+          },
+          {
+            id: "POL-004",
+            name: "Environmental Sustainability",
+            category: "operations",
+            status: "active",
+            last_review: "2025-11-20",
+            next_review: "2026-05-20",
+          },
+          {
+            id: "POL-005",
+            name: "Workplace Safety & Health",
+            category: "hr",
+            status: "under_review",
+            last_review: "2025-09-01",
+            next_review: "2026-03-01",
+          },
+        ];
+        res.setHeader("Content-Type", "application/json");
+        res.end(JSON.stringify({ policies }));
+      } catch (err) {
+        res.setHeader("Content-Type", "application/json");
+        res.statusCode = 500;
+        res.end(JSON.stringify({ error: String(err) }));
+      }
+    },
+  });
+
+  // --- Compliance: Violations ---
+  api.registerHttpRoute({
+    auth: "gateway",
+    path: "/mabos/api/erp/compliance/violations",
+    handler: async (_req, res) => {
+      if (!(await requireAuth(_req, res))) return;
+      try {
+        const violations = [
+          {
+            id: "VIO-001",
+            policy: "Data Protection & Privacy",
+            description: "Customer PII exposed in debug logs",
+            severity: "high",
+            status: "resolved",
+            detected: "2026-02-18",
+            resolved_date: "2026-02-19",
+          },
+          {
+            id: "VIO-002",
+            policy: "Intellectual Property Rights",
+            description: "Unlicensed stock image used in campaign",
+            severity: "medium",
+            status: "open",
+            detected: "2026-03-25",
+          },
+          {
+            id: "VIO-003",
+            policy: "Environmental Sustainability",
+            description: "Non-recyclable packaging used for batch B-412",
+            severity: "low",
+            status: "remediation",
+            detected: "2026-03-30",
+          },
+        ];
+        res.setHeader("Content-Type", "application/json");
+        res.end(JSON.stringify({ violations }));
+      } catch (err) {
+        res.setHeader("Content-Type", "application/json");
+        res.statusCode = 500;
+        res.end(JSON.stringify({ error: String(err) }));
+      }
+    },
+  });
+
+  // --- Compliance: Single violation ---
+  registerParamRoute("/mabos/api/erp/compliance/violations/:id", async (req, res) => {
+    try {
+      const url = new URL(req.url || "", "http://localhost");
+      const violationId = url.pathname.split("/").pop() || "";
+      const violations = [
+        {
+          id: "VIO-001",
+          policy: "Data Protection & Privacy",
+          description: "Customer PII exposed in debug logs",
+          severity: "high",
+          status: "resolved",
+          detected: "2026-02-18",
+          resolved_date: "2026-02-19",
+          remediation: "Removed PII from log output, added log sanitization filter",
+          assignee: "Tech Ops",
+        },
+        {
+          id: "VIO-002",
+          policy: "Intellectual Property Rights",
+          description: "Unlicensed stock image used in campaign",
+          severity: "medium",
+          status: "open",
+          detected: "2026-03-25",
+          remediation: "",
+          assignee: "Marketing",
+        },
+        {
+          id: "VIO-003",
+          policy: "Environmental Sustainability",
+          description: "Non-recyclable packaging used for batch B-412",
+          severity: "low",
+          status: "remediation",
+          detected: "2026-03-30",
+          remediation: "Switching to EcoPack supplier for all future batches",
+          assignee: "Operations",
+        },
+      ];
+      const violation = violations.find((v) => v.id === violationId);
+      if (!violation) {
+        res.statusCode = 404;
+        res.setHeader("Content-Type", "application/json");
+        res.end(JSON.stringify({ error: "Violation not found" }));
+        return;
+      }
+      res.setHeader("Content-Type", "application/json");
+      res.end(JSON.stringify({ violation }));
+    } catch (err) {
+      res.setHeader("Content-Type", "application/json");
+      res.statusCode = 500;
+      res.end(JSON.stringify({ error: String(err) }));
+    }
+  });
+
   // Dashboard: serve SPA HTML (no trailing slash)
   api.registerHttpRoute({
     auth: "gateway",
