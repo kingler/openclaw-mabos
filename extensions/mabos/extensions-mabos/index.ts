@@ -2769,7 +2769,7 @@ export default function register(api: OpenClawPluginApi) {
   let emailSubscriptionId: string | null = null;
 
   api.registerHttpRoute({
-    auth: "none",
+    auth: "plugin",
     path: "/mabos/api/webhook/email",
     handler: async (req, res) => {
       const url = new URL(req.url || "/", "http://localhost");
