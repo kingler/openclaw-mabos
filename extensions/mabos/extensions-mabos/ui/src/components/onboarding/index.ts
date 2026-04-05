@@ -7,4 +7,5 @@ export { StepsOverview } from "./StepsOverview";
 export { InlineForm } from "./InlineForm";
 export { ChoiceCards } from "./ChoiceCards";
 export { WizardSteps } from "./WizardSteps";
+export { PipelineProgress } from "./PipelineProgress";
 export type { BmcItem, WorkspaceData, FormField } from "./types";
