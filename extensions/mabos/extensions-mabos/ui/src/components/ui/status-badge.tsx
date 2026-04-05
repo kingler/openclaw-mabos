@@ -39,7 +39,7 @@ type StatusBadgeProps = {
 
 export function StatusBadge({ status, colorMap }: StatusBadgeProps) {
   const map = colorMap ?? defaultColorMap;
-  const color = map[status.toLowerCase()] ?? "var(--text-secondary)";
+  const color = map[(status ?? "unknown").toLowerCase()] ?? "var(--text-secondary)";
 
   return (
     <span
@@ -49,7 +49,7 @@ export function StatusBadge({ status, colorMap }: StatusBadgeProps) {
         color,
       }}
     >
-      {status.replace(/_/g, " ")}
+      {(status ?? "unknown").replace(/_/g, " ")}
     </span>
   );
 }

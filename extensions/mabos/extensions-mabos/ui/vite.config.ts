@@ -17,7 +17,20 @@ export default defineConfig({
   },
   server: {
     proxy: {
-      "/mabos/api": "http://localhost:18789",
+      "/mabos/api": {
+        target: "http://localhost:18789",
+        changeOrigin: true,
+        headers: {
+          Authorization: "Bearer 3b6332bd5944d42f8715090fb8ea323a5a691ed4b9a71641",
+        },
+      },
+      "/mabos/governance": {
+        target: "http://localhost:18789",
+        changeOrigin: true,
+        headers: {
+          Authorization: "Bearer 3b6332bd5944d42f8715090fb8ea323a5a691ed4b9a71641",
+        },
+      },
     },
   },
 });

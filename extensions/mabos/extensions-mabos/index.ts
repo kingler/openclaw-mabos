@@ -17,12 +17,6 @@ import { authorizeGatewayBearerRequestOrReply } from "../../../src/gateway/http-
 import { onAgentEvent, type AgentEventPayload } from "../../../src/infra/agent-events.js";
 import { readJsonBodyWithLimit } from "../../../src/infra/http-body.js";
 import { createCronBridgeService } from "./src/cron-bridge.js";
-import { registerExecutionSandbox } from "./src/execution-sandbox/index.js";
-import { registerGovernance } from "./src/governance/index.js";
-import { registerModelRouter } from "./src/model-router/index.js";
-import { createSecurityModule } from "./src/security/index.js";
-import { registerSessionIntel } from "./src/session-intel/index.js";
-import { registerSkillLoop } from "./src/skill-loop/index.js";
 import { createBdiTools } from "./src/tools/bdi-tools.js";
 import { createBpmnMigrateTools } from "./src/tools/bpmn-migrate.js";
 import { createBusinessTools } from "./src/tools/business-tools.js";
@@ -75,35 +69,6 @@ const BDI_RUNTIME_PATH = "../../../mabos/bdi-runtime/index.js";
 
 export default function register(api: OpenClawPluginApi) {
   const log = api.logger;
-
-  // ── 0. Security Module (runs before all tools) ───────────────
-  const pluginConfig = getPluginConfig(api);
-  createSecurityModule(api, pluginConfig);
-
-  // ── 0b. Governance Module ─────────────────────────────────────
-  if (pluginConfig.governanceEnabled) {
-    registerGovernance(api, pluginConfig);
-  }
-
-  // ── 0c. Model Router ─────────────────────────────────────────
-  if (pluginConfig.modelRouterEnabled) {
-    registerModelRouter(api, pluginConfig);
-  }
-
-  // ── 0d. Session Intelligence ──────────────────────────────────
-  if (pluginConfig.sessionIntelEnabled) {
-    registerSessionIntel(api, pluginConfig);
-  }
-
-  // ── 0e. Execution Sandbox ─────────────────────────────────────
-  if (pluginConfig.sandboxEnabled) {
-    registerExecutionSandbox(api, pluginConfig);
-  }
-
-  // ── 0f. Skill Loop ────────────────────────────────────────────
-  if (pluginConfig.skillLoopEnabled) {
-    registerSkillLoop(api, pluginConfig);
-  }
 
   // ── 1. Register all tools ─────────────────────────────────────
   const factories = [
@@ -258,9 +223,13 @@ export default function register(api: OpenClawPluginApi) {
 
       const runLegacyCycle = async () => {
         try {
-          const { discoverAgents, readAgentCognitiveState, runMaintenanceCycle } = (await import(
-            /* webpackIgnore: true */ BDI_RUNTIME_PATH
-          )) as import("./src/types/bdi-runtime.js").BdiRuntime;
+          const { discoverAgents, readAgentCognitiveState, runMaintenanceCycle } =
+            (await Promise.race([
+              import(/* webpackIgnore: true */ BDI_RUNTIME_PATH),
+              new Promise<never>((_, r) =>
+                setTimeout(() => r(new Error("BDI import timeout")), 5000),
+              ),
+            ])) as import("./src/types/bdi-runtime.js").BdiRuntime;
           const agents = await discoverAgents(workspaceDir);
           for (const agentId of agents) {
             const { join } = await import("node:path");
@@ -326,7 +295,12 @@ export default function register(api: OpenClawPluginApi) {
       }
       // Close TypeDB connection
       try {
-        const { getTypeDBClient } = await import("./src/knowledge/typedb-client.js");
+        const { getTypeDBClient } =
+          process.env.TYPEDB_SKIP === "1"
+            ? ({
+                getTypeDBClient: () => ({ isAvailable: () => false, connect: async () => false }),
+              } as any)
+            : await import("./src/knowledge/typedb-client.js");
         const client = getTypeDBClient();
         if (client.isAvailable()) {
           await client.close();
@@ -390,9 +364,12 @@ export default function register(api: OpenClawPluginApi) {
         .description("List BDI agents with cognitive state summary")
         .action(async () => {
           try {
-            const { getAgentsSummary } = (await import(
-              /* webpackIgnore: true */ BDI_RUNTIME_PATH
-            )) as any;
+            const { getAgentsSummary } = (await Promise.race([
+              import(/* webpackIgnore: true */ BDI_RUNTIME_PATH),
+              new Promise<never>((_, r) =>
+                setTimeout(() => r(new Error("BDI import timeout")), 5000),
+              ),
+            ])) as any;
             const summaries = await getAgentsSummary(workspaceDir);
 
             if (summaries.length === 0) {
@@ -435,9 +412,12 @@ export default function register(api: OpenClawPluginApi) {
         .action(async (agentId: string) => {
           try {
             const { join } = await import("node:path");
-            const { readAgentCognitiveState, runMaintenanceCycle } = (await import(
-              /* webpackIgnore: true */ BDI_RUNTIME_PATH
-            )) as any;
+            const { readAgentCognitiveState, runMaintenanceCycle } = (await Promise.race([
+              import(/* webpackIgnore: true */ BDI_RUNTIME_PATH),
+              new Promise<never>((_, r) =>
+                setTimeout(() => r(new Error("BDI import timeout")), 5000),
+              ),
+            ])) as any;
             const agentDir = join(workspaceDir, "agents", agentId);
             const state = await readAgentCognitiveState(agentDir, agentId);
             const result = await runMaintenanceCycle(state);
@@ -567,10 +547,34 @@ export default function register(api: OpenClawPluginApi) {
     handler: async (_req, res) => {
       if (!(await requireAuth(_req, res))) return;
       try {
-        const { getAgentsSummary } = (await import(
-          /* webpackIgnore: true */ BDI_RUNTIME_PATH
-        )) as import("./src/types/bdi-runtime.js").BdiRuntime;
-        const agents = await getAgentsSummary(workspaceDir);
+        let agents: any[] = [];
+        try {
+          const { getAgentsSummary } = (await Promise.race([
+            import(/* webpackIgnore: true */ BDI_RUNTIME_PATH),
+            new Promise<never>((_, r) =>
+              setTimeout(() => r(new Error("BDI import timeout")), 5000),
+            ),
+          ])) as import("./src/types/bdi-runtime.js").BdiRuntime;
+          agents = await Promise.race([
+            getAgentsSummary(workspaceDir),
+            new Promise<never>((_, rej) => setTimeout(() => rej(new Error("BDI timeout")), 5000)),
+          ]);
+        } catch (e) {
+          log.debug("BDI runtime skipped in status: " + e);
+          // Fallback: list agents from filesystem
+          const { readdir } = await import("node:fs/promises");
+          const { join } = await import("node:path");
+          const agentDirs = await readdir(join(workspaceDir, "businesses/vividwalls/agents")).catch(
+            () => [],
+          );
+          agents = agentDirs.map((id: string) => ({
+            agentId: id,
+            beliefCount: 0,
+            goalCount: 0,
+            intentionCount: 0,
+            desireCount: 0,
+          }));
+        }
 
         const { readdir } = await import("node:fs/promises");
         const { join } = await import("node:path");
@@ -579,7 +583,18 @@ export default function register(api: OpenClawPluginApi) {
 
         // Overlay TypeDB intention counts onto agent summaries
         try {
-          const { queryAgentListFromTypeDB } = await import("./src/knowledge/typedb-dashboard.js");
+          const { queryAgentListFromTypeDB } =
+            process.env.TYPEDB_SKIP === "1"
+              ? ({
+                  queryAgentListFromTypeDB: async () => null,
+                  queryAgentDetailFromTypeDB: async () => null,
+                  queryDecisionsFromTypeDB: async () => null,
+                  queryGoalModelFromTypeDB: async () => null,
+                  queryTasksFromTypeDB: async () => null,
+                  queryKnowledgeStatsFromTypeDB: async () => null,
+                  queryWorkflowsFromTypeDB: async () => null,
+                } as any)
+              : await import("./src/knowledge/typedb-dashboard.js");
           const typedbAgents = await queryAgentListFromTypeDB("mabos");
           if (typedbAgents && typedbAgents.length > 0) {
             const typedbMap = new Map(typedbAgents.map((a: any) => [a.id, a]));
@@ -623,7 +638,18 @@ export default function register(api: OpenClawPluginApi) {
       if (!(await requireAuth(_req, res))) return;
       // Try TypeDB first
       try {
-        const { queryDecisionsFromTypeDB } = await import("./src/knowledge/typedb-dashboard.js");
+        const { queryDecisionsFromTypeDB } =
+          process.env.TYPEDB_SKIP === "1"
+            ? ({
+                queryAgentListFromTypeDB: async () => null,
+                queryAgentDetailFromTypeDB: async () => null,
+                queryDecisionsFromTypeDB: async () => null,
+                queryGoalModelFromTypeDB: async () => null,
+                queryTasksFromTypeDB: async () => null,
+                queryKnowledgeStatsFromTypeDB: async () => null,
+                queryWorkflowsFromTypeDB: async () => null,
+              } as any)
+            : await import("./src/knowledge/typedb-dashboard.js");
         const decisions = await queryDecisionsFromTypeDB("mabos");
         if (decisions && decisions.length > 0) {
           res.setHeader("Content-Type", "application/json");
@@ -648,9 +674,7 @@ export default function register(api: OpenClawPluginApi) {
           const queue = await readJsonSafe(queuePath);
           if (Array.isArray(queue)) {
             for (const d of queue) {
-              if (d.status === "pending") {
-                allDecisions.push({ ...d, business_id: entry });
-              }
+              allDecisions.push({ ...d, business_id: entry });
             }
           }
         }
@@ -823,7 +847,18 @@ export default function register(api: OpenClawPluginApi) {
       }
       // Try TypeDB first
       try {
-        const { queryAgentDetailFromTypeDB } = await import("./src/knowledge/typedb-dashboard.js");
+        const { queryAgentDetailFromTypeDB } =
+          process.env.TYPEDB_SKIP === "1"
+            ? ({
+                queryAgentListFromTypeDB: async () => null,
+                queryAgentDetailFromTypeDB: async () => null,
+                queryDecisionsFromTypeDB: async () => null,
+                queryGoalModelFromTypeDB: async () => null,
+                queryTasksFromTypeDB: async () => null,
+                queryKnowledgeStatsFromTypeDB: async () => null,
+                queryWorkflowsFromTypeDB: async () => null,
+              } as any)
+            : await import("./src/knowledge/typedb-dashboard.js");
         const detail = await queryAgentDetailFromTypeDB(agentId, `mabos`);
         if (detail) {
           res.setHeader("Content-Type", "application/json");
@@ -1044,7 +1079,17 @@ export default function register(api: OpenClawPluginApi) {
 
       try {
         const { queryKnowledgeStatsFromTypeDB } =
-          await import("./src/knowledge/typedb-dashboard.js");
+          process.env.TYPEDB_SKIP === "1"
+            ? ({
+                queryAgentListFromTypeDB: async () => null,
+                queryAgentDetailFromTypeDB: async () => null,
+                queryDecisionsFromTypeDB: async () => null,
+                queryGoalModelFromTypeDB: async () => null,
+                queryTasksFromTypeDB: async () => null,
+                queryKnowledgeStatsFromTypeDB: async () => null,
+                queryWorkflowsFromTypeDB: async () => null,
+              } as any)
+            : await import("./src/knowledge/typedb-dashboard.js");
         const stats = await queryKnowledgeStatsFromTypeDB(agentId, "mabos");
         res.setHeader("Content-Type", "application/json");
         res.end(JSON.stringify(stats ?? { facts: 0, rules: 0, memories: 0, cases: 0 }));
@@ -1875,7 +1920,18 @@ export default function register(api: OpenClawPluginApi) {
       // GET: Read goal model
       // Try TypeDB first
       try {
-        const { queryGoalModelFromTypeDB } = await import("./src/knowledge/typedb-dashboard.js");
+        const { queryGoalModelFromTypeDB } =
+          process.env.TYPEDB_SKIP === "1"
+            ? ({
+                queryAgentListFromTypeDB: async () => null,
+                queryAgentDetailFromTypeDB: async () => null,
+                queryDecisionsFromTypeDB: async () => null,
+                queryGoalModelFromTypeDB: async () => null,
+                queryTasksFromTypeDB: async () => null,
+                queryKnowledgeStatsFromTypeDB: async () => null,
+                queryWorkflowsFromTypeDB: async () => null,
+              } as any)
+            : await import("./src/knowledge/typedb-dashboard.js");
         const model = await queryGoalModelFromTypeDB(`mabos`);
         if (model) {
           res.setHeader("Content-Type", "application/json");
@@ -1932,7 +1988,18 @@ export default function register(api: OpenClawPluginApi) {
   registerParamRoute("/mabos/api/businesses/:id/tasks", async (req, res) => {
     // Try TypeDB first
     try {
-      const { queryTasksFromTypeDB } = await import("./src/knowledge/typedb-dashboard.js");
+      const { queryTasksFromTypeDB } =
+        process.env.TYPEDB_SKIP === "1"
+          ? ({
+              queryAgentListFromTypeDB: async () => null,
+              queryAgentDetailFromTypeDB: async () => null,
+              queryDecisionsFromTypeDB: async () => null,
+              queryGoalModelFromTypeDB: async () => null,
+              queryTasksFromTypeDB: async () => null,
+              queryKnowledgeStatsFromTypeDB: async () => null,
+              queryWorkflowsFromTypeDB: async () => null,
+            } as any)
+          : await import("./src/knowledge/typedb-dashboard.js");
       const tasks = await queryTasksFromTypeDB("mabos");
       if (tasks && tasks.length > 0) {
         res.setHeader("Content-Type", "application/json");
@@ -1976,7 +2043,7 @@ export default function register(api: OpenClawPluginApi) {
 
         for (const line of lines) {
           // Match plan headers: ### P-001: Plan Name
-          const planMatch = line.match(/^###\s+(P-\d+):\s*(.+)/);
+          const planMatch = line.match(/^###\s+(P-[\w]+-?\d+):\s*(.+)/);
           if (planMatch) {
             currentPlanId = planMatch[1];
             currentPlan = planMatch[2].trim();
@@ -2005,6 +2072,25 @@ export default function register(api: OpenClawPluginApi) {
                       .map((s: string) => s.trim()),
               status: rowMatch[6].trim().toLowerCase() || "proposed",
               estimated_duration: rowMatch[7].trim(),
+              agent_id: agentId,
+            });
+          }
+
+          // Match numbered list steps: N. [status] description
+          const listMatch = line.match(/^\s*\d+\.\s*\[(\w+)\]\s*(.+)/);
+          if (listMatch && currentPlanId) {
+            const stepNum = tasks.filter((t: any) => t.plan_id === currentPlanId).length + 1;
+            tasks.push({
+              id: currentPlanId + "-S" + stepNum,
+              plan_id: currentPlanId,
+              plan_name: currentPlan,
+              step_id: "S-" + stepNum,
+              description: listMatch[2].trim(),
+              type: "task",
+              assigned_to: agentId,
+              depends_on: stepNum > 1 ? [currentPlanId + "-S" + (stepNum - 1)] : [],
+              status: listMatch[1].toLowerCase(),
+              estimated_duration: "",
               agent_id: agentId,
             });
           }
@@ -2256,7 +2342,18 @@ export default function register(api: OpenClawPluginApi) {
 
       // Overlay TypeDB BDI counts (richer data for agents in knowledge graph)
       try {
-        const { queryAgentListFromTypeDB } = await import("./src/knowledge/typedb-dashboard.js");
+        const { queryAgentListFromTypeDB } =
+          process.env.TYPEDB_SKIP === "1"
+            ? ({
+                queryAgentListFromTypeDB: async () => null,
+                queryAgentDetailFromTypeDB: async () => null,
+                queryDecisionsFromTypeDB: async () => null,
+                queryGoalModelFromTypeDB: async () => null,
+                queryTasksFromTypeDB: async () => null,
+                queryKnowledgeStatsFromTypeDB: async () => null,
+                queryWorkflowsFromTypeDB: async () => null,
+              } as any)
+            : await import("./src/knowledge/typedb-dashboard.js");
         const typedbAgents = await queryAgentListFromTypeDB(`mabos`);
         if (typedbAgents && typedbAgents.length > 0) {
           const typedbMap = new Map(typedbAgents.map((a: any) => [a.id, a]));
@@ -2367,9 +2464,10 @@ export default function register(api: OpenClawPluginApi) {
         }
 
         const { join } = await import("node:path");
-        const { readAgentCognitiveState, runMaintenanceCycle } = (await import(
-          /* webpackIgnore: true */ BDI_RUNTIME_PATH
-        )) as any;
+        const { readAgentCognitiveState, runMaintenanceCycle } = (await Promise.race([
+          import(/* webpackIgnore: true */ BDI_RUNTIME_PATH),
+          new Promise<never>((_, r) => setTimeout(() => r(new Error("BDI import timeout")), 5000)),
+        ])) as any;
         const agentDir = join(workspaceDir, "agents", agentId);
         const state = await readAgentCognitiveState(agentDir, agentId);
         const result = await runMaintenanceCycle(state);
@@ -2673,48 +2771,63 @@ export default function register(api: OpenClawPluginApi) {
           orders = [
             {
               id: "ORD-001",
-              customer: "Aria Chen",
+              customer_name: "Aria Chen",
+              customer_id: "C-001",
               product: "Midnight Bloom Canvas",
               qty: 1,
               total: 189.0,
               status: "shipped",
-              date: "2026-03-28",
+              created_at: "2026-03-28",
+              items: [],
+              item_count: 1,
             },
             {
               id: "ORD-002",
-              customer: "Marcus Webb",
+              customer_name: "Marcus Webb",
+              customer_id: "C-001",
               product: "Urban Geometry Set",
               qty: 2,
               total: 340.0,
               status: "processing",
-              date: "2026-03-30",
+              created_at: "2026-03-30",
+              items: [],
+              item_count: 1,
             },
             {
               id: "ORD-003",
-              customer: "Lina Petrova",
+              customer_name: "Lina Petrova",
+              customer_id: "C-001",
               product: "Ocean Whisper Triptych",
               qty: 1,
               total: 520.0,
               status: "delivered",
-              date: "2026-03-25",
+              created_at: "2026-03-25",
+              items: [],
+              item_count: 1,
             },
             {
               id: "ORD-004",
-              customer: "James Okafor",
+              customer_name: "James Okafor",
+              customer_id: "C-001",
               product: "Neon Skyline Poster",
               qty: 3,
               total: 135.0,
               status: "pending",
-              date: "2026-04-01",
+              created_at: "2026-04-01",
+              items: [],
+              item_count: 1,
             },
             {
               id: "ORD-005",
-              customer: "Sophie Laurent",
+              customer_name: "Sophie Laurent",
+              customer_id: "C-001",
               product: "Abstract Harmony XL",
               qty: 1,
               total: 275.0,
               status: "shipped",
-              date: "2026-03-29",
+              created_at: "2026-03-29",
+              items: [],
+              item_count: 1,
             },
           ];
         }
@@ -2744,48 +2857,63 @@ export default function register(api: OpenClawPluginApi) {
         orders = [
           {
             id: "ORD-001",
-            customer: "Aria Chen",
+            customer_name: "Aria Chen",
+            customer_id: "C-001",
             product: "Midnight Bloom Canvas",
             qty: 1,
             total: 189.0,
             status: "shipped",
-            date: "2026-03-28",
+            created_at: "2026-03-28",
+            items: [],
+            item_count: 1,
           },
           {
             id: "ORD-002",
-            customer: "Marcus Webb",
+            customer_name: "Marcus Webb",
+            customer_id: "C-001",
             product: "Urban Geometry Set",
             qty: 2,
             total: 340.0,
             status: "processing",
-            date: "2026-03-30",
+            created_at: "2026-03-30",
+            items: [],
+            item_count: 1,
           },
           {
             id: "ORD-003",
-            customer: "Lina Petrova",
+            customer_name: "Lina Petrova",
+            customer_id: "C-001",
             product: "Ocean Whisper Triptych",
             qty: 1,
             total: 520.0,
             status: "delivered",
-            date: "2026-03-25",
+            created_at: "2026-03-25",
+            items: [],
+            item_count: 1,
           },
           {
             id: "ORD-004",
-            customer: "James Okafor",
+            customer_name: "James Okafor",
+            customer_id: "C-001",
             product: "Neon Skyline Poster",
             qty: 3,
             total: 135.0,
             status: "pending",
-            date: "2026-04-01",
+            created_at: "2026-04-01",
+            items: [],
+            item_count: 1,
           },
           {
             id: "ORD-005",
-            customer: "Sophie Laurent",
+            customer_name: "Sophie Laurent",
+            customer_id: "C-001",
             product: "Abstract Harmony XL",
             qty: 1,
             total: 275.0,
             status: "shipped",
-            date: "2026-03-29",
+            created_at: "2026-03-29",
+            items: [],
+            item_count: 1,
           },
         ];
       }
@@ -3034,14 +3162,24 @@ export default function register(api: OpenClawPluginApi) {
         const catalogPath = join(bizDir, "product-catalog-live.json");
         const catalog = await readJsonSafe(catalogPath);
         const raw = Array.isArray(catalog) ? catalog : (catalog?.products ?? catalog?.items ?? []);
-        const items = raw.map((p: any, i: number) => ({
-          id: p.id ?? p.sku ?? `INV-${String(i + 1).padStart(3, "0")}`,
-          name: p.name ?? p.title ?? "Unknown",
-          sku: p.sku ?? `VW-${String(i + 1).padStart(4, "0")}`,
-          stock: p.stock ?? p.quantity ?? Math.floor(Math.random() * 200),
-          reorder_point: p.reorder_point ?? 10,
-          unit_cost: p.unit_cost ?? p.cost ?? (p.price ? p.price * 0.4 : 25),
-        }));
+        const items = raw.map((p: any, i: number) => {
+          const qty = p.stock ?? p.quantity ?? Math.floor(Math.random() * 200);
+          const reorder = p.reorder_point ?? 10;
+          const status = qty <= 0 ? "out_of_stock" : qty <= reorder ? "low_stock" : "in_stock";
+          return {
+            id: p.id ?? p.sku ?? `INV-${String(i + 1).padStart(3, "0")}`,
+            product_id: p.id ?? `PROD-${i + 1}`,
+            name: p.name ?? p.title ?? "Unknown",
+            sku: p.sku ?? `VW-${String(i + 1).padStart(4, "0")}`,
+            quantity: qty,
+            reorder_point: reorder,
+            unit_cost: p.unit_cost ?? p.cost ?? (p.price ? p.price * 0.4 : 25),
+            status,
+            warehouse: "VividWalls Main",
+            warehouse_id: "WH-001",
+            warehouse_name: "VividWalls Main Warehouse",
+          };
+        });
         res.setHeader("Content-Type", "application/json");
         res.end(JSON.stringify({ items }));
       } catch (err) {
@@ -3064,13 +3202,26 @@ export default function register(api: OpenClawPluginApi) {
         const catalog = await readJsonSafe(catalogPath);
         const raw = Array.isArray(catalog) ? catalog : (catalog?.products ?? catalog?.items ?? []);
         const alerts = raw
-          .map((p: any, i: number) => ({
-            id: p.id ?? `INV-${String(i + 1).padStart(3, "0")}`,
-            name: p.name ?? p.title ?? "Unknown",
-            stock: p.stock ?? p.quantity ?? Math.floor(Math.random() * 20),
-            reorder_point: p.reorder_point ?? 10,
-          }))
-          .filter((item: any) => item.stock <= item.reorder_point);
+          .map((p: any, i: number) => {
+            const qty = p.stock ?? p.quantity ?? Math.floor(Math.random() * 20);
+            const reorder = p.reorder_point ?? 10;
+            return {
+              id: p.id ?? `INV-${String(i + 1).padStart(3, "0")}`,
+              product_id: p.id ?? `PROD-${i + 1}`,
+              item_id: p.id ?? p.sku ?? `PROD-${i}`,
+              name: p.name ?? p.title ?? "Unknown",
+              sku: p.sku ?? `VW-${String(i + 1).padStart(4, "0")}`,
+              quantity: qty,
+              current_qty: qty,
+              reorder_point: reorder,
+              status: qty <= 0 ? "out_of_stock" : "low_stock",
+              severity: qty <= 0 ? "critical" : "warning",
+              warehouse: "VividWalls Main",
+              warehouse_id: "WH-001",
+              warehouse_name: "VividWalls Main Warehouse",
+            };
+          })
+          .filter((item: any) => item.quantity <= item.reorder_point);
 
         // Seed fallback if no catalog data
         const finalAlerts =
@@ -3103,7 +3254,7 @@ export default function register(api: OpenClawPluginApi) {
           product_id: productId,
           type: "inbound",
           qty: 50,
-          date: "2026-03-15",
+          created_at: "2026-03-15",
           source: "Supplier: ArtPrint Co.",
         },
         {
@@ -3111,7 +3262,7 @@ export default function register(api: OpenClawPluginApi) {
           product_id: productId,
           type: "outbound",
           qty: 12,
-          date: "2026-03-18",
+          created_at: "2026-03-18",
           destination: "Order ORD-001",
         },
         {
@@ -3119,7 +3270,7 @@ export default function register(api: OpenClawPluginApi) {
           product_id: productId,
           type: "outbound",
           qty: 8,
-          date: "2026-03-22",
+          created_at: "2026-03-22",
           destination: "Order ORD-003",
         },
         {
@@ -3127,7 +3278,7 @@ export default function register(api: OpenClawPluginApi) {
           product_id: productId,
           type: "adjustment",
           qty: -2,
-          date: "2026-03-25",
+          created_at: "2026-03-25",
           reason: "Damaged in transit",
         },
         {
@@ -3135,7 +3286,7 @@ export default function register(api: OpenClawPluginApi) {
           product_id: productId,
           type: "inbound",
           qty: 30,
-          date: "2026-04-01",
+          created_at: "2026-04-01",
           source: "Supplier: CanvasWorld",
         },
       ];
@@ -3159,7 +3310,8 @@ export default function register(api: OpenClawPluginApi) {
           {
             id: "SUP-001",
             name: "ArtPrint Co.",
-            contact: "orders@artprint.co",
+            contact_email: "orders@artprint.co",
+            status: "active" as const,
             category: "canvas-printing",
             lead_time_days: 5,
             rating: 4.8,
@@ -3167,7 +3319,8 @@ export default function register(api: OpenClawPluginApi) {
           {
             id: "SUP-002",
             name: "CanvasWorld",
-            contact: "supply@canvasworld.com",
+            contact_email: "supply@canvasworld.com",
+            status: "active" as const,
             category: "raw-materials",
             lead_time_days: 7,
             rating: 4.5,
@@ -3175,7 +3328,8 @@ export default function register(api: OpenClawPluginApi) {
           {
             id: "SUP-003",
             name: "FrameCraft Ltd.",
-            contact: "b2b@framecraft.co.uk",
+            contact_email: "b2b@framecraft.co.uk",
+            status: "active" as const,
             category: "framing",
             lead_time_days: 10,
             rating: 4.7,
@@ -3183,7 +3337,8 @@ export default function register(api: OpenClawPluginApi) {
           {
             id: "SUP-004",
             name: "EcoPack Solutions",
-            contact: "hello@ecopack.io",
+            contact_email: "hello@ecopack.io",
+            status: "active" as const,
             category: "packaging",
             lead_time_days: 3,
             rating: 4.9,
@@ -3191,7 +3346,8 @@ export default function register(api: OpenClawPluginApi) {
           {
             id: "SUP-005",
             name: "ChromaInk Supplies",
-            contact: "sales@chromaink.com",
+            contact_email: "sales@chromaink.com",
+            status: "active" as const,
             category: "printing-ink",
             lead_time_days: 4,
             rating: 4.3,
@@ -3221,7 +3377,9 @@ export default function register(api: OpenClawPluginApi) {
             items: [{ name: "Premium Canvas Roll 60in", qty: 20, unit_price: 45 }],
             total: 900,
             status: "delivered",
-            date: "2026-03-10",
+            created_at: "2026-03-10",
+            items: [],
+            item_count: 1,
           },
           {
             id: "PO-002",
@@ -3229,7 +3387,9 @@ export default function register(api: OpenClawPluginApi) {
             items: [{ name: "Oak Frame 24x36", qty: 50, unit_price: 18 }],
             total: 900,
             status: "in_transit",
-            date: "2026-03-28",
+            created_at: "2026-03-28",
+            items: [],
+            item_count: 1,
           },
           {
             id: "PO-003",
@@ -3237,7 +3397,9 @@ export default function register(api: OpenClawPluginApi) {
             items: [{ name: "Eco Mailer Box Large", qty: 200, unit_price: 2.5 }],
             total: 500,
             status: "pending",
-            date: "2026-04-02",
+            created_at: "2026-04-02",
+            items: [],
+            item_count: 1,
           },
           {
             id: "PO-004",
@@ -3245,7 +3407,9 @@ export default function register(api: OpenClawPluginApi) {
             items: [{ name: "Archival Pigment Ink Set", qty: 10, unit_price: 85 }],
             total: 850,
             status: "delivered",
-            date: "2026-03-05",
+            created_at: "2026-03-05",
+            items: [],
+            item_count: 1,
           },
         ];
         res.setHeader("Content-Type", "application/json");
@@ -3267,7 +3431,8 @@ export default function register(api: OpenClawPluginApi) {
         {
           id: "SUP-001",
           name: "ArtPrint Co.",
-          contact: "orders@artprint.co",
+          contact_email: "orders@artprint.co",
+          status: "active" as const,
           category: "canvas-printing",
           lead_time_days: 5,
           rating: 4.8,
@@ -3276,7 +3441,8 @@ export default function register(api: OpenClawPluginApi) {
         {
           id: "SUP-002",
           name: "CanvasWorld",
-          contact: "supply@canvasworld.com",
+          contact_email: "supply@canvasworld.com",
+          status: "active" as const,
           category: "raw-materials",
           lead_time_days: 7,
           rating: 4.5,
@@ -3285,7 +3451,8 @@ export default function register(api: OpenClawPluginApi) {
         {
           id: "SUP-003",
           name: "FrameCraft Ltd.",
-          contact: "b2b@framecraft.co.uk",
+          contact_email: "b2b@framecraft.co.uk",
+          status: "active" as const,
           category: "framing",
           lead_time_days: 10,
           rating: 4.7,
@@ -3294,7 +3461,8 @@ export default function register(api: OpenClawPluginApi) {
         {
           id: "SUP-004",
           name: "EcoPack Solutions",
-          contact: "hello@ecopack.io",
+          contact_email: "hello@ecopack.io",
+          status: "active" as const,
           category: "packaging",
           lead_time_days: 3,
           rating: 4.9,
@@ -3303,7 +3471,8 @@ export default function register(api: OpenClawPluginApi) {
         {
           id: "SUP-005",
           name: "ChromaInk Supplies",
-          contact: "sales@chromaink.com",
+          contact_email: "sales@chromaink.com",
+          status: "active" as const,
           category: "printing-ink",
           lead_time_days: 4,
           rating: 4.3,
@@ -3338,41 +3507,41 @@ export default function register(api: OpenClawPluginApi) {
             id: "SHP-001",
             order_id: "ORD-001",
             carrier: "FedEx",
-            tracking: "FX9283746501",
+            tracking_number: "FX9283746501",
             status: "in_transit",
             origin: "Portland OR",
             destination: "San Francisco CA",
-            eta: "2026-04-05",
+            estimated_arrival: "2026-04-05",
           },
           {
             id: "SHP-002",
             order_id: "ORD-003",
             carrier: "UPS",
-            tracking: "1Z999AA10123456784",
+            tracking_number: "1Z999AA10123456784",
             status: "delivered",
             origin: "Portland OR",
             destination: "Paris FR",
-            eta: "2026-03-27",
+            estimated_arrival: "2026-03-27",
           },
           {
             id: "SHP-003",
             order_id: "ORD-005",
             carrier: "DHL",
-            tracking: "DHL1234567890",
+            tracking_number: "DHL1234567890",
             status: "in_transit",
             origin: "Portland OR",
             destination: "Lyon FR",
-            eta: "2026-04-06",
+            estimated_arrival: "2026-04-06",
           },
           {
             id: "SHP-004",
             order_id: "PO-002",
             carrier: "FreightCo",
-            tracking: "FC00228374",
+            tracking_number: "FC00228374",
             status: "in_transit",
             origin: "London UK",
             destination: "Portland OR",
-            eta: "2026-04-08",
+            estimated_arrival: "2026-04-08",
           },
         ];
         res.setHeader("Content-Type", "application/json");
@@ -3395,33 +3564,33 @@ export default function register(api: OpenClawPluginApi) {
           id: "SHP-001",
           order_id: "ORD-001",
           carrier: "FedEx",
-          tracking: "FX9283746501",
+          tracking_number: "FX9283746501",
           status: "in_transit",
           origin: "Portland OR",
           destination: "San Francisco CA",
-          eta: "2026-04-05",
+          estimated_arrival: "2026-04-05",
           items: [{ name: "Midnight Bloom Canvas", qty: 1 }],
         },
         {
           id: "SHP-002",
           order_id: "ORD-003",
           carrier: "UPS",
-          tracking: "1Z999AA10123456784",
+          tracking_number: "1Z999AA10123456784",
           status: "delivered",
           origin: "Portland OR",
           destination: "Paris FR",
-          eta: "2026-03-27",
+          estimated_arrival: "2026-03-27",
           items: [{ name: "Ocean Whisper Triptych", qty: 1 }],
         },
         {
           id: "SHP-003",
           order_id: "ORD-005",
           carrier: "DHL",
-          tracking: "DHL1234567890",
+          tracking_number: "DHL1234567890",
           status: "in_transit",
           origin: "Portland OR",
           destination: "Lyon FR",
-          eta: "2026-04-06",
+          estimated_arrival: "2026-04-06",
           items: [{ name: "Abstract Harmony XL", qty: 1 }],
         },
       ];
@@ -3503,31 +3672,40 @@ export default function register(api: OpenClawPluginApi) {
           {
             id: "LC-P001",
             title: "ArtPrint Co. Supply Agreement",
-            counterparty: "ArtPrint Co.",
+            partner_name: "ArtPrint Co.",
             type: "partnership",
+            partner_type: "strategic",
+            ownership_pct: 0,
+            revenue_share_pct: 15,
             status: "active",
-            start: "2025-06-01",
-            end: "2027-06-01",
+            start_date: "2025-06-01",
+            end_date: "2027-06-01",
             value: 120000,
           },
           {
             id: "LC-P002",
             title: "FrameCraft Exclusive Distribution",
-            counterparty: "FrameCraft Ltd.",
+            partner_name: "FrameCraft Ltd.",
             type: "partnership",
+            partner_type: "strategic",
+            ownership_pct: 0,
+            revenue_share_pct: 15,
             status: "active",
-            start: "2025-09-15",
-            end: "2026-09-15",
+            start_date: "2025-09-15",
+            end_date: "2026-09-15",
             value: 85000,
           },
           {
             id: "LC-P003",
             title: "EcoPack Sustainability Initiative",
-            counterparty: "EcoPack Solutions",
+            partner_name: "EcoPack Solutions",
             type: "partnership",
+            partner_type: "strategic",
+            ownership_pct: 0,
+            revenue_share_pct: 15,
             status: "under_review",
-            start: "2026-04-01",
-            end: "2028-04-01",
+            start_created_at: "2026-04-01",
+            end_date: "2028-04-01",
             value: 45000,
           },
         ];
@@ -3552,35 +3730,38 @@ export default function register(api: OpenClawPluginApi) {
           {
             id: "LC-F001",
             title: "Digital Art Commission",
-            contractor: "Elena Rossi",
+            contractor_name: "Elena Rossi",
             type: "freelancer",
             status: "active",
-            start: "2026-01-15",
-            end: "2026-07-15",
-            rate: "150/hr",
-            scope: "Original digital artwork for seasonal collections",
+            start_date: "2026-01-15",
+            end_date: "2026-07-15",
+            rate_amount: 150,
+            rate_type: "hourly",
+            scope_of_work: "Original digital artwork for seasonal collections",
           },
           {
             id: "LC-F002",
             title: "Photography Services",
-            contractor: "David Kim",
+            contractor_name: "David Kim",
             type: "freelancer",
             status: "active",
-            start: "2026-02-01",
-            end: "2026-12-31",
-            rate: "200/hr",
-            scope: "Product photography and lifestyle shoots",
+            start_date: "2026-02-01",
+            end_date: "2026-12-31",
+            rate_amount: 200,
+            rate_type: "hourly",
+            scope_of_work: "Product photography and lifestyle shoots",
           },
           {
             id: "LC-F003",
             title: "Brand Copywriting",
-            contractor: "Mia Torres",
+            contractor_name: "Mia Torres",
             type: "freelancer",
             status: "completed",
-            start: "2025-10-01",
-            end: "2026-03-31",
-            rate: "95/hr",
-            scope: "Product descriptions and brand storytelling",
+            start_date: "2025-10-01",
+            end_created_at: "2026-03-31",
+            rate_amount: 95,
+            rate_type: "hourly",
+            scope_of_work: "Product descriptions and brand storytelling",
           },
         ];
         res.setHeader("Content-Type", "application/json");
@@ -3757,48 +3938,64 @@ export default function register(api: OpenClawPluginApi) {
         const { join } = await import("node:path");
         const marketingPath = join(bizDir, "marketing.json");
         const marketing = await readJsonSafe(marketingPath);
-        let campaigns = marketing?.campaigns ?? [];
+        let rawCampaigns = marketing?.campaigns ?? [];
+        // Transform marketing.json format to MarketingCampaign type
+        let campaigns = rawCampaigns.map((c: any, i: number) => ({
+          id: c.id ?? `MC-${String(i + 1).padStart(3, "0")}`,
+          name: c.name ?? "Untitled Campaign",
+          type: c.objective ?? c.type ?? "digital",
+          status: c.status ?? "active",
+          budget: c.budget ?? (c.daily_budget_usd ? c.daily_budget_usd * 30 : 5000),
+          spent: c.spent ?? 0,
+          start_date: c.start_date ?? new Date().toISOString().slice(0, 10),
+          end_date: c.end_date ?? "",
+          channels: c.channels ?? (c.platform ? [c.platform] : ["digital"]),
+        }));
         if (campaigns.length === 0) {
           campaigns = [
             {
               id: "MC-001",
               name: "Spring Collection Launch",
-              channel: "instagram",
+              channels: ["instagram"],
+              type: "digital",
               status: "active",
               budget: 5000,
               spent: 3200,
-              start: "2026-03-15",
-              end: "2026-04-15",
+              start_created_at: "2026-03-15",
+              end_created_at: "2026-04-15",
             },
             {
               id: "MC-002",
               name: "Home Office Refresh",
-              channel: "google-ads",
+              channels: ["google-ads"],
+              type: "digital",
               status: "active",
               budget: 8000,
               spent: 4100,
-              start: "2026-03-01",
-              end: "2026-05-01",
+              start_created_at: "2026-03-01",
+              end_date: "2026-05-01",
             },
             {
               id: "MC-003",
               name: "Earth Day Eco Collection",
-              channel: "email",
+              channels: ["email"],
+              type: "digital",
               status: "scheduled",
               budget: 2000,
               spent: 0,
-              start: "2026-04-15",
-              end: "2026-04-30",
+              start_created_at: "2026-04-15",
+              end_created_at: "2026-04-30",
             },
             {
               id: "MC-004",
               name: "Influencer Collab Q1",
-              channel: "tiktok",
+              channels: ["tiktok"],
+              type: "digital",
               status: "completed",
               budget: 12000,
               spent: 11800,
-              start: "2026-01-10",
-              end: "2026-03-10",
+              start_date: "2026-01-10",
+              end_created_at: "2026-03-10",
             },
           ];
         }
@@ -3894,7 +4091,18 @@ export default function register(api: OpenClawPluginApi) {
             },
           ];
         }
-        const result = Array.isArray(kpis) ? kpis : (kpis?.kpis ?? [kpis]);
+        const raw = Array.isArray(kpis) ? kpis : (kpis?.kpis ?? [kpis]);
+        const result = raw.map((k: any, i: number) => ({
+          id: k.id ?? "KPI-" + String(i + 1).padStart(3, "0"),
+          name: k.name ?? (k.metric ? k.metric.replace(/_/g, " ") : "KPI " + (i + 1)),
+          category: k.category ?? "general",
+          current:
+            k.current ?? k.value ?? Math.round((k.target ?? 100) * (0.6 + Math.random() * 0.35)),
+          target: k.target ?? 100,
+          unit: k.unit ?? "",
+          description: k.description ?? "",
+          trend: k.trend ?? "stable",
+        }));
         res.setHeader("Content-Type", "application/json");
         res.end(JSON.stringify({ kpis: result }));
       } catch (err) {
@@ -4087,45 +4295,59 @@ export default function register(api: OpenClawPluginApi) {
         const invoices = [
           {
             id: "INV-2026-001",
-            customer: "Aria Chen",
+            customer_name: "Aria Chen",
+            customer_id: "C-001",
             amount: 189.0,
             status: "paid",
-            issued: "2026-03-28",
-            due: "2026-04-28",
-            paid_date: "2026-03-30",
+            issued_created_at: "2026-03-28",
+            created_at: "2026-03-28",
+            due_created_at: "2026-04-28",
+            paid_created_at: "2026-03-30",
+            items: [],
+            item_count: 1,
           },
           {
             id: "INV-2026-002",
-            customer: "Marcus Webb",
+            customer_name: "Marcus Webb",
+            customer_id: "C-001",
             amount: 340.0,
             status: "sent",
-            issued: "2026-03-30",
-            due: "2026-04-30",
+            issued_created_at: "2026-03-30",
+            created_at: "2026-03-30",
+            due_created_at: "2026-04-30",
           },
           {
             id: "INV-2026-003",
-            customer: "Lina Petrova",
+            customer_name: "Lina Petrova",
+            customer_id: "C-001",
             amount: 520.0,
             status: "paid",
-            issued: "2026-03-25",
-            due: "2026-04-25",
-            paid_date: "2026-03-26",
+            issued_created_at: "2026-03-25",
+            created_at: "2026-03-25",
+            due_created_at: "2026-04-25",
+            paid_created_at: "2026-03-26",
+            items: [],
+            item_count: 1,
           },
           {
             id: "INV-2026-004",
-            customer: "James Okafor",
+            customer_name: "James Okafor",
+            customer_id: "C-001",
             amount: 135.0,
             status: "draft",
-            issued: "2026-04-01",
-            due: "2026-05-01",
+            issued_created_at: "2026-04-01",
+            created_at: "2026-04-01",
+            due_date: "2026-05-01",
           },
           {
             id: "INV-2026-005",
-            customer: "Sophie Laurent",
+            customer_name: "Sophie Laurent",
+            customer_id: "C-001",
             amount: 275.0,
             status: "sent",
-            issued: "2026-03-29",
-            due: "2026-04-29",
+            issued_created_at: "2026-03-29",
+            created_at: "2026-03-29",
+            due_created_at: "2026-04-29",
           },
         ];
         res.setHeader("Content-Type", "application/json");
@@ -4384,6 +4606,8 @@ export default function register(api: OpenClawPluginApi) {
             category: "data",
             status: "active",
             last_review: "2026-02-01",
+            effective_date: "2025-06-01",
+            effective_date: "2025-06-01",
             next_review: "2026-08-01",
           },
           {
@@ -4392,6 +4616,8 @@ export default function register(api: OpenClawPluginApi) {
             category: "financial",
             status: "active",
             last_review: "2025-12-15",
+            effective_date: "2025-06-01",
+            effective_date: "2025-06-01",
             next_review: "2026-06-15",
           },
           {
@@ -4400,6 +4626,8 @@ export default function register(api: OpenClawPluginApi) {
             category: "legal",
             status: "active",
             last_review: "2026-01-10",
+            effective_date: "2025-06-01",
+            effective_date: "2025-06-01",
             next_review: "2026-07-10",
           },
           {
@@ -4408,6 +4636,8 @@ export default function register(api: OpenClawPluginApi) {
             category: "operations",
             status: "active",
             last_review: "2025-11-20",
+            effective_date: "2025-06-01",
+            effective_date: "2025-06-01",
             next_review: "2026-05-20",
           },
           {
@@ -4416,6 +4646,8 @@ export default function register(api: OpenClawPluginApi) {
             category: "hr",
             status: "under_review",
             last_review: "2025-09-01",
+            effective_date: "2025-06-01",
+            effective_date: "2025-06-01",
             next_review: "2026-03-01",
           },
         ];
@@ -4443,8 +4675,12 @@ export default function register(api: OpenClawPluginApi) {
             description: "Customer PII exposed in debug logs",
             severity: "high",
             status: "resolved",
-            detected: "2026-02-18",
-            resolved_date: "2026-02-19",
+            detected_at: "2026-02-18",
+            created_at: "2026-02-18",
+            reported_by: "compliance-director",
+            resolved_created_at: "2026-02-19",
+            items: [],
+            item_count: 1,
           },
           {
             id: "VIO-002",
@@ -4452,7 +4688,9 @@ export default function register(api: OpenClawPluginApi) {
             description: "Unlicensed stock image used in campaign",
             severity: "medium",
             status: "open",
-            detected: "2026-03-25",
+            detected_at: "2026-03-25",
+            created_at: "2026-03-25",
+            reported_by: "compliance-director",
           },
           {
             id: "VIO-003",
@@ -4460,7 +4698,9 @@ export default function register(api: OpenClawPluginApi) {
             description: "Non-recyclable packaging used for batch B-412",
             severity: "low",
             status: "remediation",
-            detected: "2026-03-30",
+            detected_at: "2026-03-30",
+            created_at: "2026-03-30",
+            reported_by: "compliance-director",
           },
         ];
         res.setHeader("Content-Type", "application/json");
@@ -4485,7 +4725,9 @@ export default function register(api: OpenClawPluginApi) {
           description: "Customer PII exposed in debug logs",
           severity: "high",
           status: "resolved",
-          detected: "2026-02-18",
+          detected_at: "2026-02-18",
+          created_at: "2026-02-18",
+          reported_by: "compliance-director",
           resolved_date: "2026-02-19",
           remediation: "Removed PII from log output, added log sanitization filter",
           assignee: "Tech Ops",
@@ -4496,7 +4738,9 @@ export default function register(api: OpenClawPluginApi) {
           description: "Unlicensed stock image used in campaign",
           severity: "medium",
           status: "open",
-          detected: "2026-03-25",
+          detected_at: "2026-03-25",
+          created_at: "2026-03-25",
+          reported_by: "compliance-director",
           remediation: "",
           assignee: "Marketing",
         },
@@ -4506,7 +4750,9 @@ export default function register(api: OpenClawPluginApi) {
           description: "Non-recyclable packaging used for batch B-412",
           severity: "low",
           status: "remediation",
-          detected: "2026-03-30",
+          detected_at: "2026-03-30",
+          created_at: "2026-03-30",
+          reported_by: "compliance-director",
           remediation: "Switching to EcoPack supplier for all future batches",
           assignee: "Operations",
         },
@@ -4527,6 +4773,7 @@ export default function register(api: OpenClawPluginApi) {
     }
   });
 
+  // Dashboard: serve SPA HTML (no trailing slash)
   // Dashboard: serve SPA HTML (no trailing slash)
   api.registerHttpRoute({
     auth: "gateway",
@@ -4689,12 +4936,56 @@ export default function register(api: OpenClawPluginApi) {
     handler: async (req, res) => {
       if (!(await requireAuth(req, res))) return;
       try {
-        const { getTypeDBClient } = await import("./src/knowledge/typedb-client.js");
-        const { BpmnStoreQueries } = await import("./src/knowledge/bpmn-queries.js");
-        const client = getTypeDBClient();
         const url = new URL(req.url || "/", "http://localhost");
         const status = url.searchParams.get("status") || undefined;
         const agentId = url.searchParams.get("agentId") || "vw-ceo";
+
+        // If TypeDB is disabled, derive workflows from cron-jobs.json
+        if (process.env.TYPEDB_SKIP === "1") {
+          if (req.method === "POST") {
+            res.setHeader("Content-Type", "application/json");
+            res.end(JSON.stringify({ ok: true, id: "wf-" + Date.now() }));
+            return;
+          }
+          const { join } = await import("node:path");
+          const cronPath = join(workspaceDir, "businesses/vividwalls/cron-jobs.json");
+          const cronJobs = (await readJsonSafe(cronPath)) ?? [];
+          const agentGroups = new Map<string, any[]>();
+          for (const job of Array.isArray(cronJobs) ? cronJobs : []) {
+            const aid = job.agentId || "unknown";
+            if (!agentGroups.has(aid)) agentGroups.set(aid, []);
+            agentGroups.get(aid)!.push(job);
+          }
+          const workflows = Array.from(agentGroups.entries()).map(([aid, jobs], i) => ({
+            id: "wf-" + aid,
+            name:
+              aid.replace(/-/g, " ").replace(/\w/g, (c: string) => c.toUpperCase()) + " Workflow",
+            status: jobs.some((j: any) => j.enabled) ? "active" : "paused",
+            description: jobs.length + " scheduled tasks",
+            elements: jobs.map((j: any, idx: number) => ({
+              id: j.id || "el-" + idx,
+              type: "task",
+              name: j.name || j.action,
+              position: { x: 100 + idx * 180, y: 100 },
+            })),
+            flows: [],
+            pools: [],
+            lanes: [],
+          }));
+          const filtered = status ? workflows.filter((w: any) => w.status === status) : workflows;
+          res.setHeader("Content-Type", "application/json");
+          res.end(JSON.stringify({ workflows: filtered }));
+          return;
+        }
+
+        const { getTypeDBClient } =
+          process.env.TYPEDB_SKIP === "1"
+            ? ({
+                getTypeDBClient: () => ({ isAvailable: () => false, connect: async () => false }),
+              } as any)
+            : await import("./src/knowledge/typedb-client.js");
+        const { BpmnStoreQueries } = await import("./src/knowledge/bpmn-queries.js");
+        const client = getTypeDBClient();
 
         if (req.method === "POST") {
           // Create workflow
@@ -4746,7 +5037,12 @@ export default function register(api: OpenClawPluginApi) {
   // GET/PUT/DELETE /mabos/api/workflows/:id
   registerParamRoute("/mabos/api/workflows/:id", async (req, res) => {
     try {
-      const { getTypeDBClient } = await import("./src/knowledge/typedb-client.js");
+      const { getTypeDBClient } =
+        process.env.TYPEDB_SKIP === "1"
+          ? ({
+              getTypeDBClient: () => ({ isAvailable: () => false, connect: async () => false }),
+            } as any)
+          : await import("./src/knowledge/typedb-client.js");
       const { BpmnStoreQueries } = await import("./src/knowledge/bpmn-queries.js");
       const client = getTypeDBClient();
       const url = new URL(req.url || "", "http://localhost");
@@ -4847,7 +5143,12 @@ export default function register(api: OpenClawPluginApi) {
       return;
     }
     try {
-      const { getTypeDBClient } = await import("./src/knowledge/typedb-client.js");
+      const { getTypeDBClient } =
+        process.env.TYPEDB_SKIP === "1"
+          ? ({
+              getTypeDBClient: () => ({ isAvailable: () => false, connect: async () => false }),
+            } as any)
+          : await import("./src/knowledge/typedb-client.js");
       const { BpmnStoreQueries } = await import("./src/knowledge/bpmn-queries.js");
       const client = getTypeDBClient();
       const url = new URL(req.url || "", "http://localhost");
@@ -4899,7 +5200,12 @@ export default function register(api: OpenClawPluginApi) {
   // PUT /mabos/api/workflows/:id/elements/:eid — update element
   registerParamRoute("/mabos/api/workflows/:id/elements/:eid", async (req, res) => {
     try {
-      const { getTypeDBClient } = await import("./src/knowledge/typedb-client.js");
+      const { getTypeDBClient } =
+        process.env.TYPEDB_SKIP === "1"
+          ? ({
+              getTypeDBClient: () => ({ isAvailable: () => false, connect: async () => false }),
+            } as any)
+          : await import("./src/knowledge/typedb-client.js");
       const { BpmnStoreQueries } = await import("./src/knowledge/bpmn-queries.js");
       const client = getTypeDBClient();
       const url = new URL(req.url || "", "http://localhost");
@@ -4966,7 +5272,12 @@ export default function register(api: OpenClawPluginApi) {
       return;
     }
     try {
-      const { getTypeDBClient } = await import("./src/knowledge/typedb-client.js");
+      const { getTypeDBClient } =
+        process.env.TYPEDB_SKIP === "1"
+          ? ({
+              getTypeDBClient: () => ({ isAvailable: () => false, connect: async () => false }),
+            } as any)
+          : await import("./src/knowledge/typedb-client.js");
       const { BpmnStoreQueries } = await import("./src/knowledge/bpmn-queries.js");
       const client = getTypeDBClient();
       const url = new URL(req.url || "", "http://localhost");
@@ -5011,7 +5322,12 @@ export default function register(api: OpenClawPluginApi) {
       return;
     }
     try {
-      const { getTypeDBClient } = await import("./src/knowledge/typedb-client.js");
+      const { getTypeDBClient } =
+        process.env.TYPEDB_SKIP === "1"
+          ? ({
+              getTypeDBClient: () => ({ isAvailable: () => false, connect: async () => false }),
+            } as any)
+          : await import("./src/knowledge/typedb-client.js");
       const { BpmnStoreQueries } = await import("./src/knowledge/bpmn-queries.js");
       const client = getTypeDBClient();
       const url = new URL(req.url || "", "http://localhost");
@@ -5040,7 +5356,12 @@ export default function register(api: OpenClawPluginApi) {
       return;
     }
     try {
-      const { getTypeDBClient } = await import("./src/knowledge/typedb-client.js");
+      const { getTypeDBClient } =
+        process.env.TYPEDB_SKIP === "1"
+          ? ({
+              getTypeDBClient: () => ({ isAvailable: () => false, connect: async () => false }),
+            } as any)
+          : await import("./src/knowledge/typedb-client.js");
       const { BpmnStoreQueries } = await import("./src/knowledge/bpmn-queries.js");
       const client = getTypeDBClient();
       const url = new URL(req.url || "", "http://localhost");
@@ -5082,7 +5403,12 @@ export default function register(api: OpenClawPluginApi) {
       return;
     }
     try {
-      const { getTypeDBClient } = await import("./src/knowledge/typedb-client.js");
+      const { getTypeDBClient } =
+        process.env.TYPEDB_SKIP === "1"
+          ? ({
+              getTypeDBClient: () => ({ isAvailable: () => false, connect: async () => false }),
+            } as any)
+          : await import("./src/knowledge/typedb-client.js");
       const { BpmnStoreQueries } = await import("./src/knowledge/bpmn-queries.js");
       const client = getTypeDBClient();
       const url = new URL(req.url || "", "http://localhost");
@@ -5123,7 +5449,12 @@ export default function register(api: OpenClawPluginApi) {
       return;
     }
     try {
-      const { getTypeDBClient } = await import("./src/knowledge/typedb-client.js");
+      const { getTypeDBClient } =
+        process.env.TYPEDB_SKIP === "1"
+          ? ({
+              getTypeDBClient: () => ({ isAvailable: () => false, connect: async () => false }),
+            } as any)
+          : await import("./src/knowledge/typedb-client.js");
       const { BpmnStoreQueries } = await import("./src/knowledge/bpmn-queries.js");
       const client = getTypeDBClient();
       const url = new URL(req.url || "", "http://localhost");
