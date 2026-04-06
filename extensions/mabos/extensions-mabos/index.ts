@@ -161,7 +161,7 @@ import { createWorkforceTools } from "./src/tools/workforce-tools.js";
 const BDI_RUNTIME_PATH = "../../../mabos/bdi-runtime/index.js";
 
 // ── Connected Hierarchy Seed ───────────────────────────────────────
-// Seeds Goals → Initiatives → Campaigns → Tasks → Actions into TypeDB
+// Seeds Goals → Projects → Initiatives → Campaigns → Tasks → Actions into TypeDB
 
 async function seedConnectedHierarchy(
   client: any,
@@ -171,16 +171,30 @@ async function seedConnectedHierarchy(
   const ins = (q: string) => client.insertData(q, db).catch(() => {});
   const def = (q: string) => client.defineSchema(q, db).catch(() => {});
   const now = new Date().toISOString();
-  let count = { goals: 0, initiatives: 0, campaigns: 0, tasks: 0, actions: 0 };
+  let count = { goals: 0, projects: 0, initiatives: 0, campaigns: 0, tasks: 0, actions: 0 };
 
   // ── Ensure schema for hierarchy relations ──
-  await def(`define attribute campaign_id, value string; attribute channel, value string;`);
+  await def(
+    `define attribute campaign_id, value string; attribute channel, value string; attribute project_id, value string;`,
+  );
   await def(
     `define entity campaign, owns campaign_id @key, owns name, owns status, owns channel, owns description, owns category;`,
   );
   await def(
+    `define entity project, owns uid @key, owns project_id, owns name, owns description, owns status, owns category, owns priority, owns created_at, owns updated_at;`,
+  );
+  await def(
     `define entity initiative, owns uid @key, owns name, owns description, owns status, owns category, owns priority, owns created_at, owns updated_at;`,
   );
+  await def(`define project plays agent_owns:owned;`);
+  await def(`define relation goal_has_project, relates parent_goal, relates child_project;`);
+  await def(`define goal plays goal_has_project:parent_goal;`);
+  await def(`define project plays goal_has_project:child_project;`);
+  await def(
+    `define relation project_contains_initiative, relates parent_project, relates child_initiative;`,
+  );
+  await def(`define project plays project_contains_initiative:parent_project;`);
+  await def(`define initiative plays project_contains_initiative:child_initiative;`);
   await def(
     `define relation goal_drives_initiative, relates driving_goal, relates driven_initiative;`,
   );
@@ -232,24 +246,95 @@ async function seedConnectedHierarchy(
     count.goals++;
   }
 
-  // ── Initiatives ──
+  // ── Projects (group and manage agent tasks) ──
+  const projects = [
+    {
+      id: "PRJ-GROWTH",
+      pid: "P-001",
+      name: "Revenue Growth Program",
+      cat: "revenue",
+      goalId: "G-REV",
+      desc: "Coordinate all revenue-driving initiatives across digital channels, paid media, and email",
+    },
+    {
+      id: "PRJ-ACQUIRE",
+      pid: "P-002",
+      name: "Customer Acquisition Optimization",
+      cat: "acquisition",
+      goalId: "G-CAC",
+      desc: "Reduce CAC through organic discovery, referral programs, and conversion optimization",
+    },
+    {
+      id: "PRJ-RETAIN",
+      pid: "P-003",
+      name: "Customer Retention & Loyalty",
+      cat: "retention",
+      goalId: "G-RET",
+      desc: "Increase repeat purchase rate and customer lifetime value through retention campaigns",
+    },
+    {
+      id: "PRJ-BRAND",
+      pid: "P-004",
+      name: "Brand Authority & Positioning",
+      cat: "branding",
+      goalId: "G-BRD",
+      desc: "Establish VividWalls as the premium destination for art-quality wall decor",
+    },
+  ];
+  for (const p of projects) {
+    await ins(
+      `insert $p isa project, has uid "${p.id}", has project_id "${p.pid}", has name "${p.name}", has description "${p.desc}", has status "active", has category "${p.cat}", has priority 0.85, has created_at "${now}", has updated_at "${now}";`,
+    );
+    count.projects++;
+    await ins(
+      `match $g isa goal, has uid "${p.goalId}"; $p isa project, has uid "${p.id}"; insert (parent_goal: $g, child_project: $p) isa goal_has_project;`,
+    );
+  }
+
+  // ── Initiatives (organized under projects) ──
   const initiatives = [
-    { id: "INI-DIG", name: "Q2 Digital Growth Program", cat: "growth", goalIds: ["G-REV"] },
+    {
+      id: "INI-DIG",
+      name: "Q2 Digital Growth Program",
+      cat: "growth",
+      goalIds: ["G-REV"],
+      projectId: "PRJ-GROWTH",
+    },
     {
       id: "INI-REF",
       name: "Referral & Retention Program",
       cat: "retention",
       goalIds: ["G-CAC", "G-RET"],
+      projectId: "PRJ-ACQUIRE",
     },
     {
       id: "INI-SEO",
       name: "Organic Discovery Initiative",
       cat: "acquisition",
       goalIds: ["G-REV", "G-CAC"],
+      projectId: "PRJ-ACQUIRE",
     },
-    { id: "INI-BRD", name: "Brand Authority Campaign", cat: "branding", goalIds: ["G-BRD"] },
-    { id: "INI-EML", name: "Email Revenue Engine", cat: "engagement", goalIds: ["G-REV", "G-RET"] },
-    { id: "INI-EXP", name: "New Market Expansion", cat: "growth", goalIds: ["G-REV"] },
+    {
+      id: "INI-BRD",
+      name: "Brand Authority Campaign",
+      cat: "branding",
+      goalIds: ["G-BRD"],
+      projectId: "PRJ-BRAND",
+    },
+    {
+      id: "INI-EML",
+      name: "Email Revenue Engine",
+      cat: "engagement",
+      goalIds: ["G-REV", "G-RET"],
+      projectId: "PRJ-RETAIN",
+    },
+    {
+      id: "INI-EXP",
+      name: "New Market Expansion",
+      cat: "growth",
+      goalIds: ["G-REV"],
+      projectId: "PRJ-GROWTH",
+    },
   ];
   for (const i of initiatives) {
     await ins(
@@ -259,6 +344,12 @@ async function seedConnectedHierarchy(
     for (const gid of i.goalIds) {
       await ins(
         `match $g isa goal, has uid "${gid}"; $i isa initiative, has uid "${i.id}"; insert (driving_goal: $g, driven_initiative: $i) isa goal_drives_initiative;`,
+      );
+    }
+    // Link initiative to its parent project
+    if (i.projectId) {
+      await ins(
+        `match $p isa project, has uid "${i.projectId}"; $i isa initiative, has uid "${i.id}"; insert (parent_project: $p, child_initiative: $i) isa project_contains_initiative;`,
       );
     }
   }
@@ -584,7 +675,7 @@ async function seedConnectedHierarchy(
   }
 
   logger.info(
-    `[mabos] Seeded connected hierarchy: ${count.goals} goals, ${count.initiatives} initiatives, ${count.campaigns} campaigns, ${count.tasks} tasks, ${count.actions} actions`,
+    `[mabos] Seeded connected hierarchy: ${count.goals} goals, ${count.projects} projects, ${count.initiatives} initiatives, ${count.campaigns} campaigns, ${count.tasks} tasks, ${count.actions} actions`,
   );
 }
 
@@ -766,17 +857,17 @@ export default function register(api: OpenClawPluginApi) {
                 api.logger.info("[mabos] TypeDB connected");
                 // Seed connected hierarchy if none exists
                 try {
-                  // Check if full hierarchy exists (initiatives are the indicator)
-                  const iniCheck = await client
-                    .matchQuery(`match $i isa initiative, has uid $id;`, "mabos")
+                  // Check if full hierarchy exists (projects are the latest indicator)
+                  const projCheck = await client
+                    .matchQuery(`match $p isa project, has uid $id;`, "mabos")
                     .catch(() => null);
                   const hasHierarchy =
-                    iniCheck?.answerType === "conceptRows" && (iniCheck.answers?.length ?? 0) > 0;
+                    projCheck?.answerType === "conceptRows" && (projCheck.answers?.length ?? 0) > 0;
                   if (!hasHierarchy) {
                     await seedConnectedHierarchy(client, "mabos", api.logger);
                   } else {
                     api.logger.info(
-                      `[mabos] Connected hierarchy already in TypeDB (${iniCheck?.answers?.length ?? 0} initiatives)`,
+                      `[mabos] Connected hierarchy already in TypeDB (${projCheck?.answers?.length ?? 0} projects)`,
                     );
                   }
                 } catch (err) {
@@ -5030,7 +5121,9 @@ export default function register(api: OpenClawPluginApi) {
 
       res.setHeader("Content-Type", "application/json");
       res.end(
-        JSON.stringify(detail ?? { campaign: null, initiative: null, goal: null, tasks: [] }),
+        JSON.stringify(
+          detail ?? { campaign: null, project: null, initiative: null, goal: null, tasks: [] },
+        ),
       );
     } catch (err) {
       res.setHeader("Content-Type", "application/json");

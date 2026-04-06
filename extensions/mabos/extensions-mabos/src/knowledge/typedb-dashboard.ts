@@ -738,6 +738,7 @@ export interface CampaignTaskDetail {
 
 export interface CampaignFullDetail {
   campaign: DashboardCampaign;
+  project: { id: string; name: string } | null;
   initiative: { id: string; name: string } | null;
   goal: { id: string; name: string } | null;
   tasks: CampaignTaskDetail[];
@@ -798,16 +799,38 @@ export async function queryCampaignDetailFromTypeDB(
       /* no initiative */
     }
 
-    // Get parent goal (via initiative)
-    let goal: { id: string; name: string } | null = null;
+    // Get parent project (via initiative)
+    let project: { id: string; name: string } | null = null;
     if (initiative) {
       try {
-        const goalRes = await client
+        const projRes = await client
           .matchQuery(
-            `match $g isa goal, has uid $gid, has name $gname; $i isa initiative, has uid "${initiative.id}"; (driving_goal: $g, driven_initiative: $i) isa goal_drives_initiative;`,
+            `match $p isa project, has uid $pid, has name $pname; $i isa initiative, has uid "${initiative.id}"; (parent_project: $p, child_initiative: $i) isa project_contains_initiative;`,
             dbName,
           )
           .catch(() => null);
+        const projRows = getRows(projRes);
+        if (projRows.length > 0) {
+          project = {
+            id: (getConceptValue(projRows[0].data["pid"]) as string) || "",
+            name: (getConceptValue(projRows[0].data["pname"]) as string) || "",
+          };
+        }
+      } catch {
+        /* no project */
+      }
+    }
+
+    // Get parent goal (via project or initiative)
+    let goal: { id: string; name: string } | null = null;
+    const goalLookupId = project?.id ?? initiative?.id;
+    const goalLookupType = project ? "project" : "initiative";
+    if (goalLookupId) {
+      try {
+        const goalQuery = project
+          ? `match $g isa goal, has uid $gid, has name $gname; $p isa project, has uid "${project.id}"; (parent_goal: $g, child_project: $p) isa goal_has_project;`
+          : `match $g isa goal, has uid $gid, has name $gname; $i isa initiative, has uid "${initiative!.id}"; (driving_goal: $g, driven_initiative: $i) isa goal_drives_initiative;`;
+        const goalRes = await client.matchQuery(goalQuery, dbName).catch(() => null);
         const goalRows = getRows(goalRes);
         if (goalRows.length > 0) {
           goal = {
@@ -883,7 +906,7 @@ export async function queryCampaignDetailFromTypeDB(
       /* no tasks */
     }
 
-    return { campaign, initiative, goal, tasks };
+    return { campaign, project, initiative, goal, tasks };
   } catch {
     return null;
   }

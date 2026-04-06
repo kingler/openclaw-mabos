@@ -546,6 +546,7 @@ export type CampaignTask = {
 
 export type CampaignFullDetail = {
   campaign: MarketingCampaign | null;
+  project: { id: string; name: string } | null;
   initiative: { id: string; name: string } | null;
   goal: { id: string; name: string } | null;
   tasks: CampaignTask[];

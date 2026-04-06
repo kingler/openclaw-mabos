@@ -265,13 +265,19 @@ export function CampaignDetail({ campaign, open, onOpenChange }: CampaignDetailP
         }`}
       >
         <SheetHeader className="pb-0">
-          {/* Hierarchy breadcrumb: Goal → Initiative → Campaign */}
-          {detail?.goal || detail?.initiative ? (
+          {/* Hierarchy breadcrumb: Goal → Project → Initiative → Campaign */}
+          {detail?.goal || detail?.project || detail?.initiative ? (
             <div className="flex items-center gap-1 text-[10px] text-[var(--text-muted)] mb-2 flex-wrap">
               {detail.goal && (
                 <>
                   <Target className="w-3 h-3 text-[var(--accent-purple)]" />
                   <span>{detail.goal.name}</span>
+                  <ChevronRight className="w-3 h-3" />
+                </>
+              )}
+              {detail.project && (
+                <>
+                  <span className="text-[var(--accent-blue)]">{detail.project.name}</span>
                   <ChevronRight className="w-3 h-3" />
                 </>
               )}

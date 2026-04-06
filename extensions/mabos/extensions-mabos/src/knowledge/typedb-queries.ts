@@ -1466,7 +1466,19 @@ export function getBaseSchema(): string {
 
   bpmn_workflow plays project_has_workflow:ph_workflow;
 
-  # ── Connected Hierarchy: Goal → Initiative → Campaign → Task → Action ──
+  # ── Connected Hierarchy: Goal → Project → Initiative → Campaign → Task → Action ──
+
+  attribute project_id, value string;
+  entity project,
+    owns uid @key,
+    owns project_id,
+    owns name,
+    owns description,
+    owns status,
+    owns category,
+    owns priority,
+    owns created_at,
+    owns updated_at;
 
   entity initiative,
     owns uid @key,
@@ -1477,6 +1489,14 @@ export function getBaseSchema(): string {
     owns priority,
     owns created_at,
     owns updated_at;
+
+  relation goal_has_project,
+    relates parent_goal,
+    relates child_project;
+
+  relation project_contains_initiative,
+    relates parent_project,
+    relates child_initiative;
 
   relation goal_drives_initiative,
     relates driving_goal,
@@ -1494,7 +1514,13 @@ export function getBaseSchema(): string {
     relates producing_task,
     relates produced_action;
 
+  project plays agent_owns:owned;
+  project plays project_has_workflow:ph_project;
   initiative plays agent_owns:owned;
+  goal plays goal_has_project:parent_goal;
+  project plays goal_has_project:child_project;
+  project plays project_contains_initiative:parent_project;
+  initiative plays project_contains_initiative:child_initiative;
   goal plays goal_drives_initiative:driving_goal;
   initiative plays goal_drives_initiative:driven_initiative;
   initiative plays initiative_contains_campaign:parent_initiative;
