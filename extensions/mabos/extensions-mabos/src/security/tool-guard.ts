@@ -29,6 +29,7 @@ const SENSITIVE_KEYS = new Set([
 export class ToolGuard {
   private dangerousPatterns: Array<string | RegExp>;
   private autoApproveRoles: Set<string>;
+  private pendingApprovals = new Map<string, ApprovalRequest>();
 
   constructor(config: ToolGuardConfig) {
     this.dangerousPatterns = (config.dangerousTools ?? []).map((pattern) => {
@@ -49,7 +50,7 @@ export class ToolGuard {
     if (this.autoApproveRoles.has(actorRole)) return null;
     if (!this.isDangerous(toolName)) return null;
 
-    return {
+    const request: ApprovalRequest = {
       id: generatePrefixedId("approval"),
       toolName,
       redactedArgs: this.redactSensitive(args),
@@ -57,6 +58,23 @@ export class ToolGuard {
       reason: `Tool "${toolName}" requires operator approval.`,
       createdAt: Date.now(),
     };
+    this.pendingApprovals.set(request.id, request);
+    return request;
+  }
+
+  getPendingApprovals(): ApprovalRequest[] {
+    // Expire approvals older than 5 minutes
+    const now = Date.now();
+    for (const [id, req] of this.pendingApprovals) {
+      if (now - req.createdAt > 5 * 60 * 1000) {
+        this.pendingApprovals.delete(id);
+      }
+    }
+    return [...this.pendingApprovals.values()];
+  }
+
+  resolveApproval(id: string, decision: "approve" | "deny"): void {
+    this.pendingApprovals.delete(id);
   }
 
   private isDangerous(toolName: string): boolean {

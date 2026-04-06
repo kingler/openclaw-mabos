@@ -1,11 +1,19 @@
+/**
+ * Session intelligence module — FTS5 full-text search across sessions,
+ * cross-session knowledge recall, and dialectic user profile building.
+ */
+
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { Type } from "@sinclair/typebox";
 import type { OpenClawPluginApi, AnyAgentTool } from "openclaw/plugin-sdk";
 import { textResult, resolveWorkspaceDir } from "../tools/common.js";
+import { registerSessionIntelHooks } from "./hooks.js";
 import { SessionRecall } from "./recall.js";
+import { registerSessionIntelRoutes } from "./routes.js";
 import { SessionIndex } from "./session-index.js";
 import type { SessionIntelConfig } from "./types.js";
+import { UserModel } from "./user-model.js";
 
 export function registerSessionIntel(
   api: OpenClawPluginApi,
@@ -25,6 +33,16 @@ export function registerSessionIntel(
   const dbPath = siConfig.fts?.dbPath ?? join(dbDir, "sessions.db");
   const index = new SessionIndex(dbPath);
   const recall = new SessionRecall(index);
+
+  // Initialize user model if enabled
+  let userModel: UserModel | null = null;
+  if (siConfig.userModel?.enabled) {
+    const profilePath = siConfig.userModel.profilePath ?? join(dbDir, "USER.md");
+    userModel = new UserModel({
+      profilePath,
+      updateInterval: siConfig.userModel.updateInterval ?? 5,
+    });
+  }
 
   // Tool: session_search
   api.registerTool({
@@ -76,39 +94,45 @@ export function registerSessionIntel(
     },
   } as AnyAgentTool);
 
-  // Hook: index sessions on end
-  api.on("session_end", async (ctx: Record<string, unknown>) => {
-    try {
-      const sessionId = (ctx.sessionId as string) ?? `session-${Date.now()}`;
-      index.indexSession({
-        id: sessionId,
-        agentId: (ctx.agentId as string) ?? "unknown",
-        companyId: (ctx.companyId as string) ?? "default",
-        source: (ctx.source as string) ?? null,
-        startedAt: (ctx.startedAt as number) ?? Date.now(),
-        endedAt: Date.now(),
-        messageCount: Array.isArray(ctx.messages) ? ctx.messages.length : 0,
-        title: (ctx.title as string) ?? null,
-        summary: null,
-      });
-      const messages = Array.isArray(ctx.messages) ? ctx.messages : [];
-      for (const msg of messages) {
-        const m = msg as Record<string, unknown>;
-        if (!m.content) continue;
-        index.indexMessage({
-          sessionId,
-          role: (m.role as string) ?? "unknown",
-          content: typeof m.content === "string" ? m.content : JSON.stringify(m.content),
-          toolName: (m.toolName as string) ?? null,
-          timestamp: (m.timestamp as number) ?? Date.now(),
-        });
-      }
-    } catch (err) {
-      log.warn(`[session-intel] Failed to index session: ${err}`);
-    }
-  });
+  // Tool: user_profile
+  if (userModel) {
+    api.registerTool({
+      name: "user_profile",
+      label: "User Profile",
+      description:
+        "View or update the user profile built from session history. " +
+        "The profile captures communication style, domain expertise, and workflow preferences.",
+      parameters: Type.Object({
+        action: Type.Optional(
+          Type.String({ description: "'view' (default) or 'reset' to clear the profile" }),
+        ),
+      }),
+      async execute(_id: string, params: { action?: string }) {
+        if (params.action === "reset") {
+          await userModel!.writeProfile("");
+          return textResult("User profile has been reset.");
+        }
 
-  log.info("[session-intel] Session intelligence initialized (FTS5 index + recall)");
+        const profile = await userModel!.readProfile();
+        if (!profile) {
+          return textResult(
+            "No user profile yet. The profile is built automatically after several sessions.",
+          );
+        }
+        return textResult(`User Profile:\n\n${profile}`);
+      },
+    } as AnyAgentTool);
+  }
+
+  // Register hooks (session indexing + user model tracking + profile injection)
+  registerSessionIntelHooks(api, { index, userModel, config: siConfig });
+
+  // Register HTTP routes
+  registerSessionIntelRoutes(api, index, recall, userModel);
+
+  log.info(
+    `[session-intel] Session intelligence initialized (FTS5 index + recall${userModel ? " + user model" : ""})`,
+  );
 }
 
 export { SessionIndex } from "./session-index.js";

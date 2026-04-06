@@ -1,5 +1,15 @@
+/**
+ * Security module — proactive defense for agent-generated content:
+ * injection scanning, tool approval guards, content sanitization, and SSRF prevention.
+ *
+ * Enabled by default — security should be opt-out, not opt-in.
+ */
+
 import type { OpenClawPluginApi } from "openclaw/plugin-sdk";
+import { registerSecurityHooks } from "./hooks.js";
 import { InjectionScanner } from "./injection-scanner.js";
+import { registerSecurityRoutes } from "./routes.js";
+import { Sanitizer } from "./sanitizer.js";
 import { ToolGuard } from "./tool-guard.js";
 import type { SecurityConfig } from "./types.js";
 import { UrlValidator } from "./url-validator.js";
@@ -19,6 +29,15 @@ const DEFAULT_DANGEROUS_TOOLS = [
   "godaddy_delete_*",
 ];
 
+// In-memory scan log for the security dashboard
+const scanLog: Array<{
+  timestamp: string;
+  source: string;
+  threat: string;
+  patterns: string[];
+  blocked: boolean;
+}> = [];
+
 export function createSecurityModule(api: OpenClawPluginApi, config: MabosSecurityConfig): void {
   if (config.securityEnabled === false) return;
 
@@ -30,39 +49,34 @@ export function createSecurityModule(api: OpenClawPluginApi, config: MabosSecuri
     dangerousTools: secConfig.toolGuard?.dangerousTools ?? DEFAULT_DANGEROUS_TOOLS,
     autoApproveForRoles: secConfig.toolGuard?.autoApproveForRoles ?? ["admin", "operator"],
   });
+  const sanitizer = new Sanitizer();
 
-  if (secConfig.injectionScanning?.enabled !== false) {
-    api.on("before_tool_call", async (ctx: any) => {
-      const argsText = JSON.stringify(ctx.args ?? {});
-      const result = scanner.scan(argsText);
-      if (!result.clean) {
-        log.warn(
-          `[security] Injection detected in ${ctx.toolName}: ${result.findings.map((f) => f.pattern).join(", ")}`,
-        );
-        if (secConfig.injectionScanning?.blockOnDetection !== false) {
-          return {
-            blocked: true,
-            reason: `Security: potential injection detected (${result.highestThreat} threat) in tool "${ctx.toolName}". Patterns: ${result.findings.map((f) => f.pattern).join(", ")}`,
-          };
-        }
-      }
-    });
-  }
+  // Wrap scanner to record to scan log
+  const originalScan = scanner.scan.bind(scanner);
+  scanner.scan = (text: string) => {
+    const result = originalScan(text);
+    if (!result.clean) {
+      scanLog.push({
+        timestamp: new Date().toISOString(),
+        source: "tool_input",
+        threat: result.highestThreat,
+        patterns: result.findings.map((f) => f.pattern),
+        blocked: secConfig.injectionScanning?.blockOnDetection !== false,
+      });
+      // Keep log bounded
+      if (scanLog.length > 1000) scanLog.splice(0, scanLog.length - 1000);
+    }
+    return result;
+  };
 
-  if (secConfig.toolGuard?.enabled !== false) {
-    api.on("before_tool_call", async (ctx: any) => {
-      const role = ctx.agentRole ?? ctx.senderRole ?? "agent";
-      const approval = guard.checkApproval(ctx.toolName, ctx.args ?? {}, role);
-      if (approval) {
-        log.info(`[security] Tool guard: ${ctx.toolName} requires approval for role "${role}"`);
-        ctx.meta = ctx.meta ?? {};
-        ctx.meta.pendingApproval = approval;
-      }
-    });
-  }
+  // Register hooks (injection scanning, tool guard, external content sanitization)
+  registerSecurityHooks(api, { scanner, guard, sanitizer, config: secConfig });
+
+  // Register HTTP routes (status, scan log, approvals)
+  registerSecurityRoutes(api, scanner, guard, scanLog);
 
   log.info(
-    "[security] Security module initialized (injection scanner + tool guard + URL validator)",
+    "[security] Security module initialized (injection scanner + tool guard + URL validator + routes)",
   );
 }
 

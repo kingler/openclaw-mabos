@@ -1,11 +1,20 @@
+/**
+ * Skill loop module — autonomous skill creation from agent experience,
+ * local skill registry, marketplace integration, and prompt injection.
+ */
+
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { Type } from "@sinclair/typebox";
 import type { OpenClawPluginApi, AnyAgentTool } from "openclaw/plugin-sdk";
 import { textResult, resolveWorkspaceDir } from "../tools/common.js";
 import { SkillCreator } from "./creator.js";
+import { registerSkillLoopHooks } from "./hooks.js";
+import { SkillInjector } from "./injector.js";
+import { SkillMarketplace } from "./marketplace.js";
 import { SkillNudge } from "./nudge.js";
 import { SkillRegistry } from "./registry.js";
+import { registerSkillLoopRoutes } from "./routes.js";
 import type { SkillLoopConfig } from "./types.js";
 
 export function registerSkillLoop(
@@ -20,6 +29,8 @@ export function registerSkillLoop(
   const registry = new SkillRegistry(slConfig.skillPaths ?? [defaultSkillPath]);
   const creator = new SkillCreator(registry);
   const nudge = new SkillNudge(creator, slConfig.creationNudgeInterval ?? 10);
+  const marketplace = new SkillMarketplace(slConfig.marketplace);
+  const injector = new SkillInjector(registry, slConfig);
 
   // Scan existing skills on startup
   registry.scan().catch((err) => log.warn(`[skill-loop] Initial scan failed: ${err}`));
@@ -46,18 +57,42 @@ export function registerSkillLoop(
   api.registerTool({
     name: "skill_search",
     label: "Search Skills",
-    description: "Search for skills by keyword, tag, or description.",
+    description:
+      "Search for skills by keyword, tag, or description in local registry and marketplace.",
     parameters: Type.Object({
       query: Type.String({ description: "Search query" }),
+      include_marketplace: Type.Optional(
+        Type.Boolean({ description: "Also search marketplace (default: true)" }),
+      ),
     }),
-    async execute(_id: string, params: { query: string }) {
+    async execute(_id: string, params: { query: string; include_marketplace?: boolean }) {
       await registry.scan();
-      const results = registry.search(params.query);
-      if (results.length === 0) return textResult(`No skills found for "${params.query}".`);
-      const lines = results.map((s) => `${s.name} — ${s.manifest.description.slice(0, 100)}`);
-      return textResult(
-        `Skills matching "${params.query}" (${results.length}):\n${lines.join("\n")}`,
-      );
+      const localResults = registry.search(params.query);
+
+      const lines: string[] = [];
+      if (localResults.length > 0) {
+        lines.push(`Local (${localResults.length}):`);
+        lines.push(
+          ...localResults.map((s) => `  ${s.name} — ${s.manifest.description.slice(0, 100)}`),
+        );
+      }
+
+      if (params.include_marketplace !== false) {
+        try {
+          const mpResults = await marketplace.search(params.query);
+          if (mpResults.length > 0) {
+            lines.push(`\nMarketplace (${mpResults.length}):`);
+            lines.push(
+              ...mpResults.map((s) => `  ${s.name} (${s.source}) — ${s.description.slice(0, 100)}`),
+            );
+          }
+        } catch {
+          // Marketplace unavailable — skip silently
+        }
+      }
+
+      if (lines.length === 0) return textResult(`No skills found for "${params.query}".`);
+      return textResult(`Skills matching "${params.query}":\n${lines.join("\n")}`);
     },
   } as AnyAgentTool);
 
@@ -100,6 +135,44 @@ export function registerSkillLoop(
     },
   } as AnyAgentTool);
 
+  // Tool: skill_install
+  api.registerTool({
+    name: "skill_install",
+    label: "Install Skill",
+    description:
+      "Install a skill from the marketplace (GitHub or ClawHub) into the local registry.",
+    parameters: Type.Object({
+      name: Type.String({ description: "Skill name" }),
+      source: Type.String({ description: "Source: 'github' or 'clawhub'" }),
+      install_url: Type.String({ description: "URL to install from (repo URL or package URL)" }),
+    }),
+    async execute(_id: string, params: { name: string; source: string; install_url: string }) {
+      try {
+        const result = await marketplace.install(
+          {
+            name: params.name,
+            version: "latest",
+            description: "",
+            author: "",
+            tags: [],
+            source: params.source,
+            installUrl: params.install_url,
+          },
+          defaultSkillPath,
+        );
+
+        // Re-scan to pick up the new skill
+        await registry.scan();
+
+        return textResult(
+          `Installed skill "${result.manifest.name}" (v${result.manifest.version}) at ${result.path}`,
+        );
+      } catch (err) {
+        return textResult(`Failed to install skill: ${err}`);
+      }
+    },
+  } as AnyAgentTool);
+
   // Tool: skill_run
   api.registerTool({
     name: "skill_run",
@@ -118,25 +191,11 @@ export function registerSkillLoop(
     },
   } as AnyAgentTool);
 
-  // Hook: nudge skill creation on session end
-  api.on("session_end", async (ctx: Record<string, unknown>) => {
-    try {
-      const proposal = await nudge.onSessionEnd({
-        taskDescription: ctx.taskDescription as string | undefined,
-        toolsUsed: ctx.toolsUsed as string[] | undefined,
-        outcome: ctx.outcome as string | undefined,
-        agentId: ctx.agentId as string | undefined,
-        sessionId: ctx.sessionId as string | undefined,
-      });
-      if (proposal) {
-        log.info(
-          `[skill-loop] Skill proposal: "${proposal.name}" (confidence: ${proposal.confidence.toFixed(2)})`,
-        );
-      }
-    } catch (err) {
-      log.warn(`[skill-loop] Nudge failed: ${err}`);
-    }
-  });
+  // Register hooks (nudge + prompt injection)
+  registerSkillLoopHooks(api, { nudge, injector, config: slConfig });
+
+  // Register HTTP routes
+  registerSkillLoopRoutes(api, registry, marketplace);
 
   log.info(`[skill-loop] Skill loop initialized (paths: ${registry["paths"].join(", ")})`);
 }
