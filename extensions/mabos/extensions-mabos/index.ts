@@ -869,6 +869,311 @@ async function seedConnectedHierarchy(
     count.decisions = (count.decisions ?? 0) + 1;
   }
 
+  // ── Historical decisions from decision-queue.json (relevant business decisions) ──
+  const queueDecisions = [
+    {
+      id: "DEC-meta-account-config",
+      agent: "vw-ceo",
+      urgency: "medium",
+      name: "Meta Account ID Configuration for Full Social Media Capability",
+      desc: "Meta authentication restored but posting requires Instagram Business Account ID and Facebook Page ID configuration. Posts fail with 'No account ID configured' errors.",
+      options: [
+        {
+          id: "configure-now",
+          label: "Configure Account IDs Immediately",
+          description: "Complete social media restoration, immediate posting capability",
+          recommended: true,
+        },
+        {
+          id: "email-first",
+          label: "Continue Email Marketing Only",
+          description: "Maintain current email success, postpone social media",
+          recommended: false,
+        },
+        {
+          id: "technical-support",
+          label: "Technical Support for Configuration",
+          description: "Expert assistance with Meta Business Manager setup ($200)",
+          recommended: false,
+        },
+      ],
+      recommendation:
+        "configure-now: Immediate configuration restores full social media capability at zero cost",
+      created: "2026-03-12T22:41:45.746Z",
+    },
+    {
+      id: "DEC-prospect-data-recovery",
+      agent: "vw-ceo",
+      urgency: "critical",
+      name: "Prospect Database Data Loss — 561+ Leads Missing",
+      desc: "Major data discrepancy: previous records show 561+ B2B prospects from Apollo batches but current systems show ZERO. Email campaign only reached 100 instead of 561+.",
+      options: [
+        {
+          id: "immediate-recovery",
+          label: "Emergency Data Recovery Investigation",
+          description: "Recover lost prospect data, restore full email list ($500)",
+          recommended: false,
+        },
+        {
+          id: "apollo-regeneration",
+          label: "Re-run Apollo Lead Generation",
+          description: "Generate fresh 500+ prospects, bypass recovery ($800)",
+          recommended: false,
+        },
+        {
+          id: "hybrid-approach",
+          label: "Recovery + Fresh Generation",
+          description: "Attempt recovery while generating new prospects ($1000)",
+          recommended: true,
+        },
+      ],
+      recommendation:
+        "hybrid-approach: Dual approach maximizes prospect pool recovery while ensuring no further data loss",
+      created: "2026-03-13T01:27:05.085Z",
+    },
+    {
+      id: "DEC-009",
+      agent: "vw-cmo",
+      urgency: "high",
+      name: "Launch Paid Social Campaigns & Lookalike Audiences",
+      desc: "No paid campaigns deployed despite $30K monthly revenue goal. Current revenue $3,498/month creates $26,502 gap. Immediate authorization needed for $2K monthly ad spend.",
+      options: [
+        {
+          id: "authorize_immediate_launch",
+          label: "Authorize Immediate Campaign Launch",
+          description:
+            "Resolve platform auth, create 6 lookalike audiences, deploy within 72h ($2K/mo)",
+          recommended: true,
+        },
+        {
+          id: "phased_approach",
+          label: "Phased Campaign Launch",
+          description: "Start with one platform, test and expand over 4-6 weeks ($500)",
+          recommended: false,
+        },
+        {
+          id: "delay_campaigns",
+          label: "Delay Campaign Launch",
+          description: "Continue organic only — $30K goal unachievable without paid acquisition",
+          recommended: false,
+        },
+      ],
+      recommendation: "authorize_immediate_launch: Fastest path to closing the $26.5K revenue gap",
+      created: "2026-03-15T21:54:06.481Z",
+    },
+    {
+      id: "DEC-STRATEGIC-ACTIVATION-001",
+      agent: "vw-ceo",
+      urgency: "high",
+      name: "Strategic Goal Activation Required",
+      desc: "Multiple strategic goals restored at 0% progress: $30K MRR, customer segment diversification, operational excellence, premium positioning. Require tactical activation.",
+      options: [
+        {
+          id: "approve",
+          label: "Approve tactical activation",
+          description: "Enables immediate tactical planning across C-suite agents",
+          recommended: true,
+        },
+        {
+          id: "defer",
+          label: "Defer activation",
+          description: "Strategic goals remain stalled, potential business impact",
+          recommended: false,
+        },
+      ],
+      recommendation:
+        "approve: Goals at 0% progress require immediate activation to avoid further delay",
+      created: "2026-03-17T15:50:32.942Z",
+    },
+    {
+      id: "DEC-CEO-REVENUE-CRISIS-20260317",
+      agent: "vw-cfo",
+      urgency: "critical",
+      name: "Q1 Revenue Crisis — Immediate Strategic Response",
+      desc: "Revenue at 10% of target ($3,498 vs $30K) with critical landing page deadline in 24 hours.",
+      options: [
+        {
+          id: "option-1",
+          label: "Full Emergency Sprint",
+          description: "Mobilize all agents for 48-hour revenue recovery ($5K)",
+          recommended: false,
+        },
+        {
+          id: "option-2",
+          label: "Targeted Recovery",
+          description: "Focus CMO on landing pages, COO on fulfillment, CFO on pipeline ($2K)",
+          recommended: true,
+        },
+        {
+          id: "option-3",
+          label: "Strategic Pivot",
+          description: "Extend Q1 timeline, reassess $30K target ($1K)",
+          recommended: false,
+        },
+      ],
+      recommendation: "option-2: Targeted approach addresses critical path without overspending",
+      created: "2026-03-17T21:11:26.775Z",
+    },
+    {
+      id: "DEC-REV-CRISIS-001",
+      agent: "vw-cfo",
+      urgency: "critical",
+      name: "Revenue Recovery — Marketing Budget Increase",
+      desc: "93.3% revenue gap ($3,498 vs $30K target). Marketing only 15% complete with $1,500 remaining from $2K budget — insufficient for 15x ROI target.",
+      options: [
+        {
+          id: "option_1",
+          label: "Approve $5K emergency marketing budget",
+          description: "Aggressive campaign launches across all segments, potential 15x ROI",
+          recommended: true,
+        },
+        {
+          id: "option_2",
+          label: "Approve $3K conservative increase",
+          description: "Moderate campaign acceleration, partial segment coverage",
+          recommended: false,
+        },
+        {
+          id: "option_3",
+          label: "Maintain $2K constraint",
+          description: "Severely limited reach, likely revenue target failure",
+          recommended: false,
+        },
+      ],
+      recommendation: "option_1: Revenue gap requires aggressive investment to hit targets",
+      created: "2026-03-17T21:56:04.698Z",
+    },
+    {
+      id: "DEC-CEO-ANALYTICS-001",
+      agent: "vw-ceo",
+      urgency: "high",
+      name: "Meta Analytics API Failure — Tracking Impact",
+      desc: "Meta Analytics API experiencing critical failure affecting marketing ROI tracking and campaign optimization against $30K monthly revenue goal.",
+      options: [
+        {
+          id: "immediate_escalation",
+          label: "Immediate Stakeholder Escalation",
+          description: "Transparent notification of business-critical failure",
+          recommended: true,
+        },
+        {
+          id: "24h_monitoring",
+          label: "24-Hour Technical Resolution Period",
+          description: "Allow CTO team to resolve, escalate only if unresolved",
+          recommended: false,
+        },
+        {
+          id: "alternative_analytics",
+          label: "Deploy Backup Analytics ($500)",
+          description: "Alternative analytics while primary restored",
+          recommended: false,
+        },
+      ],
+      recommendation:
+        "immediate_escalation: Transparency maintains trust while enabling faster resolution",
+      created: "2026-03-18T17:38:21.214Z",
+    },
+    {
+      id: "DEC-EMAIL-UTILIZATION-001",
+      agent: "vw-cmo",
+      urgency: "critical",
+      name: "Full-Scale Email Campaign Deployment",
+      desc: "2,094 prospects in SendGrid but only 200 emails sent (9.5% utilization). Massive untapped revenue potential for $30K MRR target.",
+      options: [
+        {
+          id: "full_deployment",
+          label: "Deploy to All 2,094 Prospects Immediately",
+          description: "10x increase in email reach, accelerated revenue path",
+          recommended: true,
+        },
+        {
+          id: "phased_approach",
+          label: "6-Segment Rollout Over 3 Weeks",
+          description: "Controlled deployment with segment-specific messaging",
+          recommended: false,
+        },
+        {
+          id: "immediate_test",
+          label: "Send to Top 500 Prospects First",
+          description: "Conservative approach to test deliverability",
+          recommended: false,
+        },
+      ],
+      recommendation:
+        "full_deployment: 9.5% utilization is an execution gap, not a strategy question",
+      created: "2026-03-20T17:19:56.356Z",
+    },
+    {
+      id: "DEC-CEO-CV-LE-LAUNCH-001",
+      agent: "vw-cmo",
+      urgency: "critical",
+      name: "Chromatic Visions LE Launch Critical Failure",
+      desc: "Chromatic Visions LE scheduled for March 25 shows ZERO waitlist signups and is missing from LE inventory tracking. Immediate revenue risk.",
+      options: [
+        {
+          id: "emergency_postpone",
+          label: "Postpone launch to April 1",
+          description: "Delays Q1 revenue but allows proper preparation",
+          recommended: false,
+        },
+        {
+          id: "immediate_activation",
+          label: "Immediate CMO activation for same-day launch",
+          description: "Potential same-day revenue if executed within 4 hours",
+          recommended: true,
+        },
+        {
+          id: "q2_relaunch",
+          label: "Move to Q2 strategic launch",
+          description: "Professional execution, maximum revenue potential",
+          recommended: false,
+        },
+      ],
+      recommendation: "immediate_activation: Time-sensitive LE launch needs immediate execution",
+      created: "2026-03-25T19:32:40.713Z",
+    },
+    {
+      id: "DEC-CRISIS-Q1-2026",
+      agent: "vw-cfo",
+      urgency: "critical",
+      name: "Q1 Revenue Crisis — $113K Variance Discovery",
+      desc: "Critical financial discrepancy: previously reported Q1 revenue of $116.4K appears incorrect — actual performance shows $3,498, creating $26,502 MRR shortfall and ~$113K total variance.",
+      options: [
+        {
+          id: "emergency_audit",
+          label: "Emergency Financial Audit",
+          description: "Comprehensive review of all revenue data and reporting systems",
+          recommended: true,
+        },
+        {
+          id: "recovery_first",
+          label: "Recovery Actions First",
+          description: "Focus on marketing/sales recovery, investigate cause later",
+          recommended: false,
+        },
+        {
+          id: "stakeholder_session",
+          label: "Emergency Stakeholder Session",
+          description: "Full briefing and strategy session with C-suite",
+          recommended: false,
+        },
+      ],
+      recommendation:
+        "emergency_audit: Must validate revenue data accuracy before any recovery actions",
+      created: "2026-03-29T12:47:27.427Z",
+    },
+  ];
+  for (const d of queueDecisions) {
+    const optsJson = JSON.stringify(d.options).replace(/"/g, '\\"');
+    await ins(
+      `insert $d isa decision, has uid "${d.id}", has name ${JSON.stringify(d.name)}, has description ${JSON.stringify(d.desc)}, has urgency_level "${d.urgency}", has status "pending", has options_json "${optsJson}", has recommendation ${JSON.stringify(d.recommendation)}, has created_at "${d.created}", has updated_at "${now}";`,
+    );
+    await ins(
+      `match $a isa agent, has uid "${d.agent}"; $d isa decision, has uid "${d.id}"; insert (owner: $a, owned: $d) isa agent_owns;`,
+    );
+    count.decisions = (count.decisions ?? 0) + 1;
+  }
+
   logger.info(
     `[mabos] Seeded connected hierarchy: ${count.goals} goals, ${count.projects} projects, ${count.initiatives} initiatives, ${count.campaigns} campaigns, ${count.tasks} tasks, ${count.actions} actions, ${count.decisions ?? 0} decisions`,
   );
@@ -1061,8 +1366,9 @@ export default function register(api: OpenClawPluginApi) {
                     .catch(() => null);
                   const hasProjects =
                     projCheck?.answerType === "conceptRows" && (projCheck.answers?.length ?? 0) > 0;
-                  const hasDecisions =
-                    decCheck?.answerType === "conceptRows" && (decCheck.answers?.length ?? 0) > 0;
+                  const decisionCount =
+                    decCheck?.answerType === "conceptRows" ? (decCheck.answers?.length ?? 0) : 0;
+                  const hasDecisions = decisionCount >= 16; // 6 seed + 10 queue-based
                   if (!hasProjects || !hasDecisions) {
                     api.logger.info(
                       `[mabos] Re-seeding hierarchy (projects: ${hasProjects}, decisions: ${hasDecisions})`,
