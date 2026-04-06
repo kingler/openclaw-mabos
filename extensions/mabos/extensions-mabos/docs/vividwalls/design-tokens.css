@@ -1,0 +1,107 @@
+/**
+ * VividWalls Design Tokens v1.0
+ * Generated from brand-guidelines.md — 2026-04-05
+ *
+ * Usage: @import url('./design-tokens.css');
+ */
+
+:root {
+  /* ─── Primary Colors ─── */
+  --vw-color-primary: #0061FF;
+  --vw-color-primary-hover: #0050D4;
+  --vw-color-secondary: #1A1A2E;
+
+  /* ─── Accent Colors ─── */
+  --vw-color-accent-rose: #E94560;
+  --vw-color-accent-rose-hover: #D13A54;
+  --vw-color-accent-gold: #C9A96E;
+  --vw-color-accent-sage: #7C9A82;
+
+  /* ─── Neutral Palette ─── */
+  --vw-color-white: #FFFFFF;
+  --vw-color-gallery-white: #FAFAF8;
+  --vw-color-warm-gray: #E8E6E1;
+  --vw-color-mid-gray: #9B9B9B;
+  --vw-color-charcoal: #333333;
+
+  /* ─── Semantic Colors ─── */
+  --vw-color-success: #22C55E;
+  --vw-color-warning: #F59E0B;
+  --vw-color-error: #EF4444;
+  --vw-color-info: #0061FF;
+
+  /* ─── Typography ─── */
+  --vw-font-heading: 'Playfair Display', 'Georgia', serif;
+  --vw-font-body: 'Inter', system-ui, -apple-system, sans-serif;
+  --vw-font-accent: 'Playfair Display', 'Georgia', serif;
+  --vw-font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+
+  /* ─── Type Scale ─── */
+  --vw-text-display: 64px;
+  --vw-text-h1: 48px;
+  --vw-text-h2: 36px;
+  --vw-text-h3: 24px;
+  --vw-text-h4: 20px;
+  --vw-text-body: 16px;
+  --vw-text-body-lg: 18px;
+  --vw-text-small: 14px;
+  --vw-text-caption: 12px;
+  --vw-text-edition: 14px;
+
+  /* ─── Font Weights ─── */
+  --vw-weight-regular: 400;
+  --vw-weight-medium: 500;
+  --vw-weight-semibold: 600;
+  --vw-weight-bold: 700;
+
+  /* ─── Line Heights ─── */
+  --vw-leading-tight: 1.1;
+  --vw-leading-snug: 1.2;
+  --vw-leading-normal: 1.4;
+  --vw-leading-relaxed: 1.6;
+
+  /* ─── Letter Spacing ─── */
+  --vw-tracking-tight: -0.02em;
+  --vw-tracking-snug: -0.01em;
+  --vw-tracking-normal: 0;
+  --vw-tracking-wide: 0.01em;
+  --vw-tracking-wider: 0.04em;
+  --vw-tracking-widest: 0.08em;
+
+  /* ─── Spacing ─── */
+  --vw-space-2xs: 4px;
+  --vw-space-xs: 8px;
+  --vw-space-sm: 12px;
+  --vw-space-md: 16px;
+  --vw-space-lg: 24px;
+  --vw-space-xl: 32px;
+  --vw-space-2xl: 48px;
+  --vw-space-3xl: 64px;
+  --vw-space-4xl: 96px;
+
+  /* ─── Border Radius ─── */
+  --vw-radius-button: 4px;
+  --vw-radius-card: 8px;
+  --vw-radius-product: 0px;
+  --vw-radius-input: 4px;
+  --vw-radius-modal: 12px;
+  --vw-radius-badge: 2px;
+  --vw-radius-circle: 9999px;
+
+  /* ─── Shadows ─── */
+  --vw-shadow-subtle: 0 1px 2px rgba(26, 26, 46, 0.06);
+  --vw-shadow-medium: 0 4px 12px rgba(26, 26, 46, 0.08);
+  --vw-shadow-elevated: 0 8px 24px rgba(26, 26, 46, 0.12);
+  --vw-shadow-art-frame: 0 2px 8px rgba(26, 26, 46, 0.10);
+}
+
+/* ─── Mobile Overrides (type scale) ─── */
+@media (max-width: 768px) {
+  :root {
+    --vw-text-display: 40px;
+    --vw-text-h1: 32px;
+    --vw-text-h2: 28px;
+    --vw-text-h3: 20px;
+    --vw-text-h4: 18px;
+  }
+}

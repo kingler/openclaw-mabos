@@ -1,0 +1,228 @@
+{
+  "brand": "VividWalls",
+  "version": "1.0.0",
+  "lastUpdated": "2026-04-05",
+  "colors": {
+    "primary": {
+      "vivid-blue": {
+        "value": "#0061FF",
+        "rgb": "rgb(0, 97, 255)",
+        "usage": "CTAs, links, primary brand moments"
+      },
+      "deep-navy": {
+        "value": "#1A1A2E",
+        "rgb": "rgb(26, 26, 46)",
+        "usage": "Text, dark backgrounds, logo"
+      }
+    },
+    "accent": {
+      "gallery-rose": {
+        "value": "#E94560",
+        "rgb": "rgb(233, 69, 96)",
+        "usage": "Highlights, sale badges, emotional emphasis"
+      },
+      "warm-gold": {
+        "value": "#C9A96E",
+        "rgb": "rgb(201, 169, 110)",
+        "usage": "Premium badges, certificates, luxury signifiers"
+      },
+      "sage": {
+        "value": "#7C9A82",
+        "rgb": "rgb(124, 154, 130)",
+        "usage": "Nature collection accents, success states"
+      }
+    },
+    "neutral": {
+      "white": {
+        "value": "#FFFFFF",
+        "rgb": "rgb(255, 255, 255)",
+        "usage": "Page backgrounds"
+      },
+      "gallery-white": {
+        "value": "#FAFAF8",
+        "rgb": "rgb(250, 250, 248)",
+        "usage": "Card surfaces, product detail backgrounds"
+      },
+      "warm-gray": {
+        "value": "#E8E6E1",
+        "rgb": "rgb(232, 230, 225)",
+        "usage": "Borders, dividers, subtle backgrounds"
+      },
+      "mid-gray": {
+        "value": "#9B9B9B",
+        "rgb": "rgb(155, 155, 155)",
+        "usage": "Captions, secondary text, metadata"
+      },
+      "charcoal": {
+        "value": "#333333",
+        "rgb": "rgb(51, 51, 51)",
+        "usage": "Body text on light backgrounds"
+      }
+    },
+    "semantic": {
+      "success": {
+        "value": "#22C55E",
+        "usage": "Order confirmed, edition secured"
+      },
+      "warning": {
+        "value": "#F59E0B",
+        "usage": "Low stock, edition almost sold out"
+      },
+      "error": {
+        "value": "#EF4444",
+        "usage": "Payment failed, form errors"
+      },
+      "info": {
+        "value": "#0061FF",
+        "usage": "Shipping updates, edition details"
+      }
+    }
+  },
+  "typography": {
+    "fontFamilies": {
+      "heading": "'Playfair Display', 'Georgia', serif",
+      "body": "'Inter', system-ui, -apple-system, sans-serif",
+      "accent": "'Playfair Display', 'Georgia', serif",
+      "mono": "'JetBrains Mono', 'Fira Code', monospace"
+    },
+    "scale": {
+      "display": {
+        "size": "64px",
+        "sizeMobile": "40px",
+        "weight": 700,
+        "lineHeight": 1.1,
+        "letterSpacing": "-0.02em",
+        "font": "heading"
+      },
+      "h1": {
+        "size": "48px",
+        "sizeMobile": "32px",
+        "weight": 700,
+        "lineHeight": 1.2,
+        "letterSpacing": "-0.01em",
+        "font": "heading"
+      },
+      "h2": {
+        "size": "36px",
+        "sizeMobile": "28px",
+        "weight": 600,
+        "lineHeight": 1.25,
+        "letterSpacing": "0",
+        "font": "heading"
+      },
+      "h3": {
+        "size": "24px",
+        "sizeMobile": "20px",
+        "weight": 600,
+        "lineHeight": 1.3,
+        "letterSpacing": "0",
+        "font": "body"
+      },
+      "h4": {
+        "size": "20px",
+        "sizeMobile": "18px",
+        "weight": 600,
+        "lineHeight": 1.35,
+        "letterSpacing": "0.01em",
+        "font": "body"
+      },
+      "body": {
+        "size": "16px",
+        "sizeMobile": "16px",
+        "weight": 400,
+        "lineHeight": 1.6,
+        "letterSpacing": "0",
+        "font": "body"
+      },
+      "bodyLarge": {
+        "size": "18px",
+        "sizeMobile": "18px",
+        "weight": 400,
+        "lineHeight": 1.6,
+        "letterSpacing": "0",
+        "font": "body"
+      },
+      "small": {
+        "size": "14px",
+        "sizeMobile": "14px",
+        "weight": 400,
+        "lineHeight": 1.5,
+        "letterSpacing": "0.01em",
+        "font": "body"
+      },
+      "caption": {
+        "size": "12px",
+        "sizeMobile": "12px",
+        "weight": 500,
+        "lineHeight": 1.4,
+        "letterSpacing": "0.04em",
+        "font": "body"
+      },
+      "editionLabel": {
+        "size": "14px",
+        "sizeMobile": "14px",
+        "weight": 400,
+        "lineHeight": 1.4,
+        "letterSpacing": "0.08em",
+        "font": "accent",
+        "style": "italic"
+      }
+    }
+  },
+  "spacing": {
+    "2xs": "4px",
+    "xs": "8px",
+    "sm": "12px",
+    "md": "16px",
+    "lg": "24px",
+    "xl": "32px",
+    "2xl": "48px",
+    "3xl": "64px",
+    "4xl": "96px"
+  },
+  "borderRadius": {
+    "button": "4px",
+    "card": "8px",
+    "productImage": "0px",
+    "input": "4px",
+    "modal": "12px",
+    "badge": "2px",
+    "circle": "9999px"
+  },
+  "shadows": {
+    "subtle": "0 1px 2px rgba(26, 26, 46, 0.06)",
+    "medium": "0 4px 12px rgba(26, 26, 46, 0.08)",
+    "elevated": "0 8px 24px rgba(26, 26, 46, 0.12)",
+    "artFrame": "0 2px 8px rgba(26, 26, 46, 0.10)"
+  },
+  "buttons": {
+    "primary": {
+      "bg": "#0061FF",
+      "text": "#FFFFFF",
+      "hoverBg": "#0050D4",
+      "border": "none",
+      "radius": "4px"
+    },
+    "secondary": {
+      "bg": "transparent",
+      "text": "#0061FF",
+      "hoverBg": "rgba(0, 97, 255, 0.06)",
+      "border": "1px solid #0061FF",
+      "radius": "4px"
+    },
+    "ghost": {
+      "bg": "transparent",
+      "text": "#1A1A2E",
+      "hoverBg": "rgba(26, 26, 46, 0.04)",
+      "border": "none",
+      "radius": "4px"
+    },
+    "accent": {
+      "bg": "#E94560",
+      "text": "#FFFFFF",
+      "hoverBg": "#D13A54",
+      "border": "none",
+      "radius": "4px"
+    }
+  }
+}

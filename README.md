@@ -24,7 +24,7 @@ MABOS combines three architectural paradigms into a unified system:
 
 - **BDI Cognitive Architecture** (from OpenClaw-MABOS core) — 16 autonomous agents with beliefs, desires, intentions, 35 reasoning methods, TypeDB knowledge graphs (runtime data storage) governed by SBVR ontology schemas (business vocabulary and rules)
 - **Corporate Governance** (inspired by [Paperclip](https://github.com/nicepkg/paperclip)) — atomic budget enforcement, RBAC, append-only audit trails, multi-company isolation
-- **Autonomous Agent Runtime** (inspired by [Hermes Agent](https://github.com/NousResearch/hermes-agent)) — multi-model routing with fallback chains, self-improving skill creation, session intelligence, execution sandboxes, security hardening
+- **Autonomous Agent Runtime** (inspired by [Hermes Agent](https://github.com/NousResearch/hermes-agent)) — multi-model routing with fallback chains, MoA ensemble reasoning, self-improving skill creation, session intelligence with user modeling, execution sandboxes (Docker/SSH/Modal), security hardening
 
 [Website](https://openclaw.ai) · [Docs](https://docs.openclaw.ai) · [Vision](VISION.md) · [Architecture](#architecture) · [Getting Started](https://docs.openclaw.ai/start/getting-started) · [Design Doc](docs/plans/2026-03-29-unified-mabos-design.md) · [Discord](https://discord.gg/clawd)
 
@@ -43,10 +43,12 @@ MABOS combines three architectural paradigms into a unified system:
 │ SECURITY │GOVERNANCE│  MODEL   │ SESSION  │EXECUTION │  SKILL LOOP  │
 │          │          │  ROUTER  │  INTEL   │ SANDBOX  │              │
 │ Injection│ Budget   │ 11-model │ FTS5     │ Local +  │ Auto-create  │
-│ scanning │ ledger   │ registry │ search   │ Docker   │ from sessions│
-│ SSRF     │ RBAC     │ Fallback │ Cross-   │ SSH      │ Marketplace  │
-│ Tool     │ Audit    │ chains   │ session  │ backends │ Nudge system │
-│ approval │ trail    │ MoA      │ recall   │          │              │
+│ scanning │ ledger   │ registry │ search   │ Docker + │ from sessions│
+│ SSRF     │ RBAC     │ Fallback │ Cross-   │ SSH +    │ Marketplace  │
+│ Content  │ Audit    │ chains   │ session  │ Modal    │ Nudge system │
+│ sanitize │ trail    │ Prompt   │ recall   │ File     │ Prompt       │
+│ Tool     │ Multi-   │ caching  │ User     │ transfer │ injection    │
+│ approval │ company  │ MoA      │ modeling │          │              │
 │ guards   │          │ ensemble │          │          │              │
 ├──────────┴──────────┴──────────┴──────────┴──────────┴──────────────┤
 │                        MABOS CORE ENGINE                            │
@@ -59,7 +61,7 @@ MABOS combines three architectural paradigms into a unified system:
 │  │             │ │ social, meta)│ │              │ │             │ │
 │  └─────────────┘ └──────────────┘ └──────────────┘ └─────────────┘ │
 │  ┌──────────────────────────────────────────────────────────────┐   │
-│  │ 121 Agent Tools: BDI, Shopify, CRM, ERP, Email, Marketing, │   │
+│  │ 125 Agent Tools: BDI, Shopify, CRM, ERP, Email, Marketing, │   │
 │  │ Finance, Compliance, Knowledge Graph, Workflows, Reasoning  │   │
 │  └──────────────────────────────────────────────────────────────┘   │
 ├─────────────────────────────────────────────────────────────────────┤
@@ -73,17 +75,17 @@ MABOS combines three architectural paradigms into a unified system:
 
 ### System Layers
 
-| Layer                 | Purpose                           | Key Components                                                                                                                |
-| --------------------- | --------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
-| **Mission Control**   | Operator dashboard                | AI planning, task dispatch, knowledge capture, goal-driven kanban, decision approval                                          |
-| **Security**          | Threat protection (on by default) | 8-pattern injection scanner, SSRF URL validator, tool approval guards with arg redaction                                      |
-| **Governance**        | Corporate oversight               | Atomic budget ledger (reserve/settle/release), RBAC (4 roles), append-only audit log                                          |
-| **Model Router**      | LLM flexibility                   | 11 models across 4 providers, automatic fallback chains, MoA ensemble reasoning, prompt caching                               |
-| **Session Intel**     | Organizational memory             | FTS5 full-text search across sessions, cross-session recall with grouping                                                     |
-| **Execution Sandbox** | Safe code execution               | Local + Docker + SSH backends, per-agent routing, container lifecycle management                                              |
-| **Skill Loop**        | Self-improvement                  | Autonomous skill creation from successful sessions, file-based registry, marketplace, nudge system                            |
-| **MABOS Core**        | Cognitive engine                  | BDI cycle, 35 reasoning methods, TypeDB knowledge graphs (data), SBVR ontology schemas (vocabulary/rules), 107 business tools |
-| **Channels**          | Communication                     | 35+ messaging platforms with multi-agent routing                                                                              |
+| Layer                 | Purpose                           | Key Components                                                                                                                  |
+| --------------------- | --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| **Mission Control**   | Operator dashboard                | AI planning, task dispatch, knowledge capture, goal-driven kanban, decision approval                                            |
+| **Security**          | Threat protection (on by default) | 8-pattern injection scanner, content sanitizer, SSRF URL validator, tool approval guards with arg redaction, scan log dashboard |
+| **Governance**        | Corporate oversight               | Atomic budget ledger (reserve/settle/release), RBAC (4 roles), append-only audit log, multi-company isolation                   |
+| **Model Router**      | LLM flexibility                   | 11 models across 4 providers, automatic fallback chains, MoA ensemble reasoning, prompt caching, cost estimation                |
+| **Session Intel**     | Organizational memory             | FTS5 full-text search, cross-session recall with grouping, dialectic user profile builder                                       |
+| **Execution Sandbox** | Safe code execution               | Local + Docker + SSH + Modal backends, per-agent routing, file upload/download, container lifecycle                             |
+| **Skill Loop**        | Self-improvement                  | Autonomous skill creation, file-based registry, marketplace install, prompt injection, nudge system                             |
+| **MABOS Core**        | Cognitive engine                  | BDI cycle, 35 reasoning methods, TypeDB knowledge graphs (data), SBVR ontology schemas (vocabulary/rules), 107 business tools   |
+| **Channels**          | Communication                     | 35+ messaging platforms with multi-agent routing                                                                                |
 
 ### Agent Roster (16 C-Suite Roles)
 
@@ -148,8 +150,10 @@ Each agent runs a **BDI (Belief-Desire-Intention) cycle** with a 10-file cogniti
 Protects all agent operations with three defense layers:
 
 - **Injection Scanner** — 8 detection patterns covering prompt injection (role override, delimiter escape, invisible unicode), exfiltration (curl, base64, DNS), and data extraction (env dump, file paths)
+- **Content Sanitizer** — Neutralizes detected threats by redacting high/critical matches and escaping lower-severity patterns. Strips invisible Unicode, escapes prompt delimiters
 - **SSRF Validator** — Blocks private IPs (10.x, 172.16-31.x, 192.168.x), cloud metadata (169.254.169.254), localhost, and non-HTTP protocols. Supports explicit domain allowlists
-- **Tool Approval Guard** — Flags dangerous tools (delete operations, payments, external comms) for operator approval. Wildcard matching, role-based auto-approve, sensitive argument redaction
+- **Tool Approval Guard** — Flags dangerous tools (delete operations, payments, external comms) for operator approval. Wildcard matching, role-based auto-approve, sensitive argument redaction, pending approval queue
+- **HTTP API:** `GET /mabos/security/status`, `GET /mabos/security/scan-log`, `GET /mabos/security/approvals`, `POST /mabos/security/approvals/resolve`
 
 #### Governance
 
@@ -158,7 +162,9 @@ Atomic budget enforcement inspired by [Paperclip](https://github.com/nicepkg/pap
 - **Budget Ledger** — SQLite WAL-mode database with reservation pattern. Before every tool call, funds are reserved atomically; after execution, settled at actual cost. Prevents double-spend across concurrent agents. Daily and monthly limits per agent
 - **RBAC Engine** — Four roles (admin, operator, agent, viewer) with wildcard permission matching. Deny overrides allow
 - **Audit Log** — Append-only SQLite trail of every tool call, budget event, and security incident. Filterable by time range, action, and actor
+- **Multi-Company Isolation** — All budget, audit, and session data scoped to company ID. Enables multi-tenant deployments
 - **Agent Tools:** `budget_status`, `budget_request`, `audit_query`
+- **HTTP API:** `GET /mabos/governance/budget/summary`, `GET /mabos/governance/audit`
 
 #### Model Router
 
@@ -166,9 +172,11 @@ Multi-provider model routing inspired by [Hermes Agent](https://github.com/NousR
 
 - **11-Model Registry** — Anthropic (Claude Opus/Sonnet/Haiku), OpenAI (GPT-4.1/O3/O4-mini), Google (Gemini 2.5 Pro/Flash), DeepSeek (R1/V3). Each with context window, pricing, and capability metadata
 - **Fallback Chains** — Automatic model failover. If primary model is unavailable, transparently falls through to next in chain
-- **Prompt Caching** — Anthropic cache control optimization preserving prefix cache across tool-calling turns
+- **Cost Estimation** — Per-model token pricing with configurable overrides. Cheapest-model suggestions based on requirements (context window, vision, thinking)
+- **Prompt Caching** — Anthropic cache control optimization with configurable breakpoints. Cache hit/miss tracking with estimated savings
 - **MoA Ensemble** — Mixture-of-Agents reasoning: 4 diverse models generate independent responses, an aggregator synthesizes the best answer. Agreement scoring detects consensus
-- **Agent Tools:** `model_list`, `model_cost`
+- **Agent Tools:** `model_list`, `model_cost`, `model_switch`, `reason_ensemble`
+- **HTTP API:** `GET /mabos/models/list`, `GET /mabos/models/health`
 
 #### Session Intelligence
 
@@ -176,8 +184,10 @@ Cross-session organizational memory:
 
 - **FTS5 Index** — SQLite full-text search with Porter stemming across all past conversations. Agent and company scoping
 - **Cross-Session Recall** — Groups search results by session, ranks by relevance. Enables agents to reference past decisions and discussions
+- **User Profile Builder** — Dialectic user modeling that analyzes session history to capture communication style, domain expertise, workflow preferences, and decision patterns. Profile injected into agent system prompts for personalization
 - **Session-End Indexing** — Automatically indexes completed sessions via `session_end` plugin hook
-- **Agent Tools:** `session_search`, `session_recall`
+- **Agent Tools:** `session_search`, `session_recall`, `user_profile`
+- **HTTP API:** `GET /mabos/sessions/search`, `POST /mabos/sessions/recall`, `GET /mabos/sessions/profile`
 
 #### Execution Sandbox
 
@@ -185,8 +195,13 @@ Isolated terminal backends for safe agent code execution:
 
 - **Local Backend** — Pass-through to host shell (default, zero overhead)
 - **Docker Backend** — Container lifecycle management with memory limits, CPU caps, PID limits, network isolation. Containers created per-task, destroyed after
+- **SSH Backend** — Remote execution via SSH with configurable host, port, user, and key path
+- **Modal Backend** — Serverless GPU execution on [Modal](https://modal.com) for ML/AI workloads
+- **File Transfer** — Upload files into sandboxes and download results back to local filesystem via base64 encoding
 - **Per-Agent Routing** — Configure which agents use which backend (e.g., CTO gets Docker, CEO gets local)
-- **Agent Tools:** `sandbox_exec`, `sandbox_status`, `sandbox_destroy`
+- **Terminal Interception** — Hooks into `terminal`/`execute_command` tool calls to transparently route through sandbox when enabled
+- **Agent Tools:** `sandbox_exec`, `sandbox_upload`, `sandbox_download`, `sandbox_status`, `sandbox_destroy`
+- **HTTP API:** `GET /mabos/sandbox/status`, `POST /mabos/sandbox/destroy-all`
 
 #### Skill Loop
 
@@ -195,45 +210,62 @@ Autonomous self-improvement from experience:
 - **Skill Registry** — File-based skill discovery across configurable paths. Each skill is a `SKILL.md` + `manifest.json` directory. Search by name, tags, description, or agent role
 - **Skill Creator** — Analyzes successful multi-tool sessions and proposes reusable skills. Extracts tool-call sequences, generalizes parameters, generates markdown documentation
 - **Nudge System** — After every N sessions (configurable), evaluates whether the session could become a reusable skill. Surfaces proposals to the operator for approval
-- **Marketplace** — Browse and install skills from ClawHub and community sources
-- **Agent Tools:** `skill_list`, `skill_search`, `skill_create`, `skill_run`
+- **Marketplace** — Browse and install skills from ClawHub and GitHub community sources. Validates GitHub URLs for SSRF prevention
+- **Prompt Injection** — Automatically injects relevant skills into agent prompts based on task context, agent role, and recently used tools
+- **Agent Tools:** `skill_list`, `skill_search`, `skill_create`, `skill_install`, `skill_run`
+- **HTTP API:** `GET /mabos/skills`, `GET /mabos/skills/search`, `POST /mabos/skills/install`
 
 ### Dashboard (React 19 + TanStack Router)
 
 27+ page web UI at `/mabos/dashboard/`:
 
-| Section      | Pages                                                 |
-| ------------ | ----------------------------------------------------- |
-| Strategy     | Overview, Performance, Decisions, Goals, Analytics    |
-| Process      | Projects, Tasks, Timeline, Workflows                  |
-| Agents       | Agents, Agent Detail, Knowledge Graph                 |
-| Commerce     | E-Commerce, Customers, Marketing, Accounting          |
-| Operations   | Inventory, Suppliers, Supply Chain                    |
-| Governance   | **Budget and Audit**, Legal, Compliance, **Security** |
-| Intelligence | **Skills**, **Sessions**                              |
+| Section      | Pages                                                                                           |
+| ------------ | ----------------------------------------------------------------------------------------------- |
+| Strategy     | Overview, Performance, Decisions, Goals, Analytics                                              |
+| Process      | Projects, Tasks, Timeline, Workflows                                                            |
+| Agents       | Agents, Agent Detail, Knowledge Graph                                                           |
+| Commerce     | E-Commerce, Customers, Marketing, Accounting                                                    |
+| Operations   | Inventory, Suppliers, Supply Chain                                                              |
+| Governance   | **Budget Dashboard**, **Audit Log**, **RBAC Manager**, Legal, Compliance                        |
+| Security     | **Threat Dashboard**, **Approval Queue**, **Scan Log**                                          |
+| Intelligence | **Skill Marketplace**, **Skill Editor**, **Session Search**, **Recall Panel**, **User Profile** |
+| Models       | **Model Switcher**, **MoA Result View**                                                         |
 
-Plus a **Command Palette** (Cmd+K) for instant navigation and actions.
+Plus a **Command Palette** (Cmd+K) with sections for navigation, agent actions, tools, models, and skills.
 
 ### Storage Architecture (4-Layer)
 
-| Layer                  | Technology           | Purpose                                                          |
-| ---------------------- | -------------------- | ---------------------------------------------------------------- |
-| Knowledge Graph        | TypeDB 3.x           | Facts, rules, memory, inference, BDI state, decisions, workflows |
-| ERP Database           | PostgreSQL 16        | Products, contacts, orders, invoices, financial records          |
-| Governance/Session DBs | SQLite (WAL)         | Budget ledger, audit log, session FTS5 index                     |
-| Semantic Search        | LanceDB + sqlite-vec | Agent memory, beliefs, observations with vector embeddings       |
+| Layer                  | Technology           | Purpose                                                                 |
+| ---------------------- | -------------------- | ----------------------------------------------------------------------- |
+| Knowledge Graph        | TypeDB 3.x           | Facts, rules, memory, inference, BDI state, decisions, workflows        |
+| ERP Database           | PostgreSQL 16        | Products, contacts, orders, invoices, financial records                 |
+| Governance/Session DBs | SQLite (WAL)         | Budget ledger, audit log, cost events, session FTS5 index, user profile |
+| Semantic Search        | LanceDB + sqlite-vec | Agent memory, beliefs, observations with vector embeddings              |
 
-### Tools (121 total)
+### Tools (125 total)
 
-107 original MABOS tools + 14 new tools from the unified modules:
+107 original MABOS tools + 18 new tools from the unified modules:
 
-| Module            | New Tools                                                 |
-| ----------------- | --------------------------------------------------------- |
-| Governance        | `budget_status`, `budget_request`, `audit_query`          |
-| Model Router      | `model_list`, `model_cost`                                |
-| Session Intel     | `session_search`, `session_recall`                        |
-| Execution Sandbox | `sandbox_exec`, `sandbox_status`, `sandbox_destroy`       |
-| Skill Loop        | `skill_list`, `skill_search`, `skill_create`, `skill_run` |
+| Module            | New Tools                                                                                 |
+| ----------------- | ----------------------------------------------------------------------------------------- |
+| Governance        | `budget_status`, `budget_request`, `audit_query`                                          |
+| Model Router      | `model_list`, `model_cost`, `model_switch`, `reason_ensemble`                             |
+| Session Intel     | `session_search`, `session_recall`, `user_profile`                                        |
+| Execution Sandbox | `sandbox_exec`, `sandbox_upload`, `sandbox_download`, `sandbox_status`, `sandbox_destroy` |
+| Skill Loop        | `skill_list`, `skill_search`, `skill_create`, `skill_install`, `skill_run`                |
+
+### HTTP API (20 endpoints)
+
+All modules expose REST endpoints under `/mabos/` for dashboard consumption and external integration:
+
+| Module            | Endpoints                                                                                                              |
+| ----------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| Governance        | `/mabos/governance/budget/summary`, `/mabos/governance/audit`                                                          |
+| Model Router      | `/mabos/models/list`, `/mabos/models/health`                                                                           |
+| Session Intel     | `/mabos/sessions/search`, `/mabos/sessions/recall`, `/mabos/sessions/profile`                                          |
+| Execution Sandbox | `/mabos/sandbox/status`, `/mabos/sandbox/destroy-all`                                                                  |
+| Skill Loop        | `/mabos/skills`, `/mabos/skills/search`, `/mabos/skills/install`                                                       |
+| Security          | `/mabos/security/status`, `/mabos/security/scan-log`, `/mabos/security/approvals`, `/mabos/security/approvals/resolve` |
 
 ### Configuration
 
@@ -293,6 +325,9 @@ mabos:
     recall:
       enabled: true
       summarizeResults: true
+    userModel:
+      enabled: true
+      updateInterval: 5
 
   # Execution Sandbox
   sandboxEnabled: true
@@ -301,6 +336,12 @@ mabos:
     docker:
       image: node:22-slim
       memoryLimitMb: 512
+      networkMode: bridge
+    ssh:
+      host: sandbox.example.com
+      user: agent
+    modal:
+      appName: mabos-sandbox
 
   # Skill Loop
   skillLoopEnabled: true
@@ -324,6 +365,16 @@ npx vitest run extensions/mabos/extensions-mabos/tests/security-*.test.ts \
   extensions/mabos/extensions-mabos/tests/skill-loop-*.test.ts \
   --config vitest.extensions.config.ts
 ```
+
+### Module Architecture
+
+All 6 modules register through the MABOS extension entry point with config-driven activation and graceful error handling. Each module follows a consistent pattern:
+
+1. **Config-gated activation** — disabled by default (except Security), enabled via feature flags
+2. **Graceful degradation** — if a module fails to initialize, the rest of the system continues
+3. **Plugin SDK hooks** — `before_tool_call`, `after_tool_call`, `llm_output`, `session_end`, `before_prompt_build`
+4. **HTTP routes** — registered via `api.registerHttpRoute()` for dashboard consumption
+5. **Zero new root dependencies** — all module deps live in the extension `package.json`
 
 ### Design Documents
 
