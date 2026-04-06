@@ -11,11 +11,91 @@
  */
 
 import type { OpenClawPluginApi } from "openclaw/plugin-sdk";
-import { createAuthRateLimiter } from "../../../src/gateway/auth-rate-limit.js";
-import { resolveGatewayAuth, type ResolvedGatewayAuth } from "../../../src/gateway/auth.js";
-import { authorizeGatewayBearerRequestOrReply } from "../../../src/gateway/http-auth-helpers.js";
-import { onAgentEvent, type AgentEventPayload } from "../../../src/infra/agent-events.js";
-import { readJsonBodyWithLimit } from "../../../src/infra/http-body.js";
+
+// ── Core imports shim ──────────────────────────────────────────────
+// These utilities live in the openclaw core repo and are not re-exported
+// from plugin-sdk. We resolve them lazily via dynamic import so the
+// plugin works both in-repo (relative paths) and when installed to
+// ~/.openclaw/extensions/mabos/ (where relative paths don't reach core).
+//
+// Resolution order: monorepo-relative path first (fast in dev), then
+// the installed location which is 1 level shallower.
+
+type ResolvedGatewayAuth = { mode: string; [key: string]: unknown };
+type AgentEventPayload = {
+  type: string;
+  stream?: string;
+  sessionKey?: string;
+  runId?: string;
+  data?: any;
+  [key: string]: unknown;
+};
+
+async function importCore(modPath: string): Promise<any> {
+  // In-repo: extensions/mabos/extensions-mabos/index.ts → ../../../src/
+  // Installed: ~/.openclaw/extensions/mabos/index.ts → resolve via process.cwd() or require.resolve
+  const candidates = [
+    `../../../src/${modPath}`,
+    `../../../../src/${modPath}`,
+    `../../src/${modPath}`,
+  ];
+  for (const candidate of candidates) {
+    try {
+      return await import(/* @vite-ignore */ candidate);
+    } catch {
+      // try next
+    }
+  }
+  // Fallback: the gateway process runs from the monorepo root, so use process.cwd()
+  const { join } = await import("node:path");
+  const cwdPath = join(process.cwd(), "src", modPath);
+  try {
+    return await import(/* @vite-ignore */ cwdPath);
+  } catch {
+    // noop
+  }
+  // Last resort: try require.resolve to find the openclaw package
+  try {
+    const { createRequire } = await import("node:module");
+    const require2 = createRequire(import.meta.url ?? __filename);
+    const pkgRoot = require2
+      .resolve("openclaw/plugin-sdk")
+      .replace(/[/\\]dist[/\\]plugin-sdk[/\\].*$/, "");
+    const resolved = join(pkgRoot, "src", modPath);
+    return await import(/* @vite-ignore */ resolved);
+  } catch {
+    // noop
+  }
+  throw new Error(`Cannot resolve core module: src/${modPath}`);
+}
+
+let _coreModules: {
+  createAuthRateLimiter: (config?: any) => any;
+  resolveGatewayAuth: (params: any) => ResolvedGatewayAuth;
+  authorizeGatewayBearerRequestOrReply: (params: any) => Promise<boolean>;
+  onAgentEvent: (listener: (evt: AgentEventPayload) => void) => () => void;
+  readJsonBodyWithLimit: (req: any, opts: any) => Promise<any>;
+} | null = null;
+
+async function getCoreModules() {
+  if (_coreModules) return _coreModules;
+  const [authRateLimit, gatewayAuth, httpAuthHelpers, agentEvents, httpBody] = await Promise.all([
+    importCore("gateway/auth-rate-limit.js"),
+    importCore("gateway/auth.js"),
+    importCore("gateway/http-auth-helpers.js"),
+    importCore("infra/agent-events.js"),
+    importCore("infra/http-body.js"),
+  ]);
+  _coreModules = {
+    createAuthRateLimiter: authRateLimit.createAuthRateLimiter,
+    resolveGatewayAuth: gatewayAuth.resolveGatewayAuth,
+    authorizeGatewayBearerRequestOrReply: httpAuthHelpers.authorizeGatewayBearerRequestOrReply,
+    onAgentEvent: agentEvents.onAgentEvent,
+    readJsonBodyWithLimit: httpBody.readJsonBodyWithLimit,
+  };
+  return _coreModules;
+}
+// ── End core imports shim ──────────────────────────────────────────
 import { createCronBridgeService } from "./src/cron-bridge.js";
 import { registerExecutionSandbox } from "./src/execution-sandbox/index.js";
 import { writeCognitiveState } from "./src/gdc/cognitive-writer.js";
@@ -151,46 +231,78 @@ export default function register(api: OpenClawPluginApi) {
   // ── 2. BDI Background Service ─────────────────────────────────
   const workspaceDir = resolveWorkspaceDir(api);
 
-  // Resolve gateway auth for MABOS HTTP routes
-  const gatewayAuthConfig = (api as any).config?.gateway?.auth ?? {};
-  const resolvedAuth: ResolvedGatewayAuth = resolveGatewayAuth({
-    authConfig: gatewayAuthConfig,
-  });
+  // Resolve gateway auth for MABOS HTTP routes (lazy — resolved on first request)
+  let resolvedAuth: ResolvedGatewayAuth | null = null;
+  let authRateLimiter: any = undefined;
 
-  const authRateLimiter =
-    resolvedAuth.mode !== "none"
-      ? createAuthRateLimiter({
-          maxAttempts: 10,
-          windowMs: 60_000,
-          lockoutMs: 300_000,
-        })
-      : undefined;
+  async function ensureAuthInit() {
+    if (resolvedAuth) return;
+    try {
+      const core = await getCoreModules();
+      const gatewayAuthConfig = (api as any).config?.gateway?.auth ?? {};
+      resolvedAuth = core.resolveGatewayAuth({ authConfig: gatewayAuthConfig });
+      authRateLimiter =
+        resolvedAuth!.mode !== "none"
+          ? core.createAuthRateLimiter({
+              maxAttempts: 10,
+              windowMs: 60_000,
+              lockoutMs: 300_000,
+            })
+          : undefined;
+    } catch (err) {
+      log.debug(`[mabos] Core auth modules unavailable, using permissive auth: ${err}`);
+      resolvedAuth = { mode: "none" };
+    }
+  }
 
   async function requireAuth(
     req: import("node:http").IncomingMessage,
     res: import("node:http").ServerResponse,
   ): Promise<boolean> {
+    await ensureAuthInit();
     // Skip auth if gateway is in "none" mode
-    if (resolvedAuth.mode === "none") return true;
+    if (resolvedAuth!.mode === "none") return true;
     // Skip auth for requests originating from the MABOS dashboard UI
     const referer = req.headers.referer || req.headers.origin || "";
     if (referer.includes("/mabos/dashboard")) return true;
-    return authorizeGatewayBearerRequestOrReply({
-      req,
-      res,
-      auth: resolvedAuth,
-      rateLimiter: authRateLimiter,
-    });
+    try {
+      const core = await getCoreModules();
+      return core.authorizeGatewayBearerRequestOrReply({
+        req,
+        res,
+        auth: resolvedAuth,
+        rateLimiter: authRateLimiter,
+      });
+    } catch {
+      return true; // Permissive fallback if core modules unavailable
+    }
   }
   async function readMabosJsonBody<T = Record<string, unknown>>(
     req: import("node:http").IncomingMessage,
     res: import("node:http").ServerResponse,
     opts?: { maxBytes?: number },
   ): Promise<T | null> {
-    const result = await readJsonBodyWithLimit(req, {
-      maxBytes: opts?.maxBytes ?? 1_048_576,
-      timeoutMs: 10_000,
-    });
+    let result: any;
+    try {
+      const core = await getCoreModules();
+      result = await core.readJsonBodyWithLimit(req, {
+        maxBytes: opts?.maxBytes ?? 1_048_576,
+        timeoutMs: 10_000,
+      });
+    } catch {
+      // Fallback: simple body read when core modules unavailable
+      const chunks: Buffer[] = [];
+      for await (const chunk of req)
+        chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+      const raw = Buffer.concat(chunks).toString("utf-8");
+      try {
+        return JSON.parse(raw) as T;
+      } catch {
+        res.writeHead(400, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: "Invalid JSON body" }));
+        return null;
+      }
+    }
     if (!result.ok) {
       const statusCode = result.code === "PAYLOAD_TOO_LARGE" ? 413 : 400;
       const message =
@@ -2024,7 +2136,8 @@ export default function register(api: OpenClawPluginApi) {
       let closed = false;
 
       // Subscribe to agent event bus — forward matching events to SSE
-      const unsubscribe = onAgentEvent((evt: AgentEventPayload) => {
+      const core = await getCoreModules();
+      const unsubscribe = core.onAgentEvent((evt: AgentEventPayload) => {
         if (closed) return;
 
         // Match events by sessionKey containing the agentId

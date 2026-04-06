@@ -21,14 +21,14 @@ export default defineConfig({
         target: "http://localhost:18789",
         changeOrigin: true,
         headers: {
-          Authorization: "Bearer 3b6332bd5944d42f8715090fb8ea323a5a691ed4b9a71641",
+          Authorization: "Bearer c917a097294acad9e5f654e08eb935fbc39f25b197161fd7a29ffb2aa4eba244",
         },
       },
       "/mabos/governance": {
         target: "http://localhost:18789",
         changeOrigin: true,
         headers: {
-          Authorization: "Bearer 3b6332bd5944d42f8715090fb8ea323a5a691ed4b9a71641",
+          Authorization: "Bearer c917a097294acad9e5f654e08eb935fbc39f25b197161fd7a29ffb2aa4eba244",
         },
       },
     },
