@@ -555,7 +555,7 @@ export default function register(api: OpenClawPluginApi) {
 
   // API: System status (enhanced)
   api.registerHttpRoute({
-    auth: "gateway",
+    auth: "plugin",
     path: "/mabos/api/status",
     handler: async (_req, res) => {
       if (!(await requireAuth(_req, res))) return;
@@ -645,7 +645,7 @@ export default function register(api: OpenClawPluginApi) {
 
   // API: Pending decisions across all businesses
   api.registerHttpRoute({
-    auth: "gateway",
+    auth: "plugin",
     path: "/mabos/api/decisions",
     handler: async (_req, res) => {
       if (!(await requireAuth(_req, res))) return;
@@ -743,7 +743,7 @@ export default function register(api: OpenClawPluginApi) {
       api.registerHttpRoute({
         path: prefix,
         match: "prefix",
-        auth: "gateway",
+        auth: "plugin",
         handler: async (req, res) => {
           const url = new URL(req.url || "/", "http://localhost");
           const handlers = paramRouteHandlers.get(prefix) || [];
@@ -1122,7 +1122,7 @@ export default function register(api: OpenClawPluginApi) {
 
   // API: Business list
   api.registerHttpRoute({
-    auth: "gateway",
+    auth: "plugin",
     path: "/mabos/api/businesses",
     handler: async (_req, res) => {
       if (!(await requireAuth(_req, res))) return;
@@ -1185,7 +1185,7 @@ export default function register(api: OpenClawPluginApi) {
 
   // API: Contractors
   api.registerHttpRoute({
-    auth: "gateway",
+    auth: "plugin",
     path: "/mabos/api/contractors",
     handler: async (_req, res) => {
       if (!(await requireAuth(_req, res))) return;
@@ -1206,7 +1206,7 @@ export default function register(api: OpenClawPluginApi) {
 
   // API: Onboard a new business (POST)
   api.registerHttpRoute({
-    auth: "gateway",
+    auth: "plugin",
     path: "/mabos/api/onboard",
     handler: async (req, res) => {
       if (!(await requireAuth(req, res))) return;
@@ -1870,7 +1870,7 @@ export default function register(api: OpenClawPluginApi) {
 
   // API: AI-powered onboarding suggestions (POST)
   api.registerHttpRoute({
-    auth: "gateway",
+    auth: "plugin",
     path: "/mabos/api/onboard/suggest",
     handler: async (req, res) => {
       if (req.method !== "POST") {
@@ -1899,7 +1899,7 @@ export default function register(api: OpenClawPluginApi) {
 
   // API: Chat — send message to an agent's inbox
   api.registerHttpRoute({
-    auth: "gateway",
+    auth: "plugin",
     path: "/mabos/api/chat",
     handler: async (req, res) => {
       if (!(await requireAuth(req, res))) return;
@@ -1982,7 +1982,7 @@ export default function register(api: OpenClawPluginApi) {
 
   // API: Chat SSE — stream agent events to the dashboard
   api.registerHttpRoute({
-    auth: "gateway",
+    auth: "plugin",
     path: "/mabos/api/chat/events",
     handler: async (req, res) => {
       if (!(await requireAuth(req, res))) return;
@@ -2721,7 +2721,7 @@ export default function register(api: OpenClawPluginApi) {
 
   // API: Trigger manual BDI cycle
   api.registerHttpRoute({
-    auth: "gateway",
+    auth: "plugin",
     path: "/mabos/api/bdi/cycle",
     handler: async (req, res) => {
       if (!(await requireAuth(req, res))) return;
@@ -2880,7 +2880,7 @@ export default function register(api: OpenClawPluginApi) {
 
   // API: Manage email webhook subscription
   api.registerHttpRoute({
-    auth: "gateway",
+    auth: "plugin",
     path: "/mabos/api/webhook/email/subscription",
     handler: async (req, res) => {
       if (!(await requireAuth(req, res))) return;
@@ -3236,7 +3236,7 @@ export default function register(api: OpenClawPluginApi) {
 
   // --- E-Commerce: Products ---
   api.registerHttpRoute({
-    auth: "gateway",
+    auth: "plugin",
     path: "/mabos/api/erp/products",
     handler: async (_req, res) => {
       if (!(await requireAuth(_req, res))) return;
@@ -3259,7 +3259,7 @@ export default function register(api: OpenClawPluginApi) {
 
   // --- E-Commerce: Orders list ---
   api.registerHttpRoute({
-    auth: "gateway",
+    auth: "plugin",
     path: "/mabos/api/erp/orders",
     handler: async (_req, res) => {
       if (!(await requireAuth(_req, res))) return;
@@ -3478,7 +3478,7 @@ export default function register(api: OpenClawPluginApi) {
 
   // --- Contacts list ---
   api.registerHttpRoute({
-    auth: "gateway",
+    auth: "plugin",
     path: "/mabos/api/erp/contacts",
     handler: async (_req, res) => {
       if (!(await requireAuth(_req, res))) return;
@@ -3538,7 +3538,7 @@ export default function register(api: OpenClawPluginApi) {
 
   // --- Contacts search ---
   api.registerHttpRoute({
-    auth: "gateway",
+    auth: "plugin",
     path: "/mabos/api/erp/contacts/search",
     handler: async (_req, res) => {
       if (!(await requireAuth(_req, res))) return;
@@ -3657,7 +3657,7 @@ export default function register(api: OpenClawPluginApi) {
 
   // --- Inventory: Items ---
   api.registerHttpRoute({
-    auth: "gateway",
+    auth: "plugin",
     path: "/mabos/api/erp/inventory/items",
     handler: async (_req, res) => {
       if (!(await requireAuth(_req, res))) return;
@@ -3696,7 +3696,7 @@ export default function register(api: OpenClawPluginApi) {
 
   // --- Inventory: Low-stock alerts ---
   api.registerHttpRoute({
-    auth: "gateway",
+    auth: "plugin",
     path: "/mabos/api/erp/inventory/alerts",
     handler: async (_req, res) => {
       if (!(await requireAuth(_req, res))) return;
@@ -3805,7 +3805,7 @@ export default function register(api: OpenClawPluginApi) {
 
   // --- Suppliers list ---
   api.registerHttpRoute({
-    auth: "gateway",
+    auth: "plugin",
     path: "/mabos/api/erp/suppliers",
     handler: async (_req, res) => {
       if (!(await requireAuth(_req, res))) return;
@@ -3869,7 +3869,7 @@ export default function register(api: OpenClawPluginApi) {
 
   // --- Purchase orders ---
   api.registerHttpRoute({
-    auth: "gateway",
+    auth: "plugin",
     path: "/mabos/api/erp/purchase-orders",
     handler: async (_req, res) => {
       if (!(await requireAuth(_req, res))) return;
@@ -4001,7 +4001,7 @@ export default function register(api: OpenClawPluginApi) {
 
   // --- Supply Chain: Shipments list ---
   api.registerHttpRoute({
-    auth: "gateway",
+    auth: "plugin",
     path: "/mabos/api/erp/shipments",
     handler: async (_req, res) => {
       if (!(await requireAuth(_req, res))) return;
@@ -4116,7 +4116,7 @@ export default function register(api: OpenClawPluginApi) {
 
   // --- Supply Chain: Routes ---
   api.registerHttpRoute({
-    auth: "gateway",
+    auth: "plugin",
     path: "/mabos/api/erp/routes",
     handler: async (_req, res) => {
       if (!(await requireAuth(_req, res))) return;
@@ -4167,7 +4167,7 @@ export default function register(api: OpenClawPluginApi) {
 
   // --- Legal: Partnership contracts ---
   api.registerHttpRoute({
-    auth: "gateway",
+    auth: "plugin",
     path: "/mabos/api/erp/legal/contracts/partnership",
     handler: async (_req, res) => {
       if (!(await requireAuth(_req, res))) return;
@@ -4225,7 +4225,7 @@ export default function register(api: OpenClawPluginApi) {
 
   // --- Legal: Freelancer contracts ---
   api.registerHttpRoute({
-    auth: "gateway",
+    auth: "plugin",
     path: "/mabos/api/erp/legal/contracts/freelancer",
     handler: async (_req, res) => {
       if (!(await requireAuth(_req, res))) return;
@@ -4280,7 +4280,7 @@ export default function register(api: OpenClawPluginApi) {
 
   // --- Legal: Documents ---
   api.registerHttpRoute({
-    auth: "gateway",
+    auth: "plugin",
     path: "/mabos/api/erp/legal/documents",
     handler: async (_req, res) => {
       if (!(await requireAuth(_req, res))) return;
@@ -4339,7 +4339,7 @@ export default function register(api: OpenClawPluginApi) {
 
   // --- Legal: Structure ---
   api.registerHttpRoute({
-    auth: "gateway",
+    auth: "plugin",
     path: "/mabos/api/erp/legal/structure",
     handler: async (_req, res) => {
       if (!(await requireAuth(_req, res))) return;
@@ -4379,7 +4379,7 @@ export default function register(api: OpenClawPluginApi) {
 
   // --- Legal: Guardrails ---
   api.registerHttpRoute({
-    auth: "gateway",
+    auth: "plugin",
     path: "/mabos/api/erp/legal/guardrails",
     handler: async (_req, res) => {
       if (!(await requireAuth(_req, res))) return;
@@ -4434,7 +4434,7 @@ export default function register(api: OpenClawPluginApi) {
 
   // --- Marketing: Campaigns ---
   api.registerHttpRoute({
-    auth: "gateway",
+    auth: "plugin",
     path: "/mabos/api/erp/marketing/campaigns",
     handler: async (_req, res) => {
       if (!(await requireAuth(_req, res))) return;
@@ -4543,7 +4543,7 @@ export default function register(api: OpenClawPluginApi) {
 
   // --- Marketing: KPIs ---
   api.registerHttpRoute({
-    auth: "gateway",
+    auth: "plugin",
     path: "/mabos/api/erp/marketing/kpis",
     handler: async (_req, res) => {
       if (!(await requireAuth(_req, res))) return;
@@ -4619,7 +4619,7 @@ export default function register(api: OpenClawPluginApi) {
 
   // --- Analytics: Reports list ---
   api.registerHttpRoute({
-    auth: "gateway",
+    auth: "plugin",
     path: "/mabos/api/erp/analytics/reports",
     handler: async (_req, res) => {
       if (!(await requireAuth(_req, res))) return;
@@ -4716,7 +4716,7 @@ export default function register(api: OpenClawPluginApi) {
 
   // --- Analytics: Dashboards ---
   api.registerHttpRoute({
-    auth: "gateway",
+    auth: "plugin",
     path: "/mabos/api/erp/analytics/dashboards",
     handler: async (_req, res) => {
       if (!(await requireAuth(_req, res))) return;
@@ -4791,7 +4791,7 @@ export default function register(api: OpenClawPluginApi) {
 
   // --- Accounting: Invoices ---
   api.registerHttpRoute({
-    auth: "gateway",
+    auth: "plugin",
     path: "/mabos/api/erp/accounting/invoices",
     handler: async (_req, res) => {
       if (!(await requireAuth(_req, res))) return;
@@ -4866,7 +4866,7 @@ export default function register(api: OpenClawPluginApi) {
 
   // --- Accounting: Chart of accounts ---
   api.registerHttpRoute({
-    auth: "gateway",
+    auth: "plugin",
     path: "/mabos/api/erp/accounting/accounts",
     handler: async (_req, res) => {
       if (!(await requireAuth(_req, res))) return;
@@ -4895,7 +4895,7 @@ export default function register(api: OpenClawPluginApi) {
 
   // --- Accounting: Profit & Loss ---
   api.registerHttpRoute({
-    auth: "gateway",
+    auth: "plugin",
     path: "/mabos/api/erp/accounting/profit-loss",
     handler: async (_req, res) => {
       if (!(await requireAuth(_req, res))) return;
@@ -4931,7 +4931,7 @@ export default function register(api: OpenClawPluginApi) {
 
   // --- Accounting: Balance Sheet ---
   api.registerHttpRoute({
-    auth: "gateway",
+    auth: "plugin",
     path: "/mabos/api/erp/accounting/balance-sheet",
     handler: async (_req, res) => {
       if (!(await requireAuth(_req, res))) return;
@@ -4973,7 +4973,7 @@ export default function register(api: OpenClawPluginApi) {
 
   // --- Accounting: Cash Flow ---
   api.registerHttpRoute({
-    auth: "gateway",
+    auth: "plugin",
     path: "/mabos/api/erp/accounting/cash-flow",
     handler: async (_req, res) => {
       if (!(await requireAuth(_req, res))) return;
@@ -5009,7 +5009,7 @@ export default function register(api: OpenClawPluginApi) {
 
   // --- Accounting: Expense Report ---
   api.registerHttpRoute({
-    auth: "gateway",
+    auth: "plugin",
     path: "/mabos/api/erp/accounting/expense-report",
     handler: async (_req, res) => {
       if (!(await requireAuth(_req, res))) return;
@@ -5041,7 +5041,7 @@ export default function register(api: OpenClawPluginApi) {
 
   // --- Accounting: Budget vs Actual ---
   api.registerHttpRoute({
-    auth: "gateway",
+    auth: "plugin",
     path: "/mabos/api/erp/accounting/budget-vs-actual",
     handler: async (_req, res) => {
       if (!(await requireAuth(_req, res))) return;
@@ -5098,7 +5098,7 @@ export default function register(api: OpenClawPluginApi) {
 
   // --- Compliance: Policies ---
   api.registerHttpRoute({
-    auth: "gateway",
+    auth: "plugin",
     path: "/mabos/api/erp/compliance/policies",
     handler: async (_req, res) => {
       if (!(await requireAuth(_req, res))) return;
@@ -5167,7 +5167,7 @@ export default function register(api: OpenClawPluginApi) {
 
   // --- Compliance: Violations ---
   api.registerHttpRoute({
-    auth: "gateway",
+    auth: "plugin",
     path: "/mabos/api/erp/compliance/violations",
     handler: async (_req, res) => {
       if (!(await requireAuth(_req, res))) return;
@@ -5280,7 +5280,7 @@ export default function register(api: OpenClawPluginApi) {
   // Dashboard: serve SPA HTML (no trailing slash)
   // Dashboard: serve SPA HTML (no trailing slash)
   api.registerHttpRoute({
-    auth: "gateway",
+    auth: "plugin",
     path: "/mabos/dashboard",
     handler: async (_req, res) => {
       try {
@@ -5303,7 +5303,7 @@ export default function register(api: OpenClawPluginApi) {
 
   // Dashboard: wildcard static file server for all dashboard assets + SPA fallback
   api.registerHttpRoute({
-    auth: "gateway",
+    auth: "plugin",
     path: "/mabos/dashboard/*",
     handler: async (req, res) => {
       try {
@@ -5435,7 +5435,7 @@ export default function register(api: OpenClawPluginApi) {
 
   // GET /mabos/api/workflows — list all BPMN workflows
   api.registerHttpRoute({
-    auth: "gateway",
+    auth: "plugin",
     path: "/mabos/api/workflows",
     handler: async (req, res) => {
       if (!(await requireAuth(req, res))) return;
