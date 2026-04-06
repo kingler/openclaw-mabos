@@ -1,6 +1,10 @@
 import {
   BarChart3,
   Calendar,
+  ChevronRight,
+  CheckCircle2,
+  Circle,
+  Clock,
   DollarSign,
   Expand,
   Eye,
@@ -8,6 +12,7 @@ import {
   Shrink,
   Target,
   TrendingUp,
+  Wrench,
 } from "lucide-react";
 import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
@@ -19,8 +24,8 @@ import {
   SheetTitle,
   SheetDescription,
 } from "@/components/ui/sheet";
-import { useCampaignMetrics } from "@/hooks/useMarketing";
-import type { MarketingCampaign, CampaignMetrics } from "@/lib/types";
+import { useCampaignMetrics, useCampaignDetail } from "@/hooks/useMarketing";
+import type { MarketingCampaign, CampaignMetrics, CampaignTask } from "@/lib/types";
 
 const statusColors: Record<string, string> = {
   active: "var(--accent-green)",
@@ -153,9 +158,91 @@ function MetricsSection({ metrics, isLoading }: { metrics?: CampaignMetrics; isL
   );
 }
 
+function TaskStatusIcon({ status }: { status: string }) {
+  if (status === "done" || status === "completed")
+    return <CheckCircle2 className="w-3.5 h-3.5 text-[var(--accent-green)]" />;
+  if (status === "in_progress" || status === "active")
+    return <Clock className="w-3.5 h-3.5 text-[var(--accent-orange)]" />;
+  return <Circle className="w-3.5 h-3.5 text-[var(--text-muted)]" />;
+}
+
+function TasksSection({ tasks, isLoading }: { tasks: CampaignTask[]; isLoading: boolean }) {
+  if (isLoading) {
+    return (
+      <div className="space-y-2">
+        {Array.from({ length: 3 }).map((_, i) => (
+          <div key={i} className="h-12 rounded-lg bg-[var(--bg-secondary)] animate-pulse" />
+        ))}
+      </div>
+    );
+  }
+
+  if (tasks.length === 0) {
+    return (
+      <p className="text-xs text-[var(--text-muted)] py-2 text-center">
+        No tasks linked to this campaign.
+      </p>
+    );
+  }
+
+  return (
+    <div className="space-y-2">
+      {tasks.map((task) => (
+        <div
+          key={task.id}
+          className="p-3 rounded-lg bg-[var(--bg-secondary)] border border-[var(--border-mabos)]"
+        >
+          <div className="flex items-start gap-2">
+            <TaskStatusIcon status={task.status} />
+            <div className="flex-1 min-w-0">
+              <p className="text-sm text-[var(--text-primary)] leading-tight">{task.name}</p>
+              <div className="flex items-center gap-2 mt-1">
+                <Badge
+                  variant="outline"
+                  className="text-[9px] border-[var(--border-mabos)] text-[var(--text-muted)]"
+                >
+                  {task.type}
+                </Badge>
+                {task.assigned_agent && (
+                  <span className="text-[10px] text-[var(--text-muted)]">
+                    {task.assigned_agent}
+                  </span>
+                )}
+              </div>
+              {task.actions.length > 0 && (
+                <div className="mt-2 pl-2 border-l-2 border-[var(--border-mabos)] space-y-1">
+                  {task.actions.map((action) => (
+                    <div
+                      key={action.id}
+                      className="flex items-center gap-1.5 text-[11px] text-[var(--text-muted)]"
+                    >
+                      <Wrench className="w-3 h-3 shrink-0" />
+                      <span className="font-mono">{action.tool}</span>
+                      <span
+                        className={
+                          action.status === "completed" ? "text-[var(--accent-green)]" : ""
+                        }
+                      >
+                        ({action.status})
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export function CampaignDetail({ campaign, open, onOpenChange }: CampaignDetailProps) {
   const [expanded, setExpanded] = useState(false);
   const { data: metrics, isLoading: metricsLoading } = useCampaignMetrics(
+    open && campaign ? campaign.id : null,
+  );
+  const { data: detail, isLoading: detailLoading } = useCampaignDetail(
     open && campaign ? campaign.id : null,
   );
 
@@ -178,6 +265,26 @@ export function CampaignDetail({ campaign, open, onOpenChange }: CampaignDetailP
         }`}
       >
         <SheetHeader className="pb-0">
+          {/* Hierarchy breadcrumb: Goal → Initiative → Campaign */}
+          {detail?.goal || detail?.initiative ? (
+            <div className="flex items-center gap-1 text-[10px] text-[var(--text-muted)] mb-2 flex-wrap">
+              {detail.goal && (
+                <>
+                  <Target className="w-3 h-3 text-[var(--accent-purple)]" />
+                  <span>{detail.goal.name}</span>
+                  <ChevronRight className="w-3 h-3" />
+                </>
+              )}
+              {detail.initiative && (
+                <>
+                  <span className="text-[var(--text-secondary)]">{detail.initiative.name}</span>
+                  <ChevronRight className="w-3 h-3" />
+                </>
+              )}
+              <span className="text-[var(--text-primary)] font-medium">{campaign.name}</span>
+            </div>
+          ) : null}
+
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2 mb-1">
               <Badge
@@ -277,6 +384,16 @@ export function CampaignDetail({ campaign, open, onOpenChange }: CampaignDetailP
               Performance
             </h4>
             <MetricsSection metrics={metrics} isLoading={metricsLoading} />
+          </div>
+
+          <Separator className="bg-[var(--border-mabos)]" />
+
+          {/* Tasks & Actions */}
+          <div>
+            <h4 className="text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)] mb-3">
+              Tasks & Actions ({detail?.tasks?.length ?? 0})
+            </h4>
+            <TasksSection tasks={detail?.tasks ?? []} isLoading={detailLoading} />
           </div>
         </div>
       </SheetContent>

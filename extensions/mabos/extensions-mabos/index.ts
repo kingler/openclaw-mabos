@@ -160,6 +160,434 @@ import { createWorkforceTools } from "./src/tools/workforce-tools.js";
 // statically resolve it (it lives outside this extension's rootDir).
 const BDI_RUNTIME_PATH = "../../../mabos/bdi-runtime/index.js";
 
+// ── Connected Hierarchy Seed ───────────────────────────────────────
+// Seeds Goals → Initiatives → Campaigns → Tasks → Actions into TypeDB
+
+async function seedConnectedHierarchy(
+  client: any,
+  db: string,
+  logger: { info: (m: string) => void; warn: (m: string) => void },
+): Promise<void> {
+  const ins = (q: string) => client.insertData(q, db).catch(() => {});
+  const def = (q: string) => client.defineSchema(q, db).catch(() => {});
+  const now = new Date().toISOString();
+  let count = { goals: 0, initiatives: 0, campaigns: 0, tasks: 0, actions: 0 };
+
+  // ── Ensure schema for hierarchy relations ──
+  await def(`define attribute campaign_id, value string; attribute channel, value string;`);
+  await def(
+    `define entity campaign, owns campaign_id @key, owns name, owns status, owns channel, owns description, owns category;`,
+  );
+  await def(
+    `define entity initiative, owns uid @key, owns name, owns description, owns status, owns category, owns priority, owns created_at, owns updated_at;`,
+  );
+  await def(
+    `define relation goal_drives_initiative, relates driving_goal, relates driven_initiative;`,
+  );
+  await def(`define goal plays goal_drives_initiative:driving_goal;`);
+  await def(`define initiative plays goal_drives_initiative:driven_initiative;`);
+  await def(
+    `define relation initiative_contains_campaign, relates parent_initiative, relates child_campaign;`,
+  );
+  await def(`define initiative plays initiative_contains_campaign:parent_initiative;`);
+  await def(`define campaign plays initiative_contains_campaign:child_campaign;`);
+  await def(
+    `define relation campaign_requires_task, relates requiring_campaign, relates required_task;`,
+  );
+  await def(`define campaign plays campaign_requires_task:requiring_campaign;`);
+  await def(`define task plays campaign_requires_task:required_task;`);
+  await def(
+    `define relation task_produces_action, relates producing_task, relates produced_action;`,
+  );
+  await def(`define task plays task_produces_action:producing_task;`);
+  await def(`define action_execution plays task_produces_action:produced_action;`);
+  await def(`define initiative plays agent_owns:owned;`);
+
+  // ── Goals ──
+  const goals = [
+    { id: "G-REV", name: "Grow annual revenue to $2M", level: "strategic", priority: 0.95 },
+    {
+      id: "G-CAC",
+      name: "Reduce customer acquisition cost below $25",
+      level: "strategic",
+      priority: 0.85,
+    },
+    {
+      id: "G-RET",
+      name: "Increase customer retention rate to 65%",
+      level: "strategic",
+      priority: 0.8,
+    },
+    {
+      id: "G-BRD",
+      name: "Establish VividWalls as premium art brand",
+      level: "strategic",
+      priority: 0.9,
+    },
+  ];
+  for (const g of goals) {
+    await ins(
+      `insert $g isa goal, has uid "${g.id}", has name "${g.name}", has description "${g.name}", has hierarchy_level "${g.level}", has priority ${g.priority}, has status "active", has progress 0.0, has created_at "${now}", has updated_at "${now}";`,
+    );
+    count.goals++;
+  }
+
+  // ── Initiatives ──
+  const initiatives = [
+    { id: "INI-DIG", name: "Q2 Digital Growth Program", cat: "growth", goalIds: ["G-REV"] },
+    {
+      id: "INI-REF",
+      name: "Referral & Retention Program",
+      cat: "retention",
+      goalIds: ["G-CAC", "G-RET"],
+    },
+    {
+      id: "INI-SEO",
+      name: "Organic Discovery Initiative",
+      cat: "acquisition",
+      goalIds: ["G-REV", "G-CAC"],
+    },
+    { id: "INI-BRD", name: "Brand Authority Campaign", cat: "branding", goalIds: ["G-BRD"] },
+    { id: "INI-EML", name: "Email Revenue Engine", cat: "engagement", goalIds: ["G-REV", "G-RET"] },
+    { id: "INI-EXP", name: "New Market Expansion", cat: "growth", goalIds: ["G-REV"] },
+  ];
+  for (const i of initiatives) {
+    await ins(
+      `insert $i isa initiative, has uid "${i.id}", has name "${i.name}", has description "${i.name}", has status "active", has category "${i.cat}", has priority 0.8, has created_at "${now}", has updated_at "${now}";`,
+    );
+    count.initiatives++;
+    for (const gid of i.goalIds) {
+      await ins(
+        `match $g isa goal, has uid "${gid}"; $i isa initiative, has uid "${i.id}"; insert (driving_goal: $g, driven_initiative: $i) isa goal_drives_initiative;`,
+      );
+    }
+  }
+
+  // ── Campaigns (linked to initiatives) ──
+  const campaigns = [
+    {
+      id: "MC-001",
+      name: "Spring Collection Launch",
+      status: "active",
+      channel: "instagram",
+      ini: "INI-DIG",
+    },
+    {
+      id: "MC-002",
+      name: "Home Office Refresh",
+      status: "active",
+      channel: "google-ads",
+      ini: "INI-DIG",
+    },
+    {
+      id: "MC-003",
+      name: "Earth Day Eco Collection",
+      status: "draft",
+      channel: "email",
+      ini: "INI-BRD",
+    },
+    {
+      id: "MC-004",
+      name: "Influencer Collab Q1",
+      status: "completed",
+      channel: "tiktok",
+      ini: "INI-BRD",
+    },
+    {
+      id: "MC-005",
+      name: "Summer Sale 2026",
+      status: "active",
+      channel: "meta-ads",
+      ini: "INI-DIG",
+    },
+    {
+      id: "MC-006",
+      name: "Pinterest SEO Push",
+      status: "active",
+      channel: "pinterest",
+      ini: "INI-SEO",
+    },
+    {
+      id: "MC-007",
+      name: "Email Win-Back Series",
+      status: "active",
+      channel: "email",
+      ini: "INI-EML",
+    },
+    {
+      id: "MC-008",
+      name: "Brand Awareness YouTube",
+      status: "paused",
+      channel: "youtube",
+      ini: "INI-BRD",
+    },
+    {
+      id: "MC-009",
+      name: "Referral Program Launch",
+      status: "draft",
+      channel: "multi-channel",
+      ini: "INI-REF",
+    },
+    { id: "MC-010", name: "Holiday Gift Guide", status: "draft", channel: "email", ini: "INI-EML" },
+  ];
+  for (const c of campaigns) {
+    await ins(
+      `insert $c isa campaign, has campaign_id "${c.id}", has name "${c.name}", has status "${c.status}", has channel "${c.channel}";`,
+    );
+    count.campaigns++;
+    await ins(
+      `match $i isa initiative, has uid "${c.ini}"; $c isa campaign, has campaign_id "${c.id}"; insert (parent_initiative: $i, child_campaign: $c) isa initiative_contains_campaign;`,
+    );
+  }
+
+  // ── Tasks (linked to campaigns) ──
+  const tasks: { id: string; name: string; campaign: string; type: string; agent: string }[] = [
+    // MC-001: Spring Collection
+    {
+      id: "T-001",
+      name: "Design spring email template",
+      campaign: "MC-001",
+      type: "design",
+      agent: "vw-cmo",
+    },
+    {
+      id: "T-002",
+      name: "Schedule Instagram carousel posts",
+      campaign: "MC-001",
+      type: "content",
+      agent: "vw-cmo",
+    },
+    {
+      id: "T-003",
+      name: "Update Shopify collection page",
+      campaign: "MC-001",
+      type: "ecommerce",
+      agent: "vw-coo",
+    },
+    // MC-002: Home Office
+    {
+      id: "T-004",
+      name: "Create Google Ads search campaign",
+      campaign: "MC-002",
+      type: "advertising",
+      agent: "vw-cmo",
+    },
+    {
+      id: "T-005",
+      name: "Build landing page for home office",
+      campaign: "MC-002",
+      type: "design",
+      agent: "vw-cmo",
+    },
+    {
+      id: "T-006",
+      name: "Set up conversion tracking",
+      campaign: "MC-002",
+      type: "analytics",
+      agent: "vw-cmo",
+    },
+    // MC-003: Earth Day
+    {
+      id: "T-007",
+      name: "Draft sustainability messaging copy",
+      campaign: "MC-003",
+      type: "content",
+      agent: "vw-cmo",
+    },
+    {
+      id: "T-008",
+      name: "Source eco-certified packaging",
+      campaign: "MC-003",
+      type: "operations",
+      agent: "vw-coo",
+    },
+    // MC-004: Influencer
+    {
+      id: "T-009",
+      name: "Identify and vet 10 micro-influencers",
+      campaign: "MC-004",
+      type: "outreach",
+      agent: "vw-cmo",
+    },
+    {
+      id: "T-010",
+      name: "Ship product samples to creators",
+      campaign: "MC-004",
+      type: "logistics",
+      agent: "vw-coo",
+    },
+    {
+      id: "T-011",
+      name: "Review and approve creator content",
+      campaign: "MC-004",
+      type: "review",
+      agent: "vw-cmo",
+    },
+    // MC-005: Summer Sale
+    {
+      id: "T-012",
+      name: "Configure Meta Ads audience segments",
+      campaign: "MC-005",
+      type: "advertising",
+      agent: "vw-cmo",
+    },
+    {
+      id: "T-013",
+      name: "Create discount codes in Shopify",
+      campaign: "MC-005",
+      type: "ecommerce",
+      agent: "vw-coo",
+    },
+    {
+      id: "T-014",
+      name: "Design sale banner ads (4 sizes)",
+      campaign: "MC-005",
+      type: "design",
+      agent: "vw-cmo",
+    },
+    // MC-006: Pinterest SEO
+    {
+      id: "T-015",
+      name: "Optimize 50 pin descriptions with keywords",
+      campaign: "MC-006",
+      type: "seo",
+      agent: "vw-cmo",
+    },
+    {
+      id: "T-016",
+      name: "Create 20 new idea pins",
+      campaign: "MC-006",
+      type: "content",
+      agent: "vw-cmo",
+    },
+    // MC-007: Win-Back
+    {
+      id: "T-017",
+      name: "Segment lapsed customers (90+ days)",
+      campaign: "MC-007",
+      type: "analytics",
+      agent: "vw-cmo",
+    },
+    {
+      id: "T-018",
+      name: "Build 3-email win-back sequence",
+      campaign: "MC-007",
+      type: "content",
+      agent: "vw-cmo",
+    },
+    {
+      id: "T-019",
+      name: "Configure SendGrid automation flow",
+      campaign: "MC-007",
+      type: "automation",
+      agent: "vw-cmo",
+    },
+    // MC-008: YouTube
+    {
+      id: "T-020",
+      name: "Script 3 brand story videos",
+      campaign: "MC-008",
+      type: "content",
+      agent: "vw-cmo",
+    },
+    {
+      id: "T-021",
+      name: "Set up YouTube Ads pre-roll campaign",
+      campaign: "MC-008",
+      type: "advertising",
+      agent: "vw-cmo",
+    },
+    // MC-009: Referral
+    {
+      id: "T-022",
+      name: "Build referral landing page",
+      campaign: "MC-009",
+      type: "design",
+      agent: "vw-cmo",
+    },
+    {
+      id: "T-023",
+      name: "Configure referral reward tiers",
+      campaign: "MC-009",
+      type: "ecommerce",
+      agent: "vw-coo",
+    },
+    {
+      id: "T-024",
+      name: "Set up referral tracking webhook",
+      campaign: "MC-009",
+      type: "engineering",
+      agent: "vw-cto",
+    },
+    // MC-010: Holiday
+    {
+      id: "T-025",
+      name: "Curate holiday gift collections",
+      campaign: "MC-010",
+      type: "merchandising",
+      agent: "vw-coo",
+    },
+    {
+      id: "T-026",
+      name: "Design email gift guide template",
+      campaign: "MC-010",
+      type: "design",
+      agent: "vw-cmo",
+    },
+    {
+      id: "T-027",
+      name: "Plan early-bird discount strategy",
+      campaign: "MC-010",
+      type: "pricing",
+      agent: "vw-cfo",
+    },
+  ];
+  for (const t of tasks) {
+    await ins(
+      `insert $t isa task, has uid "${t.id}", has name "${t.name}", has description "${t.name}", has task_type "${t.type}", has status "proposed", has assigned_agent_id "${t.agent}", has created_at "${now}", has updated_at "${now}";`,
+    );
+    count.tasks++;
+    await ins(
+      `match $c isa campaign, has campaign_id "${t.campaign}"; $t isa task, has uid "${t.id}"; insert (requiring_campaign: $c, required_task: $t) isa campaign_requires_task;`,
+    );
+  }
+
+  // ── Actions (linked to tasks) ──
+  const actions: { id: string; task: string; tool: string }[] = [
+    { id: "A-001", task: "T-001", tool: "sendgrid_create_template" },
+    { id: "A-002", task: "T-002", tool: "meta_schedule_post" },
+    { id: "A-003", task: "T-003", tool: "shopify_update_collection" },
+    { id: "A-004", task: "T-004", tool: "google_ads_create_campaign" },
+    { id: "A-005", task: "T-005", tool: "shopify_create_page" },
+    { id: "A-006", task: "T-006", tool: "google_analytics_setup_conversion" },
+    { id: "A-009", task: "T-009", tool: "lead_generation_search" },
+    { id: "A-012", task: "T-012", tool: "meta_create_ad_set" },
+    { id: "A-013", task: "T-013", tool: "shopify_create_discount" },
+    { id: "A-015", task: "T-015", tool: "pinterest_update_pin" },
+    { id: "A-016", task: "T-016", tool: "pinterest_create_pin" },
+    { id: "A-017", task: "T-017", tool: "sendgrid_list_contacts" },
+    { id: "A-018", task: "T-018", tool: "sendgrid_create_template" },
+    { id: "A-019", task: "T-019", tool: "sendgrid_create_automation" },
+    { id: "A-022", task: "T-022", tool: "shopify_create_page" },
+    { id: "A-024", task: "T-024", tool: "execute_command" },
+    { id: "A-025", task: "T-025", tool: "shopify_create_collection" },
+    { id: "A-026", task: "T-026", tool: "sendgrid_create_template" },
+  ];
+  for (const a of actions) {
+    await ins(
+      `insert $a isa action_execution, has uid "${a.id}", has tool_used "${a.tool}", has input_summary "Automated action for ${a.task}", has output_summary "pending", has success false, has created_at "${now}";`,
+    );
+    count.actions++;
+    await ins(
+      `match $t isa task, has uid "${a.task}"; $a isa action_execution, has uid "${a.id}"; insert (producing_task: $t, produced_action: $a) isa task_produces_action;`,
+    );
+  }
+
+  logger.info(
+    `[mabos] Seeded connected hierarchy: ${count.goals} goals, ${count.initiatives} initiatives, ${count.campaigns} campaigns, ${count.tasks} tasks, ${count.actions} actions`,
+  );
+}
+
 export default function register(api: OpenClawPluginApi) {
   const log = api.logger;
 
@@ -336,133 +764,23 @@ export default function register(api: OpenClawPluginApi) {
             .then(async (ok) => {
               if (ok) {
                 api.logger.info("[mabos] TypeDB connected");
-                // Seed campaign data if none exists
+                // Seed connected hierarchy if none exists
                 try {
-                  // Ensure campaign schema exists in TypeDB (add incrementally)
-                  try {
-                    // Add campaign-id attribute and channel attribute if missing
-                    await client
-                      .defineSchema(
-                        `define attribute campaign_id, value string; attribute channel, value string;`,
-                        "mabos",
-                      )
-                      .catch(() => {});
-                    // Add campaign entity
-                    await client
-                      .defineSchema(
-                        `define entity campaign, owns campaign_id @key, owns name, owns status, owns channel, owns description, owns category;`,
-                        "mabos",
-                      )
-                      .catch(() => {});
-                  } catch {
-                    /* schema may already exist */
-                  }
-
-                  const res = await client.matchQuery(
-                    `match $c isa campaign, has campaign_id $cid;`,
-                    "mabos",
-                  );
-                  const hasData =
-                    res?.answerType === "conceptRows" && (res.answers?.length ?? 0) > 0;
-                  if (!hasData) {
-                    const campaigns = [
-                      {
-                        id: "MC-001",
-                        name: "Spring Collection Launch",
-                        status: "active",
-                        channel: "instagram",
-                      },
-                      {
-                        id: "MC-002",
-                        name: "Home Office Refresh",
-                        status: "active",
-                        channel: "google-ads",
-                      },
-                      {
-                        id: "MC-003",
-                        name: "Earth Day Eco Collection",
-                        status: "draft",
-                        channel: "email",
-                      },
-                      {
-                        id: "MC-004",
-                        name: "Influencer Collab Q1",
-                        status: "completed",
-                        channel: "tiktok",
-                      },
-                      {
-                        id: "MC-005",
-                        name: "Summer Sale 2026",
-                        status: "active",
-                        channel: "meta-ads",
-                      },
-                      {
-                        id: "MC-006",
-                        name: "Pinterest SEO Push",
-                        status: "active",
-                        channel: "pinterest",
-                      },
-                      {
-                        id: "MC-007",
-                        name: "Email Win-Back Series",
-                        status: "active",
-                        channel: "email",
-                      },
-                      {
-                        id: "MC-008",
-                        name: "Brand Awareness — YouTube",
-                        status: "paused",
-                        channel: "youtube",
-                      },
-                      {
-                        id: "MC-009",
-                        name: "Referral Program Launch",
-                        status: "draft",
-                        channel: "multi-channel",
-                      },
-                      {
-                        id: "MC-010",
-                        name: "Holiday Gift Guide",
-                        status: "draft",
-                        channel: "email",
-                      },
-                    ];
-                    for (const c of campaigns) {
-                      try {
-                        await client.insertData(
-                          `insert $c isa campaign, has campaign_id "${c.id}", has name "${c.name}", has status "${c.status}", has channel "${c.channel}";`,
-                          "mabos",
-                        );
-                      } catch {
-                        /* non-blocking */
-                      }
-                    }
-                    // Assign campaigns to CMO agent if it exists
-                    try {
-                      await client.matchQuery(`match $a isa agent, has name $n; get $n;`, "mabos");
-                      for (const c of campaigns) {
-                        try {
-                          await client
-                            .insertData(
-                              `match $a isa agent, has role_title "cmo"; $c isa campaign, has campaign_id "${c.id}"; insert (assignee: $a, work-item: $c) isa assigned-to;`,
-                              "mabos",
-                            )
-                            .catch(() => {});
-                        } catch {
-                          /* no CMO agent or already assigned */
-                        }
-                      }
-                    } catch {
-                      /* no agents yet */
-                    }
-                    api.logger.info(`[mabos] Seeded ${campaigns.length} campaigns into TypeDB`);
+                  // Check if full hierarchy exists (initiatives are the indicator)
+                  const iniCheck = await client
+                    .matchQuery(`match $i isa initiative, has uid $id;`, "mabos")
+                    .catch(() => null);
+                  const hasHierarchy =
+                    iniCheck?.answerType === "conceptRows" && (iniCheck.answers?.length ?? 0) > 0;
+                  if (!hasHierarchy) {
+                    await seedConnectedHierarchy(client, "mabos", api.logger);
                   } else {
                     api.logger.info(
-                      `[mabos] ${res?.answers?.length ?? 0} campaigns already in TypeDB`,
+                      `[mabos] Connected hierarchy already in TypeDB (${iniCheck?.answers?.length ?? 0} initiatives)`,
                     );
                   }
                 } catch (err) {
-                  api.logger.warn(`[mabos] Campaign seed failed: ${err}`);
+                  api.logger.warn(`[mabos] Hierarchy seed failed: ${err}`);
                 }
               }
             })
@@ -4673,6 +4991,52 @@ export default function register(api: OpenClawPluginApi) {
         res.end(JSON.stringify({ error: String(err) }));
       }
     },
+  });
+
+  // --- Initiatives ---
+  api.registerHttpRoute({
+    auth: "plugin",
+    path: "/mabos/api/erp/initiatives",
+    handler: async (_req, res) => {
+      if (!(await requireAuth(_req, res))) return;
+      try {
+        const { queryInitiativesFromTypeDB } =
+          process.env.TYPEDB_SKIP === "1"
+            ? ({ queryInitiativesFromTypeDB: async () => null } as any)
+            : await import("./src/knowledge/typedb-dashboard.js");
+        const initiatives = await queryInitiativesFromTypeDB("mabos");
+        res.setHeader("Content-Type", "application/json");
+        res.end(JSON.stringify({ initiatives: initiatives ?? [] }));
+      } catch (err) {
+        res.setHeader("Content-Type", "application/json");
+        res.statusCode = 500;
+        res.end(JSON.stringify({ error: String(err) }));
+      }
+    },
+  });
+
+  // --- Campaign Detail (with connected hierarchy) ---
+  registerParamRoute("/mabos/api/erp/marketing/campaigns/:id/detail", async (req, res) => {
+    try {
+      const url = new URL(req.url || "", "http://localhost");
+      const segments = url.pathname.split("/");
+      const campaignId = segments[segments.length - 2];
+
+      const { queryCampaignDetailFromTypeDB } =
+        process.env.TYPEDB_SKIP === "1"
+          ? ({ queryCampaignDetailFromTypeDB: async () => null } as any)
+          : await import("./src/knowledge/typedb-dashboard.js");
+      const detail = await queryCampaignDetailFromTypeDB("mabos", campaignId);
+
+      res.setHeader("Content-Type", "application/json");
+      res.end(
+        JSON.stringify(detail ?? { campaign: null, initiative: null, goal: null, tasks: [] }),
+      );
+    } catch (err) {
+      res.setHeader("Content-Type", "application/json");
+      res.statusCode = 500;
+      res.end(JSON.stringify({ error: String(err) }));
+    }
   });
 
   // --- Marketing: Campaigns ---

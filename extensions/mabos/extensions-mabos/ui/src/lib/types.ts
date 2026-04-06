@@ -522,6 +522,35 @@ export type MarketingKpi = {
   period: string;
 };
 
+// --- ERP: Initiatives ---
+export type Initiative = {
+  id: string;
+  name: string;
+  description: string;
+  status: "active" | "planned" | "completed" | "paused";
+  category: string;
+  priority: number;
+  goals: string[];
+  campaignCount: number;
+};
+
+// --- ERP: Campaign Detail (connected hierarchy) ---
+export type CampaignTask = {
+  id: string;
+  name: string;
+  type: string;
+  status: string;
+  assigned_agent: string;
+  actions: { id: string; tool: string; status: string }[];
+};
+
+export type CampaignFullDetail = {
+  campaign: MarketingCampaign | null;
+  initiative: { id: string; name: string } | null;
+  goal: { id: string; name: string } | null;
+  tasks: CampaignTask[];
+};
+
 // --- ERP: Analytics ---
 export type AnalyticsReport = {
   id: string;

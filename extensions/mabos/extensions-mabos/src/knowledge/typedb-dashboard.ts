@@ -636,6 +636,259 @@ export async function queryCampaignsFromTypeDB(
   }
 }
 
+// ── Initiative Queries ─────────────────────────────────────────────────
+
+export interface DashboardInitiative {
+  id: string;
+  name: string;
+  description: string;
+  status: string;
+  category: string;
+  priority: number;
+  goals: string[];
+  campaignCount: number;
+}
+
+export async function queryInitiativesFromTypeDB(
+  dbName: string,
+): Promise<DashboardInitiative[] | null> {
+  if (TYPEDB_DISABLED) return null;
+  try {
+    const client = getTypeDBClient();
+    if (!client.isAvailable()) {
+      const ok = await client.connect();
+      if (!ok) return null;
+    }
+
+    const res = await client.matchQuery(
+      `match $i isa initiative, has uid $id, has name $n, has status $st, has category $cat, has priority $p;`,
+      dbName,
+    );
+    const rows = getRows(res);
+    if (rows.length === 0) return null;
+
+    const initiatives: DashboardInitiative[] = [];
+    for (const row of rows) {
+      const id = getConceptValue(row.data["id"]) as string;
+      const name = getConceptValue(row.data["n"]) as string;
+      const st = getConceptValue(row.data["st"]) as string;
+      const cat = getConceptValue(row.data["cat"]) as string;
+      const p = getConceptValue(row.data["p"]) as number;
+      if (!id) continue;
+
+      // Get linked goals
+      const goalIds: string[] = [];
+      try {
+        const goalRes = await client
+          .matchQuery(
+            `match $g isa goal, has uid $gid; $i isa initiative, has uid "${id}"; (driving_goal: $g, driven_initiative: $i) isa goal_drives_initiative;`,
+            dbName,
+          )
+          .catch(() => null);
+        for (const gr of getRows(goalRes)) {
+          const gid = getConceptValue(gr.data["gid"]) as string;
+          if (gid) goalIds.push(gid);
+        }
+      } catch {
+        /* no goals linked */
+      }
+
+      // Count campaigns
+      let campaignCount = 0;
+      try {
+        const campRes = await client
+          .matchQuery(
+            `match $c isa campaign; $i isa initiative, has uid "${id}"; (parent_initiative: $i, child_campaign: $c) isa initiative_contains_campaign;`,
+            dbName,
+          )
+          .catch(() => null);
+        campaignCount = getRows(campRes).length;
+      } catch {
+        /* no campaigns */
+      }
+
+      initiatives.push({
+        id,
+        name: name || id,
+        description: name || "",
+        status: st || "active",
+        category: cat || "",
+        priority: p ?? 0.5,
+        goals: goalIds,
+        campaignCount,
+      });
+    }
+
+    return initiatives;
+  } catch {
+    return null;
+  }
+}
+
+// ── Campaign Detail with Connected Tasks ──────────────────────────────
+
+export interface CampaignTaskDetail {
+  id: string;
+  name: string;
+  type: string;
+  status: string;
+  assigned_agent: string;
+  actions: { id: string; tool: string; status: string }[];
+}
+
+export interface CampaignFullDetail {
+  campaign: DashboardCampaign;
+  initiative: { id: string; name: string } | null;
+  goal: { id: string; name: string } | null;
+  tasks: CampaignTaskDetail[];
+}
+
+export async function queryCampaignDetailFromTypeDB(
+  dbName: string,
+  campaignId: string,
+): Promise<CampaignFullDetail | null> {
+  if (TYPEDB_DISABLED) return null;
+  try {
+    const client = getTypeDBClient();
+    if (!client.isAvailable()) {
+      const ok = await client.connect();
+      if (!ok) return null;
+    }
+
+    // Get campaign
+    const campRes = await client.matchQuery(
+      `match $c isa campaign, has campaign_id "${campaignId}", has name $n, has status $st, has channel $ch;`,
+      dbName,
+    );
+    const campRows = getRows(campRes);
+    if (campRows.length === 0) return null;
+
+    const campaign: DashboardCampaign = {
+      id: campaignId,
+      name: (getConceptValue(campRows[0].data["n"]) as string) || campaignId,
+      type: "digital",
+      status: (getConceptValue(campRows[0].data["st"]) as string) || "active",
+      budget: 0,
+      spent: 0,
+      start_date: "",
+      end_date: "",
+      channels: campRows.map((r) => getConceptValue(r.data["ch"]) as string).filter(Boolean),
+      assigned_agent: "",
+    };
+    // Deduplicate channels
+    campaign.channels = [...new Set(campaign.channels)];
+
+    // Get parent initiative
+    let initiative: { id: string; name: string } | null = null;
+    try {
+      const iniRes = await client
+        .matchQuery(
+          `match $i isa initiative, has uid $iid, has name $iname; $c isa campaign, has campaign_id "${campaignId}"; (parent_initiative: $i, child_campaign: $c) isa initiative_contains_campaign;`,
+          dbName,
+        )
+        .catch(() => null);
+      const iniRows = getRows(iniRes);
+      if (iniRows.length > 0) {
+        initiative = {
+          id: (getConceptValue(iniRows[0].data["iid"]) as string) || "",
+          name: (getConceptValue(iniRows[0].data["iname"]) as string) || "",
+        };
+      }
+    } catch {
+      /* no initiative */
+    }
+
+    // Get parent goal (via initiative)
+    let goal: { id: string; name: string } | null = null;
+    if (initiative) {
+      try {
+        const goalRes = await client
+          .matchQuery(
+            `match $g isa goal, has uid $gid, has name $gname; $i isa initiative, has uid "${initiative.id}"; (driving_goal: $g, driven_initiative: $i) isa goal_drives_initiative;`,
+            dbName,
+          )
+          .catch(() => null);
+        const goalRows = getRows(goalRes);
+        if (goalRows.length > 0) {
+          goal = {
+            id: (getConceptValue(goalRows[0].data["gid"]) as string) || "",
+            name: (getConceptValue(goalRows[0].data["gname"]) as string) || "",
+          };
+        }
+      } catch {
+        /* no goal */
+      }
+    }
+
+    // Get linked tasks
+    const tasks: CampaignTaskDetail[] = [];
+    try {
+      const taskRes = await client
+        .matchQuery(
+          `match $t isa task, has uid $tid, has name $tn, has task_type $tt, has status $ts; $c isa campaign, has campaign_id "${campaignId}"; (requiring_campaign: $c, required_task: $t) isa campaign_requires_task;`,
+          dbName,
+        )
+        .catch(() => null);
+      for (const tr of getRows(taskRes)) {
+        const tid = getConceptValue(tr.data["tid"]) as string;
+        const tname = getConceptValue(tr.data["tn"]) as string;
+        const ttype = getConceptValue(tr.data["tt"]) as string;
+        const tstatus = getConceptValue(tr.data["ts"]) as string;
+        if (!tid) continue;
+
+        // Get assigned agent
+        let assignedAgent = "";
+        try {
+          const agRes = await client
+            .matchQuery(`match $t isa task, has uid "${tid}", has assigned_agent_id $aid;`, dbName)
+            .catch(() => null);
+          const agRows = getRows(agRes);
+          if (agRows.length > 0) {
+            assignedAgent = (getConceptValue(agRows[0].data["aid"]) as string) || "";
+          }
+        } catch {
+          /* no agent */
+        }
+
+        // Get actions
+        const actions: { id: string; tool: string; status: string }[] = [];
+        try {
+          const actRes = await client
+            .matchQuery(
+              `match $a isa action_execution, has uid $aid, has tool_used $tool, has success $s; $t isa task, has uid "${tid}"; (producing_task: $t, produced_action: $a) isa task_produces_action;`,
+              dbName,
+            )
+            .catch(() => null);
+          for (const ar of getRows(actRes)) {
+            actions.push({
+              id: (getConceptValue(ar.data["aid"]) as string) || "",
+              tool: (getConceptValue(ar.data["tool"]) as string) || "",
+              status: (getConceptValue(ar.data["s"]) as boolean) ? "completed" : "pending",
+            });
+          }
+        } catch {
+          /* no actions */
+        }
+
+        tasks.push({
+          id: tid,
+          name: tname || tid,
+          type: ttype || "task",
+          status: tstatus || "proposed",
+          assigned_agent: assignedAgent,
+          actions,
+        });
+      }
+    } catch {
+      /* no tasks */
+    }
+
+    return { campaign, initiative, goal, tasks };
+  } catch {
+    return null;
+  }
+}
+
 export async function writeBdiCycleResultToTypeDB(
   agentId: string,
   dbName: string,

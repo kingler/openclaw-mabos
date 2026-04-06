@@ -29,7 +29,9 @@ import type {
   ComplianceGuardrail,
   MarketingCampaign,
   CampaignMetrics,
+  CampaignFullDetail,
   MarketingKpi,
+  Initiative,
   AnalyticsReport,
   ReportSnapshot,
   AnalyticsDashboard,
@@ -376,6 +378,9 @@ export const api = {
   getCampaignMetrics: (id: string) =>
     get<CampaignMetrics>(`/erp/marketing/campaigns/${id}/metrics`),
   getMarketingKpis: () => get<{ kpis: MarketingKpi[] }>("/erp/marketing/kpis"),
+  getCampaignDetail: (id: string) =>
+    get<CampaignFullDetail>(`/erp/marketing/campaigns/${id}/detail`),
+  getInitiatives: () => get<{ initiatives: Initiative[] }>("/erp/initiatives"),
 
   // --- ERP: Analytics ---
   getReports: (params?: { type?: string; status?: string }) => {

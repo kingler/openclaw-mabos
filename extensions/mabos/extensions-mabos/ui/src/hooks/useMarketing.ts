@@ -16,6 +16,14 @@ export function useCampaignMetrics(id: string | null) {
   });
 }
 
+export function useCampaignDetail(id: string | null) {
+  return useQuery({
+    queryKey: ["erp", "marketing", "detail", id],
+    queryFn: () => api.getCampaignDetail(id!),
+    enabled: !!id,
+  });
+}
+
 export function useMarketingKpis() {
   return useQuery({
     queryKey: ["erp", "marketing", "kpis"],
