@@ -21,8 +21,8 @@ export function WorkflowSteps({ workflow }: WorkflowStepsProps) {
   const scheduledStepCount = sortedSteps.filter((s) => s.schedule?.cronExpression).length;
 
   return (
-    <Card className="bg-[var(--bg-secondary)] border-[var(--border-mabos)]">
-      <CardContent className="py-3 space-y-2">
+    <Card className="bg-[var(--bg-secondary)] border-[var(--border-mabos)] overflow-hidden">
+      <CardContent className="py-3 space-y-2 overflow-hidden">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <p className="text-xs font-medium text-[var(--text-primary)]">{workflow.name}</p>
@@ -58,7 +58,8 @@ export function WorkflowSteps({ workflow }: WorkflowStepsProps) {
           {sortedSteps.map((step, idx) => (
             <div key={step.id} className="flex items-center gap-1">
               <span
-                className="px-2 py-0.5 text-[10px] rounded text-[var(--text-secondary)] whitespace-nowrap"
+                className="px-2 py-0.5 text-[10px] rounded text-[var(--text-secondary)] truncate max-w-[280px]"
+                title={step.name}
                 style={{
                   backgroundColor: step.schedule?.cronExpression
                     ? "color-mix(in srgb, var(--accent-blue) 10%, var(--bg-tertiary))"

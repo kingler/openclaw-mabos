@@ -90,7 +90,7 @@ export function GoalCard({ goal, onSelect }: GoalCardProps) {
 
   return (
     <Card
-      className="bg-[var(--bg-card)] border-[var(--border-mabos)] py-4 cursor-pointer hover:border-[var(--border-hover)] transition-colors"
+      className="bg-[var(--bg-card)] border-[var(--border-mabos)] py-4 cursor-pointer hover:border-[var(--border-hover)] transition-colors overflow-hidden"
       onClick={() => onSelect?.(goal.id)}
     >
       <CardContent className="space-y-3">
