@@ -4780,17 +4780,31 @@ export default function register(api: OpenClawPluginApi) {
       const segments = url.pathname.split("/");
       // .../campaigns/:id/metrics → id is at segments.length - 2
       const campaignId = segments[segments.length - 2];
+
+      // Generate deterministic but varied metrics per campaign
+      const seed = [...campaignId].reduce((s, c) => s + c.charCodeAt(0), 0);
+      const rng = (min: number, max: number) => min + ((seed * 2654435761) % (max - min + 1));
+      const impressions = rng(8000, 250000);
+      const ctr = 1.5 + (seed % 40) / 10;
+      const clicks = Math.round(impressions * (ctr / 100));
+      const convRate = 0.8 + (seed % 30) / 10;
+      const conversions = Math.round(clicks * (convRate / 100));
+      const revenue = conversions * (80 + rng(20, 200));
+      const spent = rng(500, 12000);
+      const cpa = conversions > 0 ? spent / conversions : 0;
+      const roas = spent > 0 ? revenue / spent : 0;
+
       const metrics = {
         campaign_id: campaignId,
-        impressions: 145000,
-        clicks: 4350,
-        ctr: 3.0,
-        conversions: 87,
-        conversion_rate: 2.0,
-        revenue_attributed: 15660,
-        cost_per_acquisition: 36.78,
-        roas: 4.89,
-        period: { from: "2026-03-15", to: "2026-04-04" },
+        impressions,
+        clicks,
+        ctr: Math.round(ctr * 100) / 100,
+        conversions,
+        conversion_rate: Math.round(convRate * 100) / 100,
+        revenue_attributed: revenue,
+        cost_per_acquisition: Math.round(cpa * 100) / 100,
+        roi: Math.round(roas * 10) / 10,
+        period: { from: "2026-03-01", to: "2026-04-06" },
       };
       res.setHeader("Content-Type", "application/json");
       res.end(JSON.stringify(metrics));

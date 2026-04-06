@@ -5,6 +5,7 @@ import type { Campaign } from "@/lib/types";
 type Props = {
   campaigns: Campaign[];
   isLoading?: boolean;
+  onRowClick?: (campaign: Campaign) => void;
 };
 
 const columns: Column<Campaign>[] = [
@@ -55,12 +56,13 @@ const columns: Column<Campaign>[] = [
   },
 ];
 
-export function CampaignTable({ campaigns, isLoading }: Props) {
+export function CampaignTable({ campaigns, isLoading, onRowClick }: Props) {
   return (
     <DataTable
       columns={columns}
       data={campaigns}
       isLoading={isLoading}
+      onRowClick={onRowClick}
       emptyMessage="No campaigns found"
     />
   );

@@ -1,14 +1,18 @@
 import { Megaphone } from "lucide-react";
 import { useState } from "react";
+import { CampaignDetail } from "@/components/marketing/CampaignDetail";
 import { CampaignTable } from "@/components/marketing/CampaignTable";
 import { KpiProgressCards } from "@/components/marketing/KpiProgressCards";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useCampaigns, useMarketingKpis } from "@/hooks/useMarketing";
+import type { MarketingCampaign } from "@/lib/types";
 
 const statusOptions = ["all", "active", "paused", "completed", "draft"] as const;
 
 export function MarketingPage() {
   const [statusFilter, setStatusFilter] = useState("all");
+  const [selectedCampaign, setSelectedCampaign] = useState<MarketingCampaign | null>(null);
+  const [detailOpen, setDetailOpen] = useState(false);
 
   const { data: campaignsData, isLoading: campaignsLoading } = useCampaigns(
     statusFilter !== "all" ? { status: statusFilter } : undefined,
@@ -17,6 +21,18 @@ export function MarketingPage() {
 
   const campaigns = campaignsData?.campaigns ?? [];
   const kpis = kpisData?.kpis ?? [];
+
+  function handleCampaignClick(campaign: MarketingCampaign) {
+    setSelectedCampaign(campaign);
+    setDetailOpen(true);
+  }
+
+  function handleDetailOpenChange(open: boolean) {
+    setDetailOpen(open);
+    if (!open) {
+      setTimeout(() => setSelectedCampaign(null), 300);
+    }
+  }
 
   return (
     <div className="space-y-6">
@@ -60,9 +76,20 @@ export function MarketingPage() {
           </div>
         </CardHeader>
         <CardContent>
-          <CampaignTable campaigns={campaigns} isLoading={campaignsLoading} />
+          <CampaignTable
+            campaigns={campaigns}
+            isLoading={campaignsLoading}
+            onRowClick={handleCampaignClick}
+          />
         </CardContent>
       </Card>
+
+      {/* Campaign Detail Drawer */}
+      <CampaignDetail
+        campaign={selectedCampaign}
+        open={detailOpen}
+        onOpenChange={handleDetailOpenChange}
+      />
     </div>
   );
 }
