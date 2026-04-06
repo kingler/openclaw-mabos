@@ -873,6 +873,34 @@ export default function register(api: OpenClawPluginApi) {
                 } catch (err) {
                   api.logger.warn(`[mabos] Hierarchy seed failed: ${err}`);
                 }
+
+                // Sync Shopify inventory to TypeDB (non-blocking)
+                import("./src/sync/shopify-inventory-sync.js")
+                  .then(async ({ syncShopifyInventoryToTypeDB }) => {
+                    const { join: pathJoin } = await import("node:path");
+                    return syncShopifyInventoryToTypeDB({
+                      client,
+                      db: "mabos",
+                      workspaceDir,
+                      catalogPath: pathJoin(
+                        workspaceDir,
+                        "businesses",
+                        "vividwalls",
+                        "product-catalog-live.json",
+                      ),
+                      logger: api.logger,
+                    });
+                  })
+                  .then((result) => {
+                    if (result.synced > 0) {
+                      api.logger.info(
+                        `[mabos] Shopify inventory synced: ${result.synced} products written to TypeDB`,
+                      );
+                    }
+                  })
+                  .catch((err) => {
+                    log.debug(`[mabos] Inventory sync skipped: ${err}`);
+                  });
               }
             })
             .catch((err) => {
@@ -4307,12 +4335,68 @@ export default function register(api: OpenClawPluginApi) {
     }
   });
 
+  // --- Inventory: Sync trigger ---
+  api.registerHttpRoute({
+    auth: "plugin",
+    path: "/mabos/api/erp/inventory/sync",
+    handler: async (req, res) => {
+      if (!(await requireAuth(req, res))) return;
+      if (req.method !== "POST") {
+        res.writeHead(405, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: "Method not allowed" }));
+        return;
+      }
+      try {
+        const { syncShopifyInventoryToTypeDB } =
+          await import("./src/sync/shopify-inventory-sync.js");
+        const { getTypeDBClient } = await import("./src/knowledge/typedb-client.js");
+        const { join: pathJoin } = await import("node:path");
+        const client = getTypeDBClient();
+        if (!client.isAvailable()) {
+          res.writeHead(503, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: "TypeDB not available" }));
+          return;
+        }
+        const result = await syncShopifyInventoryToTypeDB({
+          client,
+          db: "mabos",
+          workspaceDir,
+          catalogPath: pathJoin(bizDir, "product-catalog-live.json"),
+          logger: log,
+        });
+        res.setHeader("Content-Type", "application/json");
+        res.end(JSON.stringify(result));
+      } catch (err) {
+        res.writeHead(500, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: String(err) }));
+      }
+    },
+  });
+
   // --- Inventory: Items ---
   api.registerHttpRoute({
     auth: "plugin",
     path: "/mabos/api/erp/inventory/items",
     handler: async (_req, res) => {
       if (!(await requireAuth(_req, res))) return;
+
+      // Try TypeDB first
+      try {
+        const { queryInventoryFromTypeDB } = await import("./src/sync/shopify-inventory-sync.js");
+        const { getTypeDBClient } = await import("./src/knowledge/typedb-client.js");
+        const client = getTypeDBClient();
+        if (client.isAvailable()) {
+          const dbItems = await queryInventoryFromTypeDB(client, "mabos");
+          if (dbItems && dbItems.length > 0) {
+            res.setHeader("Content-Type", "application/json");
+            res.end(JSON.stringify({ items: dbItems, source: "typedb" }));
+            return;
+          }
+        }
+      } catch {
+        // Fall through to JSON
+      }
+
       try {
         const { join } = await import("node:path");
         const catalogPath = join(bizDir, "product-catalog-live.json");
