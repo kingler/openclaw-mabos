@@ -674,8 +674,203 @@ async function seedConnectedHierarchy(
     );
   }
 
+  // ── Decision schema ──
+  await def(
+    `define attribute urgency_level, value string; attribute options_json, value string; attribute recommendation, value string; attribute options_count, value integer; attribute chosen_option, value string; attribute impact_level, value string; attribute decision_type, value string; attribute resolved, value boolean;`,
+  );
+  await def(
+    `define entity decision, owns uid @key, owns name, owns description, owns status, owns decision_type, owns options_count, owns chosen_option, owns impact_level, owns urgency_level, owns resolved, owns options_json, owns recommendation, owns created_at, owns updated_at;`,
+  );
+  await def(`define decision plays agent_owns:owned;`);
+
+  // ── Decisions (pending operator approval) ──
+  const decisions = [
+    {
+      id: "DEC-001",
+      agent: "vw-cmo",
+      urgency: "critical",
+      name: "Approve Summer Sale discount strategy",
+      desc: "The Summer Sale 2026 campaign requires a discount structure. CMO recommends 20% sitewide + 30% on seasonal items, but this impacts margins.",
+      options: [
+        {
+          id: "opt-1a",
+          label: "20% sitewide + 30% seasonal",
+          description: "Higher conversion expected, ~8% margin impact",
+          recommended: true,
+        },
+        {
+          id: "opt-1b",
+          label: "15% sitewide only",
+          description: "Conservative approach, ~5% margin impact",
+          recommended: false,
+        },
+        {
+          id: "opt-1c",
+          label: "BOGO on select items",
+          description: "Clears inventory, variable margin impact",
+          recommended: false,
+        },
+      ],
+      recommendation: "opt-1a: Matches competitor pricing and maximizes revenue during peak season",
+    },
+    {
+      id: "DEC-002",
+      agent: "vw-cfo",
+      urgency: "high",
+      name: "Increase Q2 marketing budget by $3,000",
+      desc: "Meta Ads ROAS is 12.6x — CFO recommends reallocating $3K from reserves to scale the Summer Sale campaign while performance is strong.",
+      options: [
+        {
+          id: "opt-2a",
+          label: "Approve $3K increase",
+          description: "Scale winning Meta Ads, expected +$37K revenue",
+          recommended: true,
+        },
+        {
+          id: "opt-2b",
+          label: "Approve $1.5K increase",
+          description: "Partial scale, lower risk",
+          recommended: false,
+        },
+        {
+          id: "opt-2c",
+          label: "Deny — hold reserves",
+          description: "Maintain current spend levels",
+          recommended: false,
+        },
+      ],
+      recommendation: "opt-2a: Current ROAS justifies increased spend, ROI-positive at any scale",
+    },
+    {
+      id: "DEC-003",
+      agent: "vw-coo",
+      urgency: "high",
+      name: "Switch to eco-certified packaging supplier",
+      desc: "Earth Day campaign requires eco-certified packaging. Current supplier doesn't meet standards. Two alternatives quoted.",
+      options: [
+        {
+          id: "opt-3a",
+          label: "EcoPack Co — $2.40/unit",
+          description: "FSC-certified, 3-week lead time, minimum order 500",
+          recommended: true,
+        },
+        {
+          id: "opt-3b",
+          label: "GreenWrap Ltd — $1.90/unit",
+          description: "Recycled materials, 5-week lead time, minimum order 1000",
+          recommended: false,
+        },
+        {
+          id: "opt-3c",
+          label: "Keep current supplier",
+          description: "No eco certification, cannot use for Earth Day campaign",
+          recommended: false,
+        },
+      ],
+      recommendation:
+        "opt-3a: Meets timeline for Earth Day launch, FSC certification is stronger marketing claim",
+    },
+    {
+      id: "DEC-004",
+      agent: "vw-cmo",
+      urgency: "medium",
+      name: "Select influencers for Q2 collaboration",
+      desc: "Shortlisted 3 micro-influencers for the next content collaboration. Each has different audience demographics and pricing.",
+      options: [
+        {
+          id: "opt-4a",
+          label: "@artwall_sarah (45K followers)",
+          description: "Home decor niche, $800/post, 4.2% engagement rate",
+          recommended: false,
+        },
+        {
+          id: "opt-4b",
+          label: "@modernspaces (62K followers)",
+          description: "Interior design, $1,200/post, 3.8% engagement rate",
+          recommended: true,
+        },
+        {
+          id: "opt-4c",
+          label: "@colorful_living (28K followers)",
+          description: "Art & lifestyle, $500/post, 5.1% engagement rate",
+          recommended: false,
+        },
+      ],
+      recommendation: "opt-4b: Highest reach with strong design audience alignment",
+    },
+    {
+      id: "DEC-005",
+      agent: "vw-cmo",
+      urgency: "medium",
+      name: "Launch referral program reward structure",
+      desc: "Referral Program needs a reward tier. Options range from discount-only to cash-back + discount hybrid.",
+      options: [
+        {
+          id: "opt-5a",
+          label: "15% off for both parties",
+          description: "Simple, easy to communicate, lower cost",
+          recommended: false,
+        },
+        {
+          id: "opt-5b",
+          label: "$15 credit + 10% off",
+          description: "Stronger incentive, higher perceived value",
+          recommended: true,
+        },
+        {
+          id: "opt-5c",
+          label: "Free shipping + 10% off",
+          description: "Good for high-AOV products, moderate cost",
+          recommended: false,
+        },
+      ],
+      recommendation:
+        "opt-5b: Credit + discount combo drives highest referral conversion in similar ecommerce brands",
+    },
+    {
+      id: "DEC-006",
+      agent: "vw-coo",
+      urgency: "low",
+      name: "Reorder Fractal collection inventory",
+      desc: "Fractal Red no1 stock at 273 units (below 300 threshold). Standard reorder is 200 units at $220/unit from current supplier.",
+      options: [
+        {
+          id: "opt-6a",
+          label: "Reorder 200 units (standard)",
+          description: "$44,000, 2-week delivery",
+          recommended: true,
+        },
+        {
+          id: "opt-6b",
+          label: "Reorder 400 units (bulk)",
+          description: "$82,000, 5% bulk discount, 3-week delivery",
+          recommended: false,
+        },
+        {
+          id: "opt-6c",
+          label: "Defer reorder to next month",
+          description: "Risk stockout if sales spike during Summer Sale",
+          recommended: false,
+        },
+      ],
+      recommendation:
+        "opt-6a: Standard reorder maintains buffer without over-committing capital before Summer Sale",
+    },
+  ];
+  for (const d of decisions) {
+    const optsJson = JSON.stringify(d.options).replace(/"/g, '\\"');
+    await ins(
+      `insert $d isa decision, has uid "${d.id}", has name ${JSON.stringify(d.name)}, has description ${JSON.stringify(d.desc)}, has urgency_level "${d.urgency}", has status "pending", has options_json "${optsJson}", has recommendation ${JSON.stringify(d.recommendation)}, has created_at "${now}", has updated_at "${now}";`,
+    );
+    // Link to the specific agent
+    await ins(
+      `match $a isa agent, has uid "${d.agent}"; $d isa decision, has uid "${d.id}"; insert (owner: $a, owned: $d) isa agent_owns;`,
+    );
+    count.decisions = (count.decisions ?? 0) + 1;
+  }
+
   logger.info(
-    `[mabos] Seeded connected hierarchy: ${count.goals} goals, ${count.projects} projects, ${count.initiatives} initiatives, ${count.campaigns} campaigns, ${count.tasks} tasks, ${count.actions} actions`,
+    `[mabos] Seeded connected hierarchy: ${count.goals} goals, ${count.projects} projects, ${count.initiatives} initiatives, ${count.campaigns} campaigns, ${count.tasks} tasks, ${count.actions} actions, ${count.decisions ?? 0} decisions`,
   );
 }
 
@@ -857,17 +1052,25 @@ export default function register(api: OpenClawPluginApi) {
                 api.logger.info("[mabos] TypeDB connected");
                 // Seed connected hierarchy if none exists
                 try {
-                  // Check if full hierarchy exists (projects are the latest indicator)
+                  // Check if full hierarchy exists (projects + decisions must both exist)
                   const projCheck = await client
                     .matchQuery(`match $p isa project, has uid $id;`, "mabos")
                     .catch(() => null);
-                  const hasHierarchy =
+                  const decCheck = await client
+                    .matchQuery(`match $d isa decision, has uid $id;`, "mabos")
+                    .catch(() => null);
+                  const hasProjects =
                     projCheck?.answerType === "conceptRows" && (projCheck.answers?.length ?? 0) > 0;
-                  if (!hasHierarchy) {
+                  const hasDecisions =
+                    decCheck?.answerType === "conceptRows" && (decCheck.answers?.length ?? 0) > 0;
+                  if (!hasProjects || !hasDecisions) {
+                    api.logger.info(
+                      `[mabos] Re-seeding hierarchy (projects: ${hasProjects}, decisions: ${hasDecisions})`,
+                    );
                     await seedConnectedHierarchy(client, "mabos", api.logger);
                   } else {
                     api.logger.info(
-                      `[mabos] Connected hierarchy already in TypeDB (${projCheck?.answers?.length ?? 0} projects)`,
+                      `[mabos] Connected hierarchy already in TypeDB (${projCheck?.answers?.length ?? 0} projects, ${decCheck?.answers?.length ?? 0} decisions)`,
                     );
                   }
                 } catch (err) {
