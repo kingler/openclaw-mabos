@@ -333,8 +333,138 @@ export default function register(api: OpenClawPluginApi) {
           const client = getTypeDBClient();
           client
             .connect()
-            .then((ok) => {
-              if (ok) api.logger.info("[mabos] TypeDB connected");
+            .then(async (ok) => {
+              if (ok) {
+                api.logger.info("[mabos] TypeDB connected");
+                // Seed campaign data if none exists
+                try {
+                  // Ensure campaign schema exists in TypeDB (add incrementally)
+                  try {
+                    // Add campaign-id attribute and channel attribute if missing
+                    await client
+                      .defineSchema(
+                        `define attribute campaign_id, value string; attribute channel, value string;`,
+                        "mabos",
+                      )
+                      .catch(() => {});
+                    // Add campaign entity
+                    await client
+                      .defineSchema(
+                        `define entity campaign, owns campaign_id @key, owns name, owns status, owns channel, owns description, owns category;`,
+                        "mabos",
+                      )
+                      .catch(() => {});
+                  } catch {
+                    /* schema may already exist */
+                  }
+
+                  const res = await client.matchQuery(
+                    `match $c isa campaign, has campaign_id $cid;`,
+                    "mabos",
+                  );
+                  const hasData =
+                    res?.answerType === "conceptRows" && (res.answers?.length ?? 0) > 0;
+                  if (!hasData) {
+                    const campaigns = [
+                      {
+                        id: "MC-001",
+                        name: "Spring Collection Launch",
+                        status: "active",
+                        channel: "instagram",
+                      },
+                      {
+                        id: "MC-002",
+                        name: "Home Office Refresh",
+                        status: "active",
+                        channel: "google-ads",
+                      },
+                      {
+                        id: "MC-003",
+                        name: "Earth Day Eco Collection",
+                        status: "draft",
+                        channel: "email",
+                      },
+                      {
+                        id: "MC-004",
+                        name: "Influencer Collab Q1",
+                        status: "completed",
+                        channel: "tiktok",
+                      },
+                      {
+                        id: "MC-005",
+                        name: "Summer Sale 2026",
+                        status: "active",
+                        channel: "meta-ads",
+                      },
+                      {
+                        id: "MC-006",
+                        name: "Pinterest SEO Push",
+                        status: "active",
+                        channel: "pinterest",
+                      },
+                      {
+                        id: "MC-007",
+                        name: "Email Win-Back Series",
+                        status: "active",
+                        channel: "email",
+                      },
+                      {
+                        id: "MC-008",
+                        name: "Brand Awareness — YouTube",
+                        status: "paused",
+                        channel: "youtube",
+                      },
+                      {
+                        id: "MC-009",
+                        name: "Referral Program Launch",
+                        status: "draft",
+                        channel: "multi-channel",
+                      },
+                      {
+                        id: "MC-010",
+                        name: "Holiday Gift Guide",
+                        status: "draft",
+                        channel: "email",
+                      },
+                    ];
+                    for (const c of campaigns) {
+                      try {
+                        await client.insertData(
+                          `insert $c isa campaign, has campaign_id "${c.id}", has name "${c.name}", has status "${c.status}", has channel "${c.channel}";`,
+                          "mabos",
+                        );
+                      } catch {
+                        /* non-blocking */
+                      }
+                    }
+                    // Assign campaigns to CMO agent if it exists
+                    try {
+                      await client.matchQuery(`match $a isa agent, has name $n; get $n;`, "mabos");
+                      for (const c of campaigns) {
+                        try {
+                          await client
+                            .insertData(
+                              `match $a isa agent, has role_title "cmo"; $c isa campaign, has campaign_id "${c.id}"; insert (assignee: $a, work-item: $c) isa assigned-to;`,
+                              "mabos",
+                            )
+                            .catch(() => {});
+                        } catch {
+                          /* no CMO agent or already assigned */
+                        }
+                      }
+                    } catch {
+                      /* no agents yet */
+                    }
+                    api.logger.info(`[mabos] Seeded ${campaigns.length} campaigns into TypeDB`);
+                  } else {
+                    api.logger.info(
+                      `[mabos] ${res?.answers?.length ?? 0} campaigns already in TypeDB`,
+                    );
+                  }
+                } catch (err) {
+                  api.logger.warn(`[mabos] Campaign seed failed: ${err}`);
+                }
+              }
             })
             .catch((err) => {
               log.debug(`TypeDB connect failed: ${err}`);
@@ -4551,6 +4681,23 @@ export default function register(api: OpenClawPluginApi) {
     path: "/mabos/api/erp/marketing/campaigns",
     handler: async (_req, res) => {
       if (!(await requireAuth(_req, res))) return;
+
+      // Try TypeDB first
+      try {
+        const { queryCampaignsFromTypeDB } =
+          process.env.TYPEDB_SKIP === "1"
+            ? ({ queryCampaignsFromTypeDB: async () => null } as any)
+            : await import("./src/knowledge/typedb-dashboard.js");
+        const dbCampaigns = await queryCampaignsFromTypeDB("mabos");
+        if (dbCampaigns && dbCampaigns.length > 0) {
+          res.setHeader("Content-Type", "application/json");
+          res.end(JSON.stringify({ campaigns: dbCampaigns }));
+          return;
+        }
+      } catch (err) {
+        log.debug(`TypeDB campaigns query skipped: ${err}`);
+      }
+
       try {
         const { join } = await import("node:path");
         const marketingPath = join(bizDir, "marketing.json");

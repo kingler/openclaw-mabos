@@ -547,6 +547,95 @@ export async function queryTasksFromTypeDB(dbName: string): Promise<DashboardTas
   }
 }
 
+// ── Campaign Queries ──────────────────────────────────────────────────
+
+export interface DashboardCampaign {
+  id: string;
+  name: string;
+  type: string;
+  status: string;
+  budget: number;
+  spent: number;
+  start_date: string;
+  end_date: string;
+  channels: string[];
+  assigned_agent: string;
+}
+
+export async function queryCampaignsFromTypeDB(
+  dbName: string,
+): Promise<DashboardCampaign[] | null> {
+  if (TYPEDB_DISABLED) return null;
+  try {
+    const client = getTypeDBClient();
+    if (!client.isAvailable()) {
+      const ok = await client.connect();
+      if (!ok) return null;
+    }
+
+    // Query all campaigns with their attributes
+    const res = await client.matchQuery(
+      `match $c isa campaign, has campaign_id $cid, has name $n, has status $st, has channel $ch;`,
+      dbName,
+    );
+    const rows = getRows(res);
+    if (rows.length === 0) return null;
+
+    // Group rows by campaign_id (multiple channels produce multiple rows)
+    const campaignMap = new Map<string, DashboardCampaign>();
+    for (const row of rows) {
+      const cid = getConceptValue(row.data["cid"]) as string;
+      const name = getConceptValue(row.data["n"]) as string;
+      const st = getConceptValue(row.data["st"]) as string;
+      const ch = getConceptValue(row.data["ch"]) as string;
+
+      if (!cid) continue;
+
+      const existing = campaignMap.get(cid);
+      if (existing) {
+        if (ch && !existing.channels.includes(ch)) {
+          existing.channels.push(ch);
+        }
+      } else {
+        campaignMap.set(cid, {
+          id: cid,
+          name: name || cid,
+          type: "digital",
+          status: st || "active",
+          budget: 0,
+          spent: 0,
+          start_date: "",
+          end_date: "",
+          channels: ch ? [ch] : [],
+          assigned_agent: "",
+        });
+      }
+    }
+
+    // Enrich with assigned agent if available
+    for (const [cid, campaign] of campaignMap) {
+      try {
+        const assignedRes = await client
+          .matchQuery(
+            `match $c isa campaign, has campaign_id "${cid}"; $a isa agent, has name $an; (assignee: $a, work-item: $c) isa assigned-to;`,
+            dbName,
+          )
+          .catch(() => null);
+        const assignedRows = getRows(assignedRes);
+        if (assignedRows.length > 0) {
+          campaign.assigned_agent = (getConceptValue(assignedRows[0].data["an"]) as string) || "";
+        }
+      } catch {
+        /* no assignment */
+      }
+    }
+
+    return [...campaignMap.values()];
+  } catch {
+    return null;
+  }
+}
+
 export async function writeBdiCycleResultToTypeDB(
   agentId: string,
   dbName: string,
