@@ -462,6 +462,330 @@ insert
   }
 }
 
+// ── Project Store Queries ──────────────────────────────────────────────
+
+export class ProjectStoreQueries {
+  static createProject(
+    agentId: string,
+    project: {
+      id: string;
+      name: string;
+      description: string;
+      status?: string;
+      category?: string;
+      priority?: number;
+    },
+  ): string {
+    const now = new Date().toISOString();
+    const optionals = [
+      project.category ? `, has category ${JSON.stringify(project.category)}` : "",
+    ].join("");
+
+    return `match
+  $agent isa agent, has uid ${JSON.stringify(agentId)};
+insert
+  $proj isa project,
+    has uid ${JSON.stringify(project.id)},
+    has project_id ${JSON.stringify(project.id)},
+    has name ${JSON.stringify(project.name)},
+    has description ${JSON.stringify(project.description)},
+    has status ${JSON.stringify(project.status || "active")},
+    has priority ${project.priority ?? 1}${optionals},
+    has created_at ${JSON.stringify(now)},
+    has updated_at ${JSON.stringify(now)};
+  (owner: $agent, owned: $proj) isa agent_owns;`;
+  }
+
+  static queryProjects(agentId: string, filters: { status?: string; category?: string }): string {
+    const clauses: string[] = [
+      `$agent isa agent, has uid ${JSON.stringify(agentId)};`,
+      `$proj isa project, has uid $pid, has project_id $projId, has name $n, has status $st, has priority $p;`,
+      `(owner: $agent, owned: $proj) isa agent_owns;`,
+    ];
+    if (filters.status) {
+      clauses.push(`$st = ${JSON.stringify(filters.status)};`);
+    }
+    if (filters.category) {
+      clauses.push(`$proj has category ${JSON.stringify(filters.category)};`);
+    }
+    return `match\n  ${clauses.join("\n  ")}`;
+  }
+
+  static updateProjectStatus(agentId: string, projectId: string, status: string): string {
+    const now = new Date().toISOString();
+    return `match
+  $agent isa agent, has uid ${JSON.stringify(agentId)};
+  $proj isa project, has uid ${JSON.stringify(projectId)}, has status $old_status, has updated_at $old_updated;
+  (owner: $agent, owned: $proj) isa agent_owns;
+delete
+  $proj has $old_status;
+  $proj has $old_updated;
+insert
+  $proj has status ${JSON.stringify(status)};
+  $proj has updated_at ${JSON.stringify(now)};`;
+  }
+
+  static linkGoalToProject(agentId: string, goalId: string, projectId: string): string {
+    return `match
+  $agent isa agent, has uid ${JSON.stringify(agentId)};
+  $goal isa goal, has uid ${JSON.stringify(goalId)};
+  $proj isa project, has uid ${JSON.stringify(projectId)};
+  (owner: $agent, owned: $goal) isa agent_owns;
+  (owner: $agent, owned: $proj) isa agent_owns;
+insert
+  (parent_goal: $goal, child_project: $proj) isa goal_has_project;`;
+  }
+}
+
+// ── Initiative Store Queries ──────────────────────────────────────────
+
+export class InitiativeStoreQueries {
+  static createInitiative(
+    agentId: string,
+    initiative: {
+      id: string;
+      name: string;
+      description: string;
+      status?: string;
+      category?: string;
+      priority?: number;
+    },
+  ): string {
+    const now = new Date().toISOString();
+    const optionals = [
+      initiative.category ? `, has category ${JSON.stringify(initiative.category)}` : "",
+    ].join("");
+
+    return `match
+  $agent isa agent, has uid ${JSON.stringify(agentId)};
+insert
+  $init isa initiative,
+    has uid ${JSON.stringify(initiative.id)},
+    has name ${JSON.stringify(initiative.name)},
+    has description ${JSON.stringify(initiative.description)},
+    has status ${JSON.stringify(initiative.status || "active")},
+    has priority ${initiative.priority ?? 1}${optionals},
+    has created_at ${JSON.stringify(now)},
+    has updated_at ${JSON.stringify(now)};
+  (owner: $agent, owned: $init) isa agent_owns;`;
+  }
+
+  static queryInitiatives(
+    agentId: string,
+    filters: { status?: string; category?: string },
+  ): string {
+    const clauses: string[] = [
+      `$agent isa agent, has uid ${JSON.stringify(agentId)};`,
+      `$init isa initiative, has uid $iid, has name $n, has status $st, has priority $p;`,
+      `(owner: $agent, owned: $init) isa agent_owns;`,
+    ];
+    if (filters.status) {
+      clauses.push(`$st = ${JSON.stringify(filters.status)};`);
+    }
+    if (filters.category) {
+      clauses.push(`$init has category ${JSON.stringify(filters.category)};`);
+    }
+    return `match\n  ${clauses.join("\n  ")}`;
+  }
+
+  static updateInitiativeStatus(agentId: string, initiativeId: string, status: string): string {
+    const now = new Date().toISOString();
+    return `match
+  $agent isa agent, has uid ${JSON.stringify(agentId)};
+  $init isa initiative, has uid ${JSON.stringify(initiativeId)}, has status $old_status, has updated_at $old_updated;
+  (owner: $agent, owned: $init) isa agent_owns;
+delete
+  $init has $old_status;
+  $init has $old_updated;
+insert
+  $init has status ${JSON.stringify(status)};
+  $init has updated_at ${JSON.stringify(now)};`;
+  }
+
+  static linkProjectToInitiative(agentId: string, projectId: string, initiativeId: string): string {
+    return `match
+  $agent isa agent, has uid ${JSON.stringify(agentId)};
+  $proj isa project, has uid ${JSON.stringify(projectId)};
+  $init isa initiative, has uid ${JSON.stringify(initiativeId)};
+  (owner: $agent, owned: $proj) isa agent_owns;
+  (owner: $agent, owned: $init) isa agent_owns;
+insert
+  (parent_project: $proj, child_initiative: $init) isa project_contains_initiative;`;
+  }
+
+  static linkGoalToInitiative(agentId: string, goalId: string, initiativeId: string): string {
+    return `match
+  $agent isa agent, has uid ${JSON.stringify(agentId)};
+  $goal isa goal, has uid ${JSON.stringify(goalId)};
+  $init isa initiative, has uid ${JSON.stringify(initiativeId)};
+  (owner: $agent, owned: $goal) isa agent_owns;
+  (owner: $agent, owned: $init) isa agent_owns;
+insert
+  (driving_goal: $goal, driven_initiative: $init) isa goal_drives_initiative;`;
+  }
+}
+
+// ── Campaign Store Queries ────────────────────────────────────────────
+
+export class CampaignStoreQueries {
+  static createCampaign(
+    agentId: string,
+    campaign: {
+      id: string;
+      campaignId: string;
+      name: string;
+      description: string;
+      status?: string;
+      category?: string;
+      channel?: string;
+    },
+  ): string {
+    const now = new Date().toISOString();
+    const optionals = [
+      campaign.category ? `, has category ${JSON.stringify(campaign.category)}` : "",
+      campaign.channel ? `, has channel ${JSON.stringify(campaign.channel)}` : "",
+    ].join("");
+
+    return `match
+  $agent isa agent, has uid ${JSON.stringify(agentId)};
+insert
+  $camp isa campaign,
+    has uid ${JSON.stringify(campaign.id)},
+    has campaign_id ${JSON.stringify(campaign.campaignId)},
+    has name ${JSON.stringify(campaign.name)},
+    has description ${JSON.stringify(campaign.description)},
+    has status ${JSON.stringify(campaign.status || "active")}${optionals},
+    has created_at ${JSON.stringify(now)},
+    has updated_at ${JSON.stringify(now)};
+  (owner: $agent, owned: $camp) isa agent_owns;`;
+  }
+
+  static queryCampaigns(agentId: string, filters: { status?: string; channel?: string }): string {
+    const clauses: string[] = [
+      `$agent isa agent, has uid ${JSON.stringify(agentId)};`,
+      `$camp isa campaign, has uid $cid, has campaign_id $campId, has name $n, has status $st;`,
+      `(owner: $agent, owned: $camp) isa agent_owns;`,
+    ];
+    if (filters.status) {
+      clauses.push(`$st = ${JSON.stringify(filters.status)};`);
+    }
+    if (filters.channel) {
+      clauses.push(`$camp has channel ${JSON.stringify(filters.channel)};`);
+    }
+    return `match\n  ${clauses.join("\n  ")}`;
+  }
+
+  static updateCampaignStatus(agentId: string, campaignId: string, status: string): string {
+    const now = new Date().toISOString();
+    return `match
+  $agent isa agent, has uid ${JSON.stringify(agentId)};
+  $camp isa campaign, has uid ${JSON.stringify(campaignId)}, has status $old_status, has updated_at $old_updated;
+  (owner: $agent, owned: $camp) isa agent_owns;
+delete
+  $camp has $old_status;
+  $camp has $old_updated;
+insert
+  $camp has status ${JSON.stringify(status)};
+  $camp has updated_at ${JSON.stringify(now)};`;
+  }
+
+  static linkInitiativeToCampaign(
+    agentId: string,
+    initiativeId: string,
+    campaignId: string,
+  ): string {
+    return `match
+  $agent isa agent, has uid ${JSON.stringify(agentId)};
+  $init isa initiative, has uid ${JSON.stringify(initiativeId)};
+  $camp isa campaign, has uid ${JSON.stringify(campaignId)};
+  (owner: $agent, owned: $init) isa agent_owns;
+  (owner: $agent, owned: $camp) isa agent_owns;
+insert
+  (parent_initiative: $init, child_campaign: $camp) isa initiative_contains_campaign;`;
+  }
+
+  static linkCampaignToTask(agentId: string, campaignId: string, taskId: string): string {
+    return `match
+  $agent isa agent, has uid ${JSON.stringify(agentId)};
+  $camp isa campaign, has uid ${JSON.stringify(campaignId)};
+  $task isa task, has uid ${JSON.stringify(taskId)};
+  (owner: $agent, owned: $camp) isa agent_owns;
+  (owner: $agent, owned: $task) isa agent_owns;
+insert
+  (requiring_campaign: $camp, required_task: $task) isa campaign_requires_task;`;
+  }
+}
+
+// ── Hierarchy Queries ─────────────────────────────────────────────────
+
+export class HierarchyQueries {
+  /** Full hierarchy tree from a goal down through projects, initiatives, campaigns, tasks, and actions. */
+  static getGoalHierarchy(agentId: string, goalId: string): string {
+    return `match
+  $agent isa agent, has uid ${JSON.stringify(agentId)};
+  $goal isa goal, has uid ${JSON.stringify(goalId)}, has name $gname, has status $gstatus;
+  (owner: $agent, owned: $goal) isa agent_owns;
+  (parent_goal: $goal, child_project: $proj) isa goal_has_project;
+  $proj has uid $pid, has name $pname, has status $pstatus;
+  (parent_project: $proj, child_initiative: $init) isa project_contains_initiative;
+  $init has uid $iid, has name $iname, has status $istatus;
+  (parent_initiative: $init, child_campaign: $camp) isa initiative_contains_campaign;
+  $camp has uid $cid, has name $cname, has status $cstatus;`;
+  }
+
+  /** Get all initiatives under a project. */
+  static getProjectChildren(agentId: string, projectId: string): string {
+    return `match
+  $agent isa agent, has uid ${JSON.stringify(agentId)};
+  $proj isa project, has uid ${JSON.stringify(projectId)};
+  (owner: $agent, owned: $proj) isa agent_owns;
+  (parent_project: $proj, child_initiative: $init) isa project_contains_initiative;
+  $init has uid $iid, has name $n, has status $st, has priority $p;`;
+  }
+
+  /** Get all campaigns under an initiative. */
+  static getInitiativeChildren(agentId: string, initiativeId: string): string {
+    return `match
+  $agent isa agent, has uid ${JSON.stringify(agentId)};
+  $init isa initiative, has uid ${JSON.stringify(initiativeId)};
+  (owner: $agent, owned: $init) isa agent_owns;
+  (parent_initiative: $init, child_campaign: $camp) isa initiative_contains_campaign;
+  $camp has uid $cid, has campaign_id $campId, has name $n, has status $st;`;
+  }
+
+  /** Get all tasks linked to a campaign. */
+  static getCampaignTasks(agentId: string, campaignId: string): string {
+    return `match
+  $agent isa agent, has uid ${JSON.stringify(agentId)};
+  $camp isa campaign, has uid ${JSON.stringify(campaignId)};
+  (owner: $agent, owned: $camp) isa agent_owns;
+  (requiring_campaign: $camp, required_task: $task) isa campaign_requires_task;
+  $task has uid $tid, has name $n, has status $st, has priority $p;`;
+  }
+
+  /** Get all action executions linked to a task. */
+  static getTaskActions(agentId: string, taskId: string): string {
+    return `match
+  $agent isa agent, has uid ${JSON.stringify(agentId)};
+  $task isa task, has uid ${JSON.stringify(taskId)};
+  (owner: $agent, owned: $task) isa agent_owns;
+  (producing_task: $task, produced_action: $action) isa task_produces_action;
+  $action has uid $aid, has tool_used $tool, has success $ok, has duration_ms $dur;`;
+  }
+
+  /** Link a task to an action execution. */
+  static linkTaskToAction(agentId: string, taskId: string, actionId: string): string {
+    return `match
+  $agent isa agent, has uid ${JSON.stringify(agentId)};
+  $task isa task, has uid ${JSON.stringify(taskId)};
+  $action isa action_execution, has uid ${JSON.stringify(actionId)};
+  (owner: $agent, owned: $task) isa agent_owns;
+  (owner: $agent, owned: $action) isa agent_owns;
+insert
+  (producing_task: $task, produced_action: $action) isa task_produces_action;`;
+  }
+}
+
 // ── Desire Store Queries ────────────────────────────────────────────────
 
 export class DesireStoreQueries {
@@ -1490,6 +1814,20 @@ export function getBaseSchema(): string {
     owns created_at,
     owns updated_at;
 
+  attribute campaign_id, value string;
+  attribute channel, value string;
+
+  entity campaign,
+    owns uid @key,
+    owns campaign_id,
+    owns name,
+    owns description,
+    owns status,
+    owns category,
+    owns channel,
+    owns created_at,
+    owns updated_at;
+
   relation goal_has_project,
     relates parent_goal,
     relates child_project;
@@ -1517,6 +1855,7 @@ export function getBaseSchema(): string {
   project plays agent_owns:owned;
   project plays project_has_workflow:ph_project;
   initiative plays agent_owns:owned;
+  campaign plays agent_owns:owned;
   goal plays goal_has_project:parent_goal;
   project plays goal_has_project:child_project;
   project plays project_contains_initiative:parent_project;

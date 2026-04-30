@@ -1,3 +1,4 @@
+import { FolderKanban } from "lucide-react";
 import { WorkflowSteps } from "@/components/goals/WorkflowSteps";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
@@ -82,6 +83,12 @@ export function GoalDetailPanel({
                 className="text-[var(--text-secondary)] data-[state=active]:text-[var(--text-primary)] data-[state=active]:bg-[var(--bg-tertiary)]"
               >
                 SMART
+              </TabsTrigger>
+              <TabsTrigger
+                value="projects"
+                className="text-[var(--text-secondary)] data-[state=active]:text-[var(--text-primary)] data-[state=active]:bg-[var(--bg-tertiary)]"
+              >
+                Projects
               </TabsTrigger>
               <TabsTrigger
                 value="workflows"
@@ -236,6 +243,22 @@ export function GoalDetailPanel({
                   </div>
                 </div>
               ))}
+            </TabsContent>
+
+            {/* Projects Tab */}
+            <TabsContent value="projects" className="mt-4 space-y-3">
+              <p className="text-xs text-[var(--text-muted)] mb-3">
+                Projects linked to this goal via the hierarchy
+              </p>
+              <a
+                href="/mabos/dashboard/projects"
+                className="flex items-center gap-2 p-3 rounded-lg bg-[var(--bg-secondary)] border border-[var(--border-mabos)] hover:bg-[var(--bg-tertiary)] transition-colors"
+              >
+                <FolderKanban className="w-4 h-4 text-[var(--accent-blue)]" />
+                <span className="text-sm text-[var(--text-primary)]">
+                  View linked projects on the Projects page
+                </span>
+              </a>
             </TabsContent>
 
             {/* Workflows Tab */}

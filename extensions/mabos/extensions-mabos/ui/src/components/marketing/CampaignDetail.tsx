@@ -1,3 +1,4 @@
+import { Link } from "@tanstack/react-router";
 import {
   BarChart3,
   Calendar,
@@ -24,6 +25,7 @@ import {
   SheetTitle,
   SheetDescription,
 } from "@/components/ui/sheet";
+import { usePanels } from "@/contexts/PanelContext";
 import { useCampaignMetrics, useCampaignDetail } from "@/hooks/useMarketing";
 import type { MarketingCampaign, CampaignMetrics, CampaignTask } from "@/lib/types";
 
@@ -151,7 +153,7 @@ function MetricsSection({ metrics, isLoading }: { metrics?: CampaignMetrics; isL
       <MetricCard
         icon={BarChart3}
         label="Revenue"
-        value={`$${((metrics as any).revenue_attributed ?? 0).toLocaleString()}`}
+        value={`$${(metrics.revenue_attributed ?? 0).toLocaleString()}`}
         color="var(--accent-blue)"
       />
     </div>
@@ -239,6 +241,7 @@ function TasksSection({ tasks, isLoading }: { tasks: CampaignTask[]; isLoading: 
 
 export function CampaignDetail({ campaign, open, onOpenChange }: CampaignDetailProps) {
   const [expanded, setExpanded] = useState(false);
+  const { openDetailPanel } = usePanels();
   const { data: metrics, isLoading: metricsLoading } = useCampaignMetrics(
     open && campaign ? campaign.id : null,
   );
@@ -271,19 +274,36 @@ export function CampaignDetail({ campaign, open, onOpenChange }: CampaignDetailP
               {detail.goal && (
                 <>
                   <Target className="w-3 h-3 text-[var(--accent-purple)]" />
-                  <span>{detail.goal.name}</span>
+                  <button
+                    onClick={() => openDetailPanel("goal", detail.goal!.id, detail.goal)}
+                    className="hover:underline hover:text-[var(--text-primary)] transition-colors"
+                  >
+                    {detail.goal.name}
+                  </button>
                   <ChevronRight className="w-3 h-3" />
                 </>
               )}
               {detail.project && (
                 <>
-                  <span className="text-[var(--accent-blue)]">{detail.project.name}</span>
+                  <Link
+                    to="/projects"
+                    className="text-[var(--accent-blue)] hover:underline transition-colors"
+                  >
+                    {detail.project.name}
+                  </Link>
                   <ChevronRight className="w-3 h-3" />
                 </>
               )}
               {detail.initiative && (
                 <>
-                  <span className="text-[var(--text-secondary)]">{detail.initiative.name}</span>
+                  <button
+                    onClick={() =>
+                      openDetailPanel("initiative", detail.initiative!.id, detail.initiative)
+                    }
+                    className="text-[var(--text-secondary)] hover:underline hover:text-[var(--text-primary)] transition-colors"
+                  >
+                    {detail.initiative.name}
+                  </button>
                   <ChevronRight className="w-3 h-3" />
                 </>
               )}

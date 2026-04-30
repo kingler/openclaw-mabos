@@ -27,9 +27,10 @@
 
 ## Decision Log
 
-| Date       | Decision                                  | Rationale                                                                                               |
-| ---------- | ----------------------------------------- | ------------------------------------------------------------------------------------------------------- |
-| 2026-02-22 | Align test infra to vitest                | `vitest.extensions.config.ts` already includes `extensions/**/*.test.ts`; `node --test` was out of sync |
-| 2026-02-22 | Add retry with backoff to `httpRequest()` | Network-level resilience needed for backend calls                                                       |
-| 2026-02-22 | Create `MabosPluginConfig` interface      | Eliminates 4 `as any` casts on `api.config` / `api.pluginConfig`                                        |
-| 2026-02-22 | Create `bdi-runtime.d.ts`                 | Types the dynamic BDI imports used in `index.ts`                                                        |
+| Date       | Decision                                  | Rationale                                                                                                   |
+| ---------- | ----------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| 2026-04-30 | Add desktop app implementation plan       | Aligns the Figma product scope with the existing React/Vite MABOS UI and defines the Tauri/local-first path |
+| 2026-02-22 | Align test infra to vitest                | `vitest.extensions.config.ts` already includes `extensions/**/*.test.ts`; `node --test` was out of sync     |
+| 2026-02-22 | Add retry with backoff to `httpRequest()` | Network-level resilience needed for backend calls                                                           |
+| 2026-02-22 | Create `MabosPluginConfig` interface      | Eliminates 4 `as any` casts on `api.config` / `api.pluginConfig`                                            |
+| 2026-02-22 | Create `bdi-runtime.d.ts`                 | Types the dynamic BDI imports used in `index.ts`                                                            |
