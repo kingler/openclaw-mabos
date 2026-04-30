@@ -22,7 +22,7 @@ import {
   Shield,
   Sparkles,
   FileSearch,
-  Terminal,
+  Rocket,
 } from "lucide-react";
 
 export type NavItem = {
@@ -51,6 +51,7 @@ export const navSections: NavSection[] = [
     title: "Process",
     items: [
       { icon: FolderKanban, label: "Projects", path: "/projects" },
+      { icon: Rocket, label: "Initiatives", path: "/initiatives" },
       { icon: ClipboardList, label: "Tasks", path: "/tasks" },
       { icon: Calendar, label: "Timeline", path: "/timeline" },
       { icon: GitBranch, label: "Workflows", path: "/workflows" },

@@ -10,6 +10,7 @@ import { CustomersPage } from "@/pages/CustomersPage";
 import { DecisionsPage } from "@/pages/DecisionsPage";
 import { EcommercePage } from "@/pages/EcommercePage";
 import { GovernancePage } from "@/pages/GovernancePage";
+import { InitiativesPage } from "@/pages/InitiativesPage";
 import { InventoryPage } from "@/pages/InventoryPage";
 import { KnowledgeGraphPage } from "@/pages/KnowledgeGraphPage";
 import { LegalPage } from "@/pages/LegalPage";
@@ -128,6 +129,11 @@ const complianceRoute = createRoute({
   path: "/compliance",
   component: CompliancePage,
 });
+const initiativesRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/initiatives",
+  component: InitiativesPage,
+});
 const marketingRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/marketing",
@@ -217,6 +223,7 @@ const routeTree = rootRoute.addChildren([
   supplyChainRoute,
   legalRoute,
   complianceRoute,
+  initiativesRoute,
   marketingRoute,
   analyticsRoute,
   tasksRoute,

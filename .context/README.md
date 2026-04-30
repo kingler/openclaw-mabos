@@ -4,7 +4,7 @@ Quick-reference metrics for cross-conversation context priming.
 
 | Area              | Status                                                     | Last Updated |
 | ----------------- | ---------------------------------------------------------- | ------------ |
-| Core MABOS Plugin | Active development                                         | 2026-04-06   |
+| Core MABOS Plugin | Active development; extension Vitest not fully green       | 2026-04-15   |
 | BDI Agents        | 16 agents + customer-service                               | 2026-04-05   |
 | Model Router      | Dual-model (Opus 4.6 + GPT-5.4), 11-model registry         | 2026-04-05   |
 | Hooks & Routes    | Extracted across all 5 runtime modules                     | 2026-04-06   |
@@ -39,3 +39,14 @@ extensions/mabos/extensions-mabos/src/
   tools/                — Business tools (Shopify, etc.)
   types/                — Shared TypeScript types
 ```
+
+## Analysis artifacts (2026-04-15)
+
+| File                        | Purpose                                    |
+| --------------------------- | ------------------------------------------ |
+| `overall_project_status.md` | Executive status, milestones, test summary |
+| `feature_checklist.md`      | Modules ↔ tests ↔ Linear placeholders      |
+| `identified_issues.md`      | Bugs, env, sync gaps                       |
+| `recommendations.md`        | Prioritized next steps                     |
+| `deployment_readiness.md`   | Go/no-go checklist                         |
+| `project_structure.md`      | Directory map snapshot                     |

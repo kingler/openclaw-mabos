@@ -1,13 +1,18 @@
+import type { Node } from "@xyflow/react";
+import type { ComponentProps } from "react";
 import { AgentDetailPanel } from "@/components/agents/AgentDetailPanel";
 import { DecisionDetailPanel } from "@/components/decisions/DecisionDetailPanel";
 import { GoalDetailPanel } from "@/components/goals/GoalDetailPanel";
 import { WorkflowDetailPanel } from "@/components/goals/WorkflowDetailPanel";
+import { InitiativeDetailPanel } from "@/components/initiatives/InitiativeDetailPanel";
 import { NodeDetailPanel } from "@/components/knowledge-graph/NodeDetailPanel";
 import { TaskDetail } from "@/components/tasks/TaskDetail";
 import { TimelineEventDetail } from "@/components/timeline/TimelineEventDetail";
 import { usePanels } from "@/contexts/PanelContext";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
-import type { Decision, BusinessGoal, Task, Workflow } from "@/lib/types";
+import type { Decision, BusinessGoal, Initiative, Task, Workflow } from "@/lib/types";
+
+type TimelineEventData = ComponentProps<typeof TimelineEventDetail>["event"];
 
 export function EntityDetailPanel() {
   const { detailPanel, closeDetailPanel } = usePanels();
@@ -49,6 +54,15 @@ export function EntityDetailPanel() {
           sheetSide={sheetSide}
         />
       );
+    case "initiative":
+      return (
+        <InitiativeDetailPanel
+          initiative={detailPanel.entityData as Initiative}
+          open={true}
+          onOpenChange={onOpenChange}
+          sheetSide={sheetSide}
+        />
+      );
     case "task":
       return (
         <TaskDetail
@@ -70,7 +84,7 @@ export function EntityDetailPanel() {
     case "knowledge-graph-node":
       return (
         <NodeDetailPanel
-          node={detailPanel.entityData as any}
+          node={detailPanel.entityData as Node}
           open={true}
           onOpenChange={onOpenChange}
           sheetSide={sheetSide}
@@ -79,7 +93,7 @@ export function EntityDetailPanel() {
     case "timeline-event":
       return (
         <TimelineEventDetail
-          event={detailPanel.entityData as any}
+          event={detailPanel.entityData as TimelineEventData}
           open={true}
           onOpenChange={onOpenChange}
           sheetSide={sheetSide}

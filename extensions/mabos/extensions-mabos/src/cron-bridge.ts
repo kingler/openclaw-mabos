@@ -427,9 +427,27 @@ export class CronBridge {
           activeParentIds.add(parentJob.id);
         } else {
           // Existing job — update parent.
-          await this.updateInParent(businessId, job);
-          updated++;
-          activeParentIds.add(job.parentCronId);
+          try {
+            await this.updateInParent(businessId, job);
+            updated++;
+            activeParentIds.add(job.parentCronId);
+          } catch (err) {
+            // Parent cron store may have been reset (gateway restart without
+            // persistence) while MABOS still holds a stale parentCronId. In
+            // that case the update fails with "unknown cron job id" — rebind
+            // by re-adding so the job recovers on its own.
+            const msg = err instanceof Error ? err.message : String(err);
+            if (/unknown cron job id/i.test(msg)) {
+              this.logger.warn(`parent cron ${job.parentCronId} unknown for ${job.id}; re-adding`);
+              job.parentCronId = undefined;
+              const parentJob = await this.addToParent(businessId, job);
+              job.parentCronId = parentJob.id;
+              added++;
+              activeParentIds.add(parentJob.id);
+            } else {
+              throw err;
+            }
+          }
         }
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);

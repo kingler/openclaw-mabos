@@ -239,6 +239,7 @@ export type EntityType =
   | "decision"
   | "goal"
   | "project"
+  | "initiative"
   | "task"
   | "agent"
   | "workflow"
@@ -510,6 +511,7 @@ export type CampaignMetrics = {
   conversion_rate: number;
   cost_per_acquisition: number;
   roi: number;
+  revenue_attributed?: number;
 };
 
 export type MarketingKpi = {
