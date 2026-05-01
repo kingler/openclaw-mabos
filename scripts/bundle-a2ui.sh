@@ -11,11 +11,13 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 HASH_FILE="$ROOT_DIR/src/canvas-host/a2ui/.bundle.hash"
 OUTPUT_FILE="$ROOT_DIR/src/canvas-host/a2ui/a2ui.bundle.js"
 A2UI_RENDERER_DIR="$ROOT_DIR/vendor/a2ui/renderers/lit"
+A2UI_RENDERER_TSCONFIG="$A2UI_RENDERER_DIR/tsconfig.json"
 A2UI_APP_DIR="$ROOT_DIR/apps/shared/OpenClawKit/Tools/CanvasA2UI"
+A2UI_APP_CONFIG="$A2UI_APP_DIR/rolldown.config.mjs"
 
 # Docker builds exclude vendor/apps via .dockerignore.
 # In that environment we can keep a prebuilt bundle only if it exists.
-if [[ ! -d "$A2UI_RENDERER_DIR" || ! -d "$A2UI_APP_DIR" ]]; then
+if [[ ! -f "$A2UI_RENDERER_TSCONFIG" || ! -f "$A2UI_APP_CONFIG" ]]; then
   if [[ -f "$OUTPUT_FILE" ]]; then
     echo "A2UI sources missing; keeping prebuilt bundle."
     exit 0
@@ -85,11 +87,11 @@ if [[ -f "$HASH_FILE" ]]; then
   fi
 fi
 
-pnpm -s exec tsc -p "$A2UI_RENDERER_DIR/tsconfig.json"
+pnpm -s exec tsc -p "$A2UI_RENDERER_TSCONFIG"
 if command -v rolldown >/dev/null 2>&1 && rolldown --version >/dev/null 2>&1; then
-  rolldown -c "$A2UI_APP_DIR/rolldown.config.mjs"
+  rolldown -c "$A2UI_APP_CONFIG"
 else
-  pnpm -s dlx rolldown -c "$A2UI_APP_DIR/rolldown.config.mjs"
+  pnpm -s dlx rolldown -c "$A2UI_APP_CONFIG"
 fi
 
 echo "$current_hash" > "$HASH_FILE"
