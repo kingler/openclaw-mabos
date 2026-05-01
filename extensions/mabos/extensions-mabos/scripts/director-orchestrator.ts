@@ -7,6 +7,7 @@
  * Usage: npx tsx scripts/director-orchestrator.ts [--dry-run] [--agent <id>]
  */
 
+import { randomUUID } from "node:crypto";
 import { readFile, writeFile, mkdir, readdir } from "node:fs/promises";
 import { join, dirname } from "node:path";
 
@@ -28,6 +29,10 @@ const DRY_RUN = process.argv.includes("--dry-run");
 const AGENT_FILTER = process.argv.includes("--agent")
   ? process.argv[process.argv.indexOf("--agent") + 1]
   : null;
+
+function directorMessageId(prefix: string): string {
+  return `${prefix}-${Date.now().toString(36)}-${randomUUID().slice(0, 4)}`;
+}
 
 // ── Agent capability mapping for task assignment ────────────────────────
 
@@ -783,7 +788,7 @@ async function dispatchTasksToSubagents(agentId: string, tasks: TaskEntry[]): Pr
     }
 
     for (const task of agentTasks) {
-      const msgId = `TASK-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+      const msgId = directorMessageId("TASK");
       inbox.push({
         id: msgId,
         from: agentId,

@@ -2860,7 +2860,7 @@ description: test skill
     const stateDir = sharedExtensionsStateDir;
 
     try {
-      const cfg: OpenClawConfig = {};
+      const cfg: OpenClawConfig = { commands: { nativeSkills: false } };
       const res = await runSecurityAudit({
         config: cfg,
         includeFilesystem: true,

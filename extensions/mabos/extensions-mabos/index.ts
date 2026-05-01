@@ -10,6 +10,7 @@
  *  - Agent lifecycle hooks (Persona injection, BDI audit trail)
  */
 
+import { randomUUID } from "node:crypto";
 import type { OpenClawPluginApi } from "openclaw/plugin-sdk";
 
 // ── Core imports shim ──────────────────────────────────────────────
@@ -30,6 +31,10 @@ type AgentEventPayload = {
   data?: any;
   [key: string]: unknown;
 };
+
+function mabosGeneratedId(prefix: string): string {
+  return `${prefix}-${randomUUID().slice(0, 8)}`;
+}
 
 async function importCore(modPath: string): Promise<any> {
   // In-repo: extensions/mabos/extensions-mabos/index.ts → ../../../src/
@@ -6819,7 +6824,7 @@ export default function register(api: OpenClawPluginApi) {
           // Create workflow
           const body = await readMabosJsonBody<any>(req, res);
           if (!body) return;
-          const id = body.id || `bpmn-wf-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+          const id = body.id || mabosGeneratedId("bpmn-wf");
           const typeql = BpmnStoreQueries.createWorkflow(body.agentId || agentId, {
             id,
             name: body.name || "Untitled Workflow",
@@ -6991,8 +6996,7 @@ export default function register(api: OpenClawPluginApi) {
       const body = await readMabosJsonBody<any>(req, res);
       if (!body) return;
       const agentId = body.agentId || "vw-ceo";
-      const elementId =
-        body.id || `bpmn-el-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      const elementId = body.id || mabosGeneratedId("bpmn-el");
 
       const typeql = BpmnStoreQueries.addElement(agentId, workflowId, {
         id: elementId,
@@ -7120,7 +7124,7 @@ export default function register(api: OpenClawPluginApi) {
       const body = await readMabosJsonBody<any>(req, res);
       if (!body) return;
       const agentId = body.agentId || "vw-ceo";
-      const flowId = body.id || `bpmn-fl-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      const flowId = body.id || mabosGeneratedId("bpmn-fl");
 
       const typeql = BpmnStoreQueries.addFlow(agentId, workflowId, {
         id: flowId,
@@ -7204,7 +7208,7 @@ export default function register(api: OpenClawPluginApi) {
       const body = await readMabosJsonBody<any>(req, res);
       if (!body) return;
       const agentId = body.agentId || "vw-ceo";
-      const poolId = body.id || `bpmn-pool-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      const poolId = body.id || mabosGeneratedId("bpmn-pool");
 
       const typeql = BpmnStoreQueries.addPool(agentId, workflowId, {
         id: poolId,
@@ -7251,7 +7255,7 @@ export default function register(api: OpenClawPluginApi) {
       const body = await readMabosJsonBody<any>(req, res);
       if (!body) return;
       const agentId = body.agentId || "vw-ceo";
-      const laneId = body.id || `bpmn-lane-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      const laneId = body.id || mabosGeneratedId("bpmn-lane");
 
       const typeql = BpmnStoreQueries.addLane(agentId, body.poolId, {
         id: laneId,
