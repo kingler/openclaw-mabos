@@ -251,6 +251,107 @@ describe("runGatewayUpdate", () => {
     expect(calls.some((call) => call.includes("rebase --abort"))).toBe(true);
   });
 
+  it("seeds ignored A2UI assets into dev preflight worktrees before build", async () => {
+    await setupGitCheckout({ packageManager: "pnpm@8.0.0" });
+    await setupUiIndex();
+    await fs.mkdir(path.join(tempDir, "src", "canvas-host", "a2ui"), { recursive: true });
+    await fs.writeFile(
+      path.join(tempDir, "src", "canvas-host", "a2ui", "a2ui.bundle.js"),
+      "console.log('prebuilt');\n",
+      "utf-8",
+    );
+    await fs.writeFile(
+      path.join(tempDir, "src", "canvas-host", "a2ui", ".bundle.hash"),
+      "hash\n",
+      "utf-8",
+    );
+
+    let preflightBuildSawBundle = false;
+    const runCommand = async (argv: string[], options: { cwd: string }) => {
+      const key = argv.join(" ");
+      if (key === `git -C ${tempDir} rev-parse --show-toplevel`) {
+        return { stdout: tempDir, stderr: "", code: 0 };
+      }
+      if (key === `git -C ${tempDir} rev-parse HEAD`) {
+        return { stdout: "abc123", stderr: "", code: 0 };
+      }
+      if (key === `git -C ${tempDir} rev-parse --abbrev-ref HEAD`) {
+        return { stdout: "main", stderr: "", code: 0 };
+      }
+      if (key === `git -C ${tempDir} status --porcelain -- :!dist/control-ui/`) {
+        return { stdout: "", stderr: "", code: 0 };
+      }
+      if (key === `git -C ${tempDir} rev-parse --abbrev-ref --symbolic-full-name @{upstream}`) {
+        return { stdout: "origin/main", stderr: "", code: 0 };
+      }
+      if (key === `git -C ${tempDir} fetch --all --prune --tags`) {
+        return { stdout: "", stderr: "", code: 0 };
+      }
+      if (key === `git -C ${tempDir} rev-parse @{upstream}`) {
+        return { stdout: "upstream123", stderr: "", code: 0 };
+      }
+      if (key === `git -C ${tempDir} rev-list --max-count=10 upstream123`) {
+        return { stdout: "upstream123\n", stderr: "", code: 0 };
+      }
+      if (argv[0] === "git" && argv[3] === "worktree" && argv[4] === "add") {
+        const worktreeDir = argv[6];
+        await fs.mkdir(path.join(worktreeDir, "src", "canvas-host", "a2ui"), { recursive: true });
+        await fs.writeFile(
+          path.join(worktreeDir, "package.json"),
+          JSON.stringify({ name: "openclaw", packageManager: "pnpm@8.0.0" }),
+          "utf-8",
+        );
+        return { stdout: "", stderr: "", code: 0 };
+      }
+      if (argv[0] === "git" && argv[3] === "worktree" && argv[4] === "remove") {
+        await fs.rm(argv[6], { recursive: true, force: true });
+        return { stdout: "", stderr: "", code: 0 };
+      }
+      if (key === "git -C " + options.cwd + " checkout --detach upstream123") {
+        return { stdout: "", stderr: "", code: 0 };
+      }
+      if (key === "pnpm install") {
+        return { stdout: "", stderr: "", code: 0 };
+      }
+      if (key === "pnpm build") {
+        const bundleExists = await pathExists(
+          path.join(options.cwd, "src", "canvas-host", "a2ui", "a2ui.bundle.js"),
+        );
+        if (options.cwd !== tempDir) {
+          preflightBuildSawBundle = bundleExists;
+          return {
+            stdout: "",
+            stderr: bundleExists ? "" : "A2UI sources missing and no prebuilt bundle found",
+            code: bundleExists ? 0 : 1,
+          };
+        }
+        return { stdout: "", stderr: "", code: 0 };
+      }
+      if (key === `git -C ${tempDir} rebase upstream123`) {
+        return { stdout: "", stderr: "", code: 0 };
+      }
+      if (key === "pnpm ui:build") {
+        return { stdout: "", stderr: "", code: 0 };
+      }
+      if (key.endsWith(`${path.join(tempDir, "openclaw.mjs")} doctor --non-interactive --fix`)) {
+        return { stdout: "", stderr: "", code: 0 };
+      }
+      if (key === `git -C ${tempDir} rev-parse HEAD`) {
+        return { stdout: "upstream123", stderr: "", code: 0 };
+      }
+      return { stdout: "", stderr: "", code: 0 };
+    };
+
+    const result = await runGatewayUpdate({
+      cwd: tempDir,
+      runCommand,
+      timeoutMs: 5000,
+    });
+
+    expect(result.status).toBe("ok");
+    expect(preflightBuildSawBundle).toBe(true);
+  });
+
   it("returns error and stops early when deps install fails", async () => {
     await setupGitCheckout({ packageManager: "pnpm@8.0.0" });
     const stableTag = "v1.0.1-1";

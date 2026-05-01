@@ -87,6 +87,10 @@ const PREFLIGHT_MAX_COMMITS = 10;
 const START_DIRS = ["cwd", "argv1", "process"];
 const DEFAULT_PACKAGE_NAME = "openclaw";
 const CORE_PACKAGE_NAMES = new Set([DEFAULT_PACKAGE_NAME]);
+const A2UI_ASSET_RELATIVE_PATHS = [
+  path.join("src", "canvas-host", "a2ui", "a2ui.bundle.js"),
+  path.join("src", "canvas-host", "a2ui", ".bundle.hash"),
+];
 
 function normalizeDir(value?: string | null) {
   if (!value) {
@@ -239,6 +243,23 @@ async function findPackageRoot(candidates: string[]) {
 
 async function detectPackageManager(root: string) {
   return (await detectPackageManagerImpl(root)) ?? "npm";
+}
+
+async function seedPreflightIgnoredAssets(sourceRoot: string, worktreeRoot: string) {
+  for (const relPath of A2UI_ASSET_RELATIVE_PATHS) {
+    const sourcePath = path.join(sourceRoot, relPath);
+    const targetPath = path.join(worktreeRoot, relPath);
+    try {
+      await fs.mkdir(path.dirname(targetPath), { recursive: true });
+      await fs.copyFile(sourcePath, targetPath);
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException).code;
+      if (code === "ENOENT") {
+        continue;
+      }
+      throw err;
+    }
+  }
 }
 
 type RunStepOptions = {
@@ -567,6 +588,8 @@ export async function runGatewayUpdate(opts: UpdateRunnerOptions = {}): Promise<
           if (checkoutStep.exitCode !== 0) {
             continue;
           }
+
+          await seedPreflightIgnoredAssets(gitRoot, worktreeDir);
 
           const depsStep = await runStep(
             step(`preflight deps install (${shortSha})`, managerInstallArgs(manager), worktreeDir),
