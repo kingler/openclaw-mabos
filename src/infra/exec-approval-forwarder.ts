@@ -345,7 +345,7 @@ async function deliverToTargets(params: {
             : typeof target.threadId === "string"
               ? Number.parseInt(target.threadId, 10)
               : undefined;
-        await sendTypingTelegram(target.to, {
+        void sendTypingTelegram(target.to, {
           cfg: params.cfg,
           accountId: target.accountId,
           ...(Number.isFinite(threadId) ? { messageThreadId: threadId } : {}),

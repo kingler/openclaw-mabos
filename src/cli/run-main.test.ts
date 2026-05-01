@@ -72,7 +72,7 @@ describe("shouldDeferCorePrimaryToMabosPlugin", () => {
     expect(
       shouldDeferCorePrimaryToMabosPlugin({
         primary: "onboard",
-        env: {} as NodeJS.ProcessEnv,
+        env: { OPENCLAW_MABOS: "0" } as NodeJS.ProcessEnv,
       }),
     ).toBe(false);
   });
