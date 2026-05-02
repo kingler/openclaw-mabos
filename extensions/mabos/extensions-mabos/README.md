@@ -444,6 +444,108 @@ The ontology loader (`src/ontology/index.ts`) provides:
 
 ---
 
+## LLM-Output Assimilation Pipeline
+
+Agents emit structured updates (BELIEF_UPDATES, GOAL_UPDATES, NEW_INTENTIONS) at the end of each deliberative cycle. Rather than appending those updates verbatim to `Beliefs.md` / `Goals.md` / `Intentions.md`, MABOS routes them through a **five-stage gate** that validates against the SBVR ontology, SHACL shapes, and deontic rules.
+
+```
+LLM text → parseLlmActions
+            ↓
+       lift (NL bullet → fact-type Candidate)
+            ↓
+       bind (role values → IRIs via mint policy)
+            ↓
+       validate (confidence → SHACL → deontic)
+            ↓
+       commit (n-ary store + Markdown projection + event bus)
+```
+
+Each stage either advances the action or routes it to the **quarantine store** with a typed reason — `unliftable`, `unknown-mint-denied`, `mint-failed`, `unknown-goal`, `progress-out-of-range`, `shacl`, `deontic`, `low-confidence`. Only structurally invalid (`shacl`) data is _rejected_; everything else is _quarantined_ for human or Reflector review.
+
+**Module:** `src/cognitive/assimilation/` (10 source files, ~600 LoC)
+
+**Per-tenant isolation** is enforced by paths (the business name and ontology are instantiation variables — VividWalls is one tenant, not the system):
+
+```
+<workspaceDir>/.assimilation/<agentId>/nary.json     — n-ary fact store (canonical)
+<workspaceDir>/.assimilation/<agentId>/entities.json — entity-IRI registry
+<workspaceDir>/.quarantine/<agentId>.jsonl           — quarantine log
+<workspaceDir>/.mabos/mint-policy.json               — tenant-wide mint policy
+<agentDir>/Beliefs.md                                — human-readable projection
+<agentDir>/deontic-rules.json                        — agent-level deontic predicates
+```
+
+### Mint policy
+
+The entity resolver mints new IRIs only for concepts the tenant has explicitly opted in. Default is **deny** — any `belief_update` that mentions a never-before-seen entity of an unconfigured concept is quarantined as `unknown-mint-denied`. Configure per workspace:
+
+```json
+// <workspaceDir>/.mabos/mint-policy.json
+{
+  "allow": ["vw:CertificateOfAuthenticity", "vw:ArtPrint", "vw:Order"]
+}
+```
+
+Goals, Capabilities, Editions (in the VividWalls fixture), and Customers are typically _not_ in the allow list — they must pre-exist via dedicated workflows.
+
+### Deontic predicates
+
+Rules in `<agentDir>/deontic-rules.json` carry a structured `predicate` field that the assimilation gate evaluates against the n-ary store before allowing a fact to commit:
+
+```json
+[
+  {
+    "id": "prin:NoOverissuance",
+    "ruleModality": "deontic",
+    "modal": "prohibition",
+    "constrainsFact": "vw:coaIssuanceFact",
+    "condition": "count of certificates for an edition must not exceed the edition's maximum quantity",
+    "predicate": {
+      "kind": "count_threshold",
+      "factTypeId": "vw:coaIssuanceFact",
+      "where": { "edition": "$role:edition" },
+      "operator": "ge",
+      "threshold": { "kind": "property", "iri": "$role:edition", "property": "vw:maxQuantity" }
+    }
+  }
+]
+```
+
+Rules with no `predicate` field skip enforcement (treated as natural-language documentation only); use `evaluateDeonticRule()` directly via the agent tool `reason_deontic` for LLM-mediated reasoning over those rules.
+
+### Vocabulary hint
+
+The deliberative system prompt is augmented with a `KNOWN FACT TYPES FOR THIS AGENT` section listing each fact type's `sbvr:reading`. This biases the LLM toward emitting bullets the pattern lifter can match cleanly:
+
+```
+KNOWN FACT TYPES FOR THIS AGENT:
+- "edition has maximum quantity" (vividwalls)
+- "certificate certifies print of edition" (vividwalls)
+- "business has revenue" (business-core)
+…
+```
+
+### Tests
+
+- `assimilation-vocabulary-index.test.ts` — fact-template compilation
+- `assimilation-lift-pattern.test.ts` — pattern-based lifter
+- `assimilation-bind.test.ts` — entity binding with mint policy
+- `assimilation-shacl-mini.test.ts` — minimal SHACL validator
+- `assimilation-nary-store.test.ts` — n-ary fact store
+- `assimilation-deontic-check.test.ts` — structured-predicate deontic eval
+- `assimilation-validate.test.ts` — three-stage validator orchestration
+- `assimilation-commit.test.ts` — TypeDB write + Markdown projection
+- `assimilation-actions-extended.test.ts` — goal_progress + new_intention paths
+- `assimilation-vividwalls-roundtrip.test.ts` — full pipeline integration (VividWalls fixture tenant)
+
+Run: `npx vitest run --config vitest.extensions.config.ts extensions/mabos/extensions-mabos/tests/assimilation-`
+
+### Follow-up plans
+
+This module is the substrate for follow-ups: LLM-based lifter fallback for unliftable bullets, model-router integration, observation-stream-driven belief revision, episodic/semantic/procedural memory tier separation, Reflector loop, and the full TOGAF/upper-ontology + ADM phase state machine. See `docs/plans/2026-05-02-llm-output-assimilation-pipeline.md` and `docs/plans/2026-05-02-goal-net-capability-gap-simulation.md`.
+
+---
+
 ## Backend Integration
 
 MABOS connects to the [mabos-workbench](https://github.com/kingler/mabos-workbench) backend for persistent storage:
