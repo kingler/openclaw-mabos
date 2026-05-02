@@ -3,11 +3,157 @@
  *
  * Evaluates actions against normative rules (obligations, permissions, prohibitions).
  * Draws on deontic logic to determine what an agent ought to, may, or must not do.
+ *
+ * Two surfaces are exported:
+ *   - createDeonticTool: LLM-facing tool (prompt-builder for agents).
+ *   - evaluateDeonticRule: code-side, structured-predicate evaluator used by
+ *     the assimilation pipeline's validate stage. Rules without a structured
+ *     `predicate` field skip gracefully (violated: false).
  */
 
 import { Type, type Static } from "@sinclair/typebox";
 import type { OpenClawPluginApi, AnyAgentTool } from "openclaw/plugin-sdk";
 import { textResult } from "../../tools/common.js";
+
+// ── Structured-predicate evaluator (assimilation pipeline) ──────────────
+
+export type ComparisonOp = "ge" | "gt" | "le" | "lt" | "eq";
+
+export type DeonticThreshold =
+  | { kind: "literal"; value: number }
+  | { kind: "property"; iri: string; property: string };
+
+export type DeonticPredicate =
+  | {
+      kind: "count_threshold";
+      factTypeId: string;
+      where: Record<string, string>; // values may use "$role:roleName" placeholders
+      operator: ComparisonOp;
+      threshold: DeonticThreshold;
+    }
+  | { kind: "always" };
+
+export interface DeonticRule {
+  id: string;
+  ruleModality: string;
+  modal?: "obligation" | "permission" | "prohibition";
+  constrainsFact: string;
+  condition: string;
+  predicate?: DeonticPredicate;
+}
+
+export interface DeonticFact {
+  factTypeId: string;
+  roles: Record<string, string>;
+}
+
+export interface DeonticStore {
+  countFacts(factTypeId: string, where: Record<string, string>): Promise<number>;
+  getProperty(iri: string, property: string): Promise<unknown>;
+}
+
+export interface DeonticEvaluation {
+  violated: boolean;
+  witness?: unknown;
+}
+
+const ROLE_PLACEHOLDER = /^\$role:(.+)$/;
+
+function expandRoleRef(value: string, roles: Record<string, string>): string {
+  const m = value.match(ROLE_PLACEHOLDER);
+  if (!m) return value;
+  const resolved = roles[m[1]];
+  if (resolved === undefined) {
+    throw new Error(`deontic predicate references unknown role: ${m[1]}`);
+  }
+  return resolved;
+}
+
+function expandWhere(
+  where: Record<string, string>,
+  roles: Record<string, string>,
+): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const [k, v] of Object.entries(where)) out[k] = expandRoleRef(v, roles);
+  return out;
+}
+
+function compare(lhs: number, op: ComparisonOp, rhs: number): boolean {
+  switch (op) {
+    case "ge":
+      return lhs >= rhs;
+    case "gt":
+      return lhs > rhs;
+    case "le":
+      return lhs <= rhs;
+    case "lt":
+      return lhs < rhs;
+    case "eq":
+      return lhs === rhs;
+  }
+}
+
+async function predicateHolds(
+  pred: DeonticPredicate,
+  fact: DeonticFact,
+  store: DeonticStore,
+): Promise<{ holds: boolean; witness: unknown }> {
+  if (pred.kind === "always") return { holds: true, witness: { reason: "always" } };
+
+  const where = expandWhere(pred.where, fact.roles);
+  const count = await store.countFacts(pred.factTypeId, where);
+
+  let threshold: number;
+  if (pred.threshold.kind === "literal") {
+    threshold = pred.threshold.value;
+  } else {
+    const iri = expandRoleRef(pred.threshold.iri, fact.roles);
+    const raw = await store.getProperty(iri, pred.threshold.property);
+    if (typeof raw !== "number") {
+      throw new Error(
+        `deontic threshold property ${pred.threshold.property} on ${iri} is not numeric (got ${typeof raw})`,
+      );
+    }
+    threshold = raw;
+  }
+
+  return {
+    holds: compare(count, pred.operator, threshold),
+    witness: { count, threshold, operator: pred.operator, where },
+  };
+}
+
+/**
+ * Evaluate a deontic rule against a fact. Returns violated=true when:
+ *   - prohibition: predicate holds (the prohibited situation is occurring)
+ *   - obligation: predicate does NOT hold (the required situation is missing)
+ *   - permission: never violated (permissions don't generate violations)
+ *
+ * Skips (violated: false) when:
+ *   - rule.ruleModality !== "deontic"
+ *   - rule.constrainsFact !== fact.factTypeId
+ *   - rule has no structured `predicate` (NL-only rules cannot be enforced)
+ */
+export async function evaluateDeonticRule(
+  fact: DeonticFact,
+  rule: DeonticRule,
+  store: DeonticStore,
+): Promise<DeonticEvaluation> {
+  if (rule.ruleModality !== "deontic") return { violated: false };
+  if (rule.constrainsFact !== fact.factTypeId) return { violated: false };
+  if (!rule.predicate) return { violated: false };
+
+  const { holds, witness } = await predicateHolds(rule.predicate, fact, store);
+  const modal = rule.modal ?? "prohibition";
+
+  if (modal === "permission") return { violated: false };
+  const violated = modal === "prohibition" ? holds : !holds;
+  return violated
+    ? { violated: true, witness: { rule: rule.id, ...((witness ?? {}) as object) } }
+    : { violated: false };
+}
+
+// ── LLM-facing tool ─────────────────────────────────────────────────────
 
 const NormSchema = Type.Object({
   norm: Type.String({ description: "The normative rule or regulation" }),
