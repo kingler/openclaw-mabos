@@ -2,7 +2,7 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it, expect } from "vitest";
-import { NaryFactStore } from "../src/cognitive/assimilation/nary-store.js";
+import { NaryFactStore } from "../src/cognitive/assimilation/nary-store";
 
 function freshStore() {
   const dir = mkdtempSync(join(tmpdir(), "nary-"));

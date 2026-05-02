@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
-import type { ShapeNode } from "../src/cognitive/assimilation/shacl-mini.js";
-import { validate } from "../src/cognitive/assimilation/validate.js";
-import type { DeonticRule, DeonticStore } from "../src/reasoning/formal/deontic.js";
+import type { ShapeNode } from "../src/cognitive/assimilation/shacl-mini";
+import { validate } from "../src/cognitive/assimilation/validate";
+import type { DeonticRule, DeonticStore } from "../src/reasoning/formal/deontic";
 
 const passingShape: ShapeNode = { targetClass: "any", properties: [] };
 

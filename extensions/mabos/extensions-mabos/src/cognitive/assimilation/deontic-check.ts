@@ -10,8 +10,8 @@ import {
   evaluateDeonticRule,
   type DeonticRule,
   type DeonticStore,
-} from "../../reasoning/formal/deontic.js";
-import type { Bound } from "./types.js";
+} from "../../reasoning/formal/deontic";
+import type { Bound } from "./types";
 
 export type DeonticCheckResult =
   | { violated: false }
