@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { validateAgainstShape, type ShapeNode } from "../src/cognitive/assimilation/shacl-mini.js";
+import { validateAgainstShape, type ShapeNode } from "../src/cognitive/assimilation/shacl-mini";
 
 const NounConceptShape: ShapeNode = {
   targetClass: "sbvr:NounConcept",
