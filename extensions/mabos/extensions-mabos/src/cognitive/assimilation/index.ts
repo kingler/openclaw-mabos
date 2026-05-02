@@ -12,12 +12,15 @@
  * by fact type.
  */
 
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
 import { bind, type EntityResolver, type FactTypeIndex } from "./bind.js";
 import { commit, type CommitCtx } from "./commit.js";
 import { liftByPattern } from "./lift-pattern.js";
 import { QuarantineStore } from "./quarantine.js";
 import type {
   AssimilationResult,
+  Bound,
   LlmAction,
   Provenance,
   QuarantineEntry,
@@ -53,6 +56,59 @@ function qEntry(
   };
 }
 
+// ── Goal-id binding (Goals.md catalog lookup) ──────────────────────────
+
+const GOAL_ID_PATTERN = /\bG-[\w-]+\b/g;
+
+async function loadKnownGoalIds(agentDir: string): Promise<Set<string>> {
+  try {
+    const md = await readFile(join(agentDir, "Goals.md"), "utf-8");
+    return new Set(md.match(GOAL_ID_PATTERN) ?? []);
+  } catch {
+    return new Set();
+  }
+}
+
+// ── Stage 1 — Action-type-specific candidate construction ──────────────
+
+interface ProgressData {
+  goalId?: unknown;
+  progress?: unknown;
+  reason?: unknown;
+}
+
+function makeGoalProgressBound(action: LlmAction): Bound | { error: string } {
+  const data = action.data as ProgressData;
+  const goalId = String(data.goalId ?? "");
+  const progress = Number(data.progress);
+  const reason = String(data.reason ?? "");
+  if (!goalId) return { error: "missing-goal-id" };
+  if (!Number.isFinite(progress)) return { error: "invalid-progress" };
+  if (progress < 0 || progress > 100) return { error: "progress-out-of-range" };
+  return {
+    ok: true,
+    factTypeId: "mabos:GoalProgressFact",
+    roles: { goal: goalId, progress: String(progress), reason },
+    confidence: 1.0,
+    source: "pattern",
+  };
+}
+
+function makeNewIntentionBound(action: LlmAction): Bound | { error: string } {
+  const data = action.data as { content?: unknown };
+  const content = String(data.content ?? "").trim();
+  if (!content) return { error: "empty-content" };
+  return {
+    ok: true,
+    factTypeId: "mabos:NewIntentionFact",
+    roles: { content },
+    confidence: 1.0,
+    source: "pattern",
+  };
+}
+
+// ── Orchestrator ───────────────────────────────────────────────────────
+
 export async function assimilate(
   actions: LlmAction[],
   ctx: AssimilationCtx,
@@ -61,33 +117,62 @@ export async function assimilate(
   const quarantined: QuarantineEntry[] = [];
   const rejected: QuarantineEntry[] = [];
 
+  let knownGoalIds: Set<string> | null = null;
+  const ensureGoalIds = async () =>
+    knownGoalIds ?? (knownGoalIds = await loadKnownGoalIds(ctx.agentDir));
+
   for (const action of actions) {
-    if (action.type !== "belief_update") continue; // Task 13 extends to other action types
-    const bullet = String((action.data as { content?: unknown }).content ?? "");
-    if (!bullet.trim()) {
-      quarantined.push(qEntry(ctx, action, "lift", "empty-bullet"));
+    let bound: Bound | { error?: string; ok: false; reason?: string } | null = null;
+
+    if (action.type === "belief_update") {
+      const bullet = String((action.data as { content?: unknown }).content ?? "");
+      if (!bullet.trim()) {
+        quarantined.push(qEntry(ctx, action, "lift", "empty-bullet"));
+        continue;
+      }
+      const lifted = liftByPattern(bullet, ctx.templates);
+      if (!lifted) {
+        quarantined.push(qEntry(ctx, action, "lift", "unliftable"));
+        continue;
+      }
+      const b = await bind(lifted, ctx.resolver, ctx.factTypeIndex);
+      if (!b.ok) {
+        quarantined.push(
+          qEntry(ctx, action, "bind", b.reason, {
+            role: b.role,
+            value: b.value,
+            concept: b.concept,
+          }),
+        );
+        continue;
+      }
+      bound = b;
+    } else if (action.type === "goal_progress") {
+      const r = makeGoalProgressBound(action);
+      if ("error" in r) {
+        quarantined.push(qEntry(ctx, action, "lift", r.error));
+        continue;
+      }
+      // Goal-id binding: must reference a known goal in Goals.md
+      const ids = await ensureGoalIds();
+      const goalId = String(r.roles.goal);
+      if (ids.size > 0 && !ids.has(goalId)) {
+        quarantined.push(qEntry(ctx, action, "bind", "unknown-goal", { goalId }));
+        continue;
+      }
+      bound = r;
+    } else if (action.type === "new_intention") {
+      const r = makeNewIntentionBound(action);
+      if ("error" in r) {
+        quarantined.push(qEntry(ctx, action, "lift", r.error));
+        continue;
+      }
+      bound = r;
+    } else {
       continue;
     }
 
-    // Stage 1 — Lift
-    const lifted = liftByPattern(bullet, ctx.templates);
-    if (!lifted) {
-      quarantined.push(qEntry(ctx, action, "lift", "unliftable"));
-      continue;
-    }
-
-    // Stage 2 — Bind
-    const bound = await bind(lifted, ctx.resolver, ctx.factTypeIndex);
-    if (!bound.ok) {
-      quarantined.push(
-        qEntry(ctx, action, "bind", bound.reason, {
-          role: bound.role,
-          value: bound.value,
-          concept: bound.concept,
-        }),
-      );
-      continue;
-    }
+    if (!bound || !bound.ok) continue;
 
     // Stage 3 — Validate
     const v = await validate(bound, ctx);

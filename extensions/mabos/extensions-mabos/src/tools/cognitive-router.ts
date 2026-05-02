@@ -18,6 +18,8 @@ import { readFile, writeFile, mkdir, readdir } from "node:fs/promises";
 import { join, dirname } from "node:path";
 import { Type, type Static } from "@sinclair/typebox";
 import type { OpenClawPluginApi, AnyAgentTool } from "openclaw/plugin-sdk";
+import { buildAssimilationCtx } from "../cognitive/assimilation/build-ctx.js";
+import { assimilate } from "../cognitive/assimilation/index.js";
 import type {
   ProcessingDepth,
   CognitiveSignal,
@@ -1474,14 +1476,36 @@ export async function enhancedHeartbeatCycle(
             `[cognitive-router] ${agentId}: parsed ${llmActions.length} action(s): ${llmActions.map((a) => `${a.type}${a.type === "goal_progress" ? `(${(a.data as any).goalId})` : ""}`).join(", ") || "none"}`,
           );
           if (llmActions.length > 0) {
-            const applied = await executeLlmActions(
-              agentId,
-              agentDir,
-              workspaceDir,
-              llmActions,
-              log,
-            );
-            log.info(`[cognitive-router] ${agentId}: applied ${applied} LLM action(s)`);
+            // All action types (belief_update, goal_progress, new_intention) flow
+            // through the SBVR/SHACL/deontic gate. The legacy executeLlmActions path
+            // is kept as a fallback for actions that fail to construct an
+            // AssimilationCtx (e.g., bootstrap/migration scenarios).
+            try {
+              const ctx = await buildAssimilationCtx({
+                agentId,
+                agentDir,
+                workspaceDir,
+                runId: `${agentId}-${Date.now()}`,
+                signalIds: signals.map((s) => s.id),
+                log,
+              });
+              const r = await assimilate(llmActions, ctx);
+              log.info(
+                `[cognitive-router] ${agentId}: assimilate accepted=${r.accepted.length} quarantined=${r.quarantined.length} rejected=${r.rejected.length}`,
+              );
+            } catch (err) {
+              log.warn?.(
+                `[cognitive-router] assimilate error for ${agentId}, falling back to legacy: ${err instanceof Error ? err.message : String(err)}`,
+              );
+              const applied = await executeLlmActions(
+                agentId,
+                agentDir,
+                workspaceDir,
+                llmActions,
+                log,
+              );
+              log.info(`[cognitive-router] ${agentId}: applied ${applied} legacy LLM action(s)`);
+            }
           }
         } catch (err) {
           log.warn?.(
