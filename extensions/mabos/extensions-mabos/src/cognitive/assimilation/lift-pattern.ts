@@ -6,8 +6,8 @@
  * (TBD in a follow-up plan) only runs when this returns null.
  */
 
-import type { Candidate } from "./types";
-import type { FactTemplate } from "./vocabulary-index";
+import type { Candidate } from "./types.js";
+import type { FactTemplate } from "./vocabulary-index.js";
 
 const PATTERN_CONFIDENCE = 0.9;
 

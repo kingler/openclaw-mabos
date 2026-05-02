@@ -6,7 +6,7 @@
  * just translates resolver outcomes into BindFailure variants.
  */
 
-import type { Candidate, Bound, BindFailure } from "./types";
+import type { Candidate, Bound, BindFailure } from "./types.js";
 
 export type ResolveResult =
   | { ok: true; iri: string; minted?: boolean }

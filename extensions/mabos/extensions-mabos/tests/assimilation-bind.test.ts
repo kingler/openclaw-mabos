@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { bind, type EntityResolver } from "../src/cognitive/assimilation/bind";
+import { bind, type EntityResolver } from "../src/cognitive/assimilation/bind.js";
 
 const known: Record<string, string> = {
   "Spring Bloom #3": "vw:Edition/spring-bloom-3",

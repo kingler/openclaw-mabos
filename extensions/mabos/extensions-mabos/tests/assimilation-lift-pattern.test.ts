@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { liftByPattern } from "../src/cognitive/assimilation/lift-pattern";
-import { compileFactTemplates } from "../src/cognitive/assimilation/vocabulary-index";
+import { liftByPattern } from "../src/cognitive/assimilation/lift-pattern.js";
+import { compileFactTemplates } from "../src/cognitive/assimilation/vocabulary-index.js";
 
 const factTypes = [
   {

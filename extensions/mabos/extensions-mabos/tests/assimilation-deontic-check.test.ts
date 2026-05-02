@@ -3,7 +3,7 @@ import {
   evaluateDeonticRule,
   type DeonticRule,
   type DeonticStore,
-} from "../src/reasoning/formal/deontic";
+} from "../src/reasoning/formal/deontic.js";
 
 const baseFact = {
   factTypeId: "vw:coaIssuanceFact",
