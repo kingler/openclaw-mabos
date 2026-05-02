@@ -19,13 +19,13 @@ async function makeCtx(opts?: { goalsMdContent?: string }) {
   const naryStore = new NaryFactStore(join(dir, "nary.json"));
   const quarantineStore = new QuarantineStore(join(dir, "quarantine.jsonl"));
   const typedb: TypeDBAdapter = {
-    assertVersioned: vi.fn(async (v, p) =>
-      naryStore.assertNary({
+    assertVersioned: vi.fn(async (v, p) => {
+      await naryStore.assertNary({
         factTypeId: v.factTypeId,
         roles: v.roles,
         provenance: { run_id: p.run_id, ts: p.ts },
-      }),
-    ),
+      });
+    }),
   };
   const bus: EventBus = { publish: vi.fn().mockResolvedValue(undefined) };
   const permissiveShape: ShapeNode = { targetClass: "any", properties: [] };
