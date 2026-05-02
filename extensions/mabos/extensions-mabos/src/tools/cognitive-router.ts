@@ -18,6 +18,8 @@ import { readFile, writeFile, mkdir, readdir } from "node:fs/promises";
 import { join, dirname } from "node:path";
 import { Type, type Static } from "@sinclair/typebox";
 import type { OpenClawPluginApi, AnyAgentTool } from "openclaw/plugin-sdk";
+import { buildAssimilationCtx, buildVocabularyHint } from "../cognitive/assimilation/build-ctx.js";
+import { assimilate } from "../cognitive/assimilation/index.js";
 import type {
   ProcessingDepth,
   CognitiveSignal,
@@ -600,6 +602,8 @@ async function executeDeliberative(
   const role = agentCfg?.id || agentId;
   const toolScope = ROLE_TOOL_SCOPE[role]?.join(", ") || "all BDI tools";
 
+  const vocabularyHint = buildVocabularyHint();
+
   const systemPrompt = `You are the ${agentId} agent performing full BDI deliberation.
 Your authorized tools: ${toolScope}
 Only recommend actions within your domain. For cross-domain needs, use agent_message.
@@ -618,7 +622,7 @@ ACTIONS:
 NEW_INTENTIONS:
 - [specific commitment to act on, or "none"]
 
-IMPORTANT: Always include at least one BELIEF_UPDATE based on signal analysis. For GOAL_UPDATES, use the exact G-ID from the Active Goals section and estimate realistic progress. Even early-stage work (analysis, planning) counts as 5-15% progress.`;
+IMPORTANT: Always include at least one BELIEF_UPDATE based on signal analysis. For GOAL_UPDATES, use the exact G-ID from the Active Goals section and estimate realistic progress. Even early-stage work (analysis, planning) counts as 5-15% progress.${vocabularyHint}`;
 
   const userPrompt = `## Triggering Signals (${signals.length})
 ${signalSummary}
@@ -1474,14 +1478,36 @@ export async function enhancedHeartbeatCycle(
             `[cognitive-router] ${agentId}: parsed ${llmActions.length} action(s): ${llmActions.map((a) => `${a.type}${a.type === "goal_progress" ? `(${(a.data as any).goalId})` : ""}`).join(", ") || "none"}`,
           );
           if (llmActions.length > 0) {
-            const applied = await executeLlmActions(
-              agentId,
-              agentDir,
-              workspaceDir,
-              llmActions,
-              log,
-            );
-            log.info(`[cognitive-router] ${agentId}: applied ${applied} LLM action(s)`);
+            // All action types (belief_update, goal_progress, new_intention) flow
+            // through the SBVR/SHACL/deontic gate. The legacy executeLlmActions path
+            // is kept as a fallback for actions that fail to construct an
+            // AssimilationCtx (e.g., bootstrap/migration scenarios).
+            try {
+              const ctx = await buildAssimilationCtx({
+                agentId,
+                agentDir,
+                workspaceDir,
+                runId: `${agentId}-${Date.now()}`,
+                signalIds: signals.map((s) => s.id),
+                log,
+              });
+              const r = await assimilate(llmActions, ctx);
+              log.info(
+                `[cognitive-router] ${agentId}: assimilate accepted=${r.accepted.length} quarantined=${r.quarantined.length} rejected=${r.rejected.length}`,
+              );
+            } catch (err) {
+              log.warn?.(
+                `[cognitive-router] assimilate error for ${agentId}, falling back to legacy: ${err instanceof Error ? err.message : String(err)}`,
+              );
+              const applied = await executeLlmActions(
+                agentId,
+                agentDir,
+                workspaceDir,
+                llmActions,
+                log,
+              );
+              log.info(`[cognitive-router] ${agentId}: applied ${applied} legacy LLM action(s)`);
+            }
           }
         } catch (err) {
           log.warn?.(
