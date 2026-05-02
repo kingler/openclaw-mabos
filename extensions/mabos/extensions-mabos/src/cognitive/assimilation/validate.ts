@@ -6,10 +6,10 @@
  * ValidatedBelief instances ready for commit.
  */
 
-import type { DeonticRule, DeonticStore } from "../../reasoning/formal/deontic";
-import { deonticCheck } from "./deontic-check";
-import { validateAgainstShape, type ShapeNode } from "./shacl-mini";
-import type { Bound, ValidationResult } from "./types";
+import type { DeonticRule, DeonticStore } from "../../reasoning/formal/deontic.js";
+import { deonticCheck } from "./deontic-check.js";
+import { validateAgainstShape, type ShapeNode } from "./shacl-mini.js";
+import type { Bound, ValidationResult } from "./types.js";
 
 const THRESHOLDS = { pattern: 0.85, llm: 0.7 } as const;
 
