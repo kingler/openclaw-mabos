@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { compileFactTemplates } from "../src/cognitive/assimilation/vocabulary-index.js";
+import { compileFactTemplates } from "../src/cognitive/assimilation/vocabulary-index";
 
 describe("compileFactTemplates", () => {
   it("compiles a binary fact-type reading into a regex with named groups", () => {
