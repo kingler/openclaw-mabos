@@ -18,7 +18,7 @@ import { readFile, writeFile, mkdir, readdir } from "node:fs/promises";
 import { join, dirname } from "node:path";
 import { Type, type Static } from "@sinclair/typebox";
 import type { OpenClawPluginApi, AnyAgentTool } from "openclaw/plugin-sdk";
-import { buildAssimilationCtx, buildVocabularyHint } from "../cognitive/assimilation/build-ctx.js";
+import { buildAssimilationCtx } from "../cognitive/assimilation/build-ctx.js";
 import { assimilate } from "../cognitive/assimilation/index.js";
 import type {
   ProcessingDepth,
@@ -602,8 +602,6 @@ async function executeDeliberative(
   const role = agentCfg?.id || agentId;
   const toolScope = ROLE_TOOL_SCOPE[role]?.join(", ") || "all BDI tools";
 
-  const vocabularyHint = buildVocabularyHint();
-
   const systemPrompt = `You are the ${agentId} agent performing full BDI deliberation.
 Your authorized tools: ${toolScope}
 Only recommend actions within your domain. For cross-domain needs, use agent_message.
@@ -622,7 +620,7 @@ ACTIONS:
 NEW_INTENTIONS:
 - [specific commitment to act on, or "none"]
 
-IMPORTANT: Always include at least one BELIEF_UPDATE based on signal analysis. For GOAL_UPDATES, use the exact G-ID from the Active Goals section and estimate realistic progress. Even early-stage work (analysis, planning) counts as 5-15% progress.${vocabularyHint}`;
+IMPORTANT: Always include at least one BELIEF_UPDATE based on signal analysis. For GOAL_UPDATES, use the exact G-ID from the Active Goals section and estimate realistic progress. Even early-stage work (analysis, planning) counts as 5-15% progress.`;
 
   const userPrompt = `## Triggering Signals (${signals.length})
 ${signalSummary}

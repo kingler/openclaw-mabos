@@ -194,38 +194,6 @@ function buildEventBus(log: BuildCtxInput["log"]): EventBus {
 
 const PERMISSIVE_SHAPE: ShapeNode = { targetClass: "any", properties: [] };
 
-/**
- * Build a vocabulary hint string for injection into the deliberative
- * system prompt. Lists known fact-type readings so the LLM prefers
- * structured forms that the assimilation pipeline can lift cleanly.
- *
- * Returns "" when no fact types are available (graceful no-op).
- */
-export function buildVocabularyHint(maxFactTypes = 30): string {
-  try {
-    const ontologies = loadOntologies();
-    const merged = mergeOntologies(ontologies);
-    const lines = [...merged.objectProperties.values()]
-      .filter((n) => n["sbvr:conceptType"] === "FactType" && typeof n["sbvr:reading"] === "string")
-      .slice(0, maxFactTypes)
-      .map((n) => {
-        const reading = String(n["sbvr:reading"]);
-        const vocab = String(n["sbvr:vocabulary"] ?? "");
-        return vocab ? `- "${reading}" (${vocab})` : `- "${reading}"`;
-      });
-    if (lines.length === 0) return "";
-    return [
-      "",
-      "For each BELIEF_UPDATE bullet, prefer matching one of the agent's known fact-type readings verbatim. Free-form bullets are accepted but may be quarantined for review.",
-      "",
-      "KNOWN FACT TYPES FOR THIS AGENT:",
-      ...lines,
-    ].join("\n");
-  } catch {
-    return "";
-  }
-}
-
 export async function buildAssimilationCtx(input: BuildCtxInput): Promise<AssimilationCtx> {
   const ontologies = loadOntologies();
   const merged = mergeOntologies(ontologies);
