@@ -110,6 +110,9 @@ import { GdcOrchestrator } from "./src/gdc/orchestrator.js";
 import { generatePersonaBatch } from "./src/gdc/persona-generator.js";
 import type { CompanyDNA, LlmCallFn } from "./src/gdc/types.js";
 // Unified MABOS modules (Paperclip + Hermes integration)
+import { registerCoordination } from "./src/coordination/index.js";
+import { registerBdiApi } from "./src/coordination/bdi-api.js";
+import { createMabosEventBus } from "./src/coordination/event-bus.js";
 import { registerGovernance } from "./src/governance/index.js";
 import { registerModelRouter } from "./src/model-router/index.js";
 import { createSecurityModule } from "./src/security/index.js";
@@ -7643,6 +7646,70 @@ export default function register(api: OpenClawPluginApi) {
     } catch (err) {
       log.warn(`[mabos] GDC module failed to initialize: ${err}`);
     }
+  }
+
+  // Module 7: Multi-Agent Coordination (contract-net, message routing, task delegation)
+  try {
+    registerCoordination(api);
+  } catch (err) {
+    log.warn(`[mabos] Coordination module failed to initialize: ${err}`);
+  }
+
+  // Module 8: BDI Cognitive State REST API
+  try {
+    registerBdiApi(api);
+  } catch (err) {
+    log.warn(`[mabos] BDI API module failed to initialize: ${err}`);
+  }
+
+  // Module 9: MABOS Event Bus (cross-subsystem pub/sub)
+  try {
+    const eventBus = createMabosEventBus({
+      persistDir: resolveWorkspaceDir(api),
+      maxBufferSize: 10_000,
+    });
+
+    // Wire BDI heartbeat events into the bus
+    api.hook("heartbeat", async () => {
+      eventBus.emit({
+        type: "bdi.cycle.complete",
+        source: "bdi",
+        payload: { cycledAt: new Date().toISOString() },
+      });
+    });
+
+    // Wire agent events into the bus
+    try {
+      const core = await getCoreModules();
+      if (core?.onAgentEvent) {
+        core.onAgentEvent((event: any) => {
+          eventBus.emit({
+            type: `agent.${event.type ?? "event"}`,
+            source: "gateway",
+            agentId: event.agentId,
+            payload: event,
+          });
+        });
+      }
+    } catch {
+      // core event bridge is best-effort
+    }
+
+    // Expose recent events via API
+    api.registerHttpRoute({
+      auth: "plugin",
+      path: "/mabos/api/events/recent",
+      handler: async (req, res) => {
+        const url = new URL(req.url ?? "/", `http://${req.headers?.host ?? "localhost"}`);
+        const limitStr = url.searchParams.get("limit") ?? "50";
+        const limit = parseInt(limitStr, 10);
+        const events = eventBus.getRecent(limit);
+        res.setHeader("Content-Type", "application/json");
+        res.end(JSON.stringify({ events }));
+      },
+    });
+  } catch (err) {
+    log.warn(`[mabos] Event bus failed to initialize: ${err}`);
   }
 
   api.logger.info("[mabos] MABOS extension registered (bundled, deep integration)");
