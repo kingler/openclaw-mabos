@@ -84,6 +84,59 @@
       "sbvr:vocabulary": "mabos-upper"
     },
     {
+      "@id": "mabos:CompositeGoal",
+      "@type": "owl:Class",
+      "rdfs:subClassOf": "mabos:Goal",
+      "rdfs:label": "Composite Goal",
+      "rdfs:comment": "A goal whose body decomposes into sub-goals connected by typed mabos:GoalRelationship instances (Goal Net §3.2.4)",
+      "sbvr:conceptType": "NounConcept",
+      "sbvr:designation": "composite goal",
+      "sbvr:definition": "Composite Goal is a goal that decomposes into sub-goals connected by typed relationships",
+      "sbvr:vocabulary": "mabos-upper"
+    },
+    {
+      "@id": "mabos:GoalRelationship",
+      "@type": "owl:Class",
+      "rdfs:label": "Goal Relationship",
+      "rdfs:comment": "Typed link between goals; relType ∈ {sequence|concurrency|choice|synchronization|all-of|one-of|sequential} (Goal Net seven relationship types)",
+      "sbvr:conceptType": "FactType",
+      "sbvr:designation": "goal-related-to-goal",
+      "sbvr:vocabulary": "mabos-upper"
+    },
+    {
+      "@id": "mabos:goalRelType",
+      "@type": "owl:DatatypeProperty",
+      "rdfs:domain": "mabos:GoalRelationship",
+      "rdfs:range": "xsd:string",
+      "rdfs:comment": "One of the seven Goal Net relationship types"
+    },
+    {
+      "@id": "mabos:fromGoal",
+      "@type": "owl:ObjectProperty",
+      "rdfs:domain": "mabos:GoalRelationship",
+      "rdfs:range": "mabos:Goal"
+    },
+    {
+      "@id": "mabos:toGoal",
+      "@type": "owl:ObjectProperty",
+      "rdfs:domain": "mabos:GoalRelationship",
+      "rdfs:range": "mabos:Goal"
+    },
+    {
+      "@id": "mabos:hasSubGoal",
+      "@type": "owl:ObjectProperty",
+      "rdfs:domain": "mabos:CompositeGoal",
+      "rdfs:range": "mabos:Goal",
+      "rdfs:comment": "Membership of a sub-goal within a composite parent"
+    },
+    {
+      "@id": "mabos:satisfactionMeasure",
+      "@type": "owl:DatatypeProperty",
+      "rdfs:domain": "mabos:Goal",
+      "rdfs:range": "xsd:float",
+      "rdfs:comment": "Goal Net §3.2.4 — quantitative satisfaction in [0.0, 1.0], distinct from progress%"
+    },
+    {
       "@id": "mabos:Intention",
       "@type": "owl:Class",
       "rdfs:label": "Intention",

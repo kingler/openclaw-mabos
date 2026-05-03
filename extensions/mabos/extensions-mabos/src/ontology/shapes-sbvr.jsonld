@@ -71,6 +71,35 @@
         { "sh:path": "sbvr:truthValue", "sh:minCount": 1, "sh:maxCount": 1, "sh:datatype": "xsd:boolean", "sh:message": "Proof entry must have a truth value" },
         { "sh:path": "sbvr:entryConfidence", "sh:minCount": 1, "sh:maxCount": 1, "sh:datatype": "xsd:float", "sh:minInclusive": 0.0, "sh:maxInclusive": 1.0, "sh:message": "Proof entry confidence must be 0.0-1.0" }
       ]
+    },
+    {
+      "@id": "mabos:CompositeGoalShape",
+      "@type": "sh:NodeShape",
+      "sh:targetClass": "mabos:CompositeGoal",
+      "rdfs:comment": "Composite goals must declare at least one sub-goal",
+      "sh:property": [
+        { "sh:path": "mabos:hasSubGoal", "sh:minCount": 1, "sh:message": "Composite goal must have at least one sub-goal" }
+      ]
+    },
+    {
+      "@id": "mabos:GoalRelationshipShape",
+      "@type": "sh:NodeShape",
+      "sh:targetClass": "mabos:GoalRelationship",
+      "rdfs:comment": "Goal relationships carry a typed relType and connect exactly two goals",
+      "sh:property": [
+        { "sh:path": "mabos:goalRelType", "sh:minCount": 1, "sh:maxCount": 1, "sh:datatype": "xsd:string", "sh:in": ["sequence","concurrency","choice","synchronization","all-of","one-of","sequential"], "sh:message": "goalRelType must be one of the seven Goal Net types" },
+        { "sh:path": "mabos:fromGoal", "sh:minCount": 1, "sh:maxCount": 1, "sh:message": "Goal relationship must declare fromGoal" },
+        { "sh:path": "mabos:toGoal", "sh:minCount": 1, "sh:maxCount": 1, "sh:message": "Goal relationship must declare toGoal" }
+      ]
+    },
+    {
+      "@id": "mabos:GoalShape",
+      "@type": "sh:NodeShape",
+      "sh:targetClass": "mabos:Goal",
+      "rdfs:comment": "Optional satisfaction measure must be in [0.0, 1.0]",
+      "sh:property": [
+        { "sh:path": "mabos:satisfactionMeasure", "sh:maxCount": 1, "sh:datatype": "xsd:float", "sh:minInclusive": 0.0, "sh:maxInclusive": 1.0, "sh:message": "satisfactionMeasure must be in [0.0, 1.0]" }
+      ]
     }
   ]
 }
