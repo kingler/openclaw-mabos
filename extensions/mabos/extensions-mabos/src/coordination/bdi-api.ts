@@ -150,7 +150,11 @@ async function discoverAgents(workspaceDir: string): Promise<string[]> {
 
 function extractAgentId(url: string): string | null {
   const match = url.match(/\/mabos\/api\/bdi\/agents\/([^/]+)/);
-  return match ? match[1] : null;
+  if (!match) return null;
+  const id = decodeURIComponent(match[1]);
+  // Reject path traversal attempts
+  if (id.includes("..") || id.includes("/") || id.includes("\\")) return null;
+  return id;
 }
 
 export function registerBdiApi(api: OpenClawPluginApi) {
