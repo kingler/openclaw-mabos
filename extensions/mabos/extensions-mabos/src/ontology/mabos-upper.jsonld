@@ -2,6 +2,7 @@
   "@context": {
     "mabos": "https://mabos.io/ontology/",
     "sbvr": "https://mabos.io/ontology/sbvr/",
+    "cap": "https://mabos.io/ontology/capability/",
     "owl": "http://www.w3.org/2002/07/owl#",
     "rdfs": "http://www.w3.org/2000/01/rdf-schema#",
     "xsd": "http://www.w3.org/2001/XMLSchema#"
@@ -135,6 +136,54 @@
       "rdfs:domain": "mabos:Goal",
       "rdfs:range": "xsd:float",
       "rdfs:comment": "Goal Net §3.2.4 — quantitative satisfaction in [0.0, 1.0], distinct from progress%"
+    },
+    {
+      "@id": "cap:Capability",
+      "@type": "owl:Class",
+      "rdfs:label": "Capability",
+      "rdfs:comment": "An ability that an organization or agent possesses or requires. The TOGAF/upper-ontology plan enriches this class with realizedBy/enables; v1 just needs it as a target for cap:RequiresFact and cap:HoldsFact.",
+      "sbvr:conceptType": "NounConcept",
+      "sbvr:designation": "capability",
+      "sbvr:definition": "Capability is an ability that an organization or agent possesses or requires",
+      "sbvr:vocabulary": "mabos-upper"
+    },
+    {
+      "@id": "cap:RequiredCapability",
+      "@type": "owl:ObjectProperty",
+      "rdfs:domain": "mabos:Goal",
+      "rdfs:range": "cap:Capability",
+      "rdfs:comment": "S' (GenMentor §4.1) — capabilities required to satisfy this goal. Stored as cap:RequiresFact instances."
+    },
+    {
+      "@id": "cap:HeldCapability",
+      "@type": "owl:ObjectProperty",
+      "rdfs:domain": "mabos:Agent",
+      "rdfs:range": "cap:Capability",
+      "rdfs:comment": "S₀ — capabilities the agent currently holds. Stored as cap:HoldsFact instances."
+    },
+    {
+      "@id": "cap:RequiresFact",
+      "@type": "sbvr:FactType",
+      "sbvr:arity": 2,
+      "sbvr:reading": "goal requires capability",
+      "sbvr:roles": [
+        { "sbvr:roleName": "goal", "sbvr:rolePlayer": "mabos:Goal" },
+        { "sbvr:roleName": "capability", "sbvr:rolePlayer": "cap:Capability" }
+      ],
+      "sbvr:conceptType": "FactType",
+      "sbvr:vocabulary": "mabos-upper"
+    },
+    {
+      "@id": "cap:HoldsFact",
+      "@type": "sbvr:FactType",
+      "sbvr:arity": 2,
+      "sbvr:reading": "agent holds capability",
+      "sbvr:roles": [
+        { "sbvr:roleName": "agent", "sbvr:rolePlayer": "mabos:Agent" },
+        { "sbvr:roleName": "capability", "sbvr:rolePlayer": "cap:Capability" }
+      ],
+      "sbvr:conceptType": "FactType",
+      "sbvr:vocabulary": "mabos-upper"
     },
     {
       "@id": "mabos:Intention",

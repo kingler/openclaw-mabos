@@ -180,12 +180,27 @@ function buildTypedbAdapter(naryStore: NaryFactStore): TypeDBAdapter {
 }
 
 function buildEventBus(log: BuildCtxInput["log"]): EventBus {
-  // v1: log-only. Real bus (subscribers, async handlers) is a follow-up plan.
+  // v1: log + minimal in-memory subscriber registry. Real bus (queues,
+  // cross-process, persistence) is a follow-up plan.
+  const handlers: Array<(e: import("./commit.js").BeliefCommittedEvent) => void | Promise<void>> =
+    [];
   return {
     publish: async (event) => {
       log.debug(
         `[assimilate] event ${event.type} fact=${event.fact.factTypeId} run=${event.provenance.run_id}`,
       );
+      for (const h of handlers) {
+        try {
+          await h(event);
+        } catch (err) {
+          log.warn?.(
+            `[assimilate] subscriber threw on ${event.type}: ${err instanceof Error ? err.message : String(err)}`,
+          );
+        }
+      }
+    },
+    on: (_eventType, handler) => {
+      handlers.push(handler);
     },
   };
 }

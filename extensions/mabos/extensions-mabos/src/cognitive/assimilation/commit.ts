@@ -20,12 +20,22 @@ export interface TypeDBAdapter {
   assertVersioned(v: ValidatedBelief, p: Provenance): Promise<void>;
 }
 
+export interface BeliefCommittedEvent {
+  type: "belief.committed";
+  fact: ValidatedBelief;
+  provenance: Provenance;
+}
+
+export type EventHandler = (event: BeliefCommittedEvent) => void | Promise<void>;
+
 export interface EventBus {
-  publish(event: {
-    type: "belief.committed";
-    fact: ValidatedBelief;
-    provenance: Provenance;
-  }): Promise<void>;
+  publish(event: BeliefCommittedEvent): Promise<void>;
+  /**
+   * Optional subscription. Implementations that do not support subscription
+   * (e.g., the log-only stub) may omit this method; callers should treat it
+   * as a no-op when absent.
+   */
+  on?(eventType: "belief.committed", handler: EventHandler): void;
 }
 
 export interface CommitCtx {
