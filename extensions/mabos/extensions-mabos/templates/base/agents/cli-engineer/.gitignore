@@ -1,0 +1,5 @@
+# Persona.md is a symlink to ~/.claude/agents/cli-agent.md (an absolute $HOME
+# path that varies per machine). Committing it would store one contributor's
+# username verbatim. scripts/install-cli-agent.sh creates this symlink per
+# machine after the global persona is in place.
+Persona.md

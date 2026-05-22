@@ -1,0 +1,22 @@
+{
+  "id": "cli-engineer",
+  "name": "CLI Engineer",
+  "bdi": {
+    "commitmentStrategy": "single-minded",
+    "cycleFrequency": {
+      "fullCycleMinutes": 60,
+      "quickCheckMinutes": 10
+    },
+    "reasoningMethods": ["means-ends", "case-based"],
+    "cognitiveRouter": {
+      "enabled": true,
+      "thresholds": {
+        "reflexiveCeiling": 0.4,
+        "deliberativeFloor": 0.6,
+        "reflexiveConfidenceMin": 0.8,
+        "analyticalConfidenceMin": 0.7,
+        "maxConsecutiveReflexive": 6
+      }
+    }
+  }
+}
