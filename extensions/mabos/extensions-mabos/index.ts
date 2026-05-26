@@ -100,6 +100,10 @@ async function getCoreModules() {
   };
   return _coreModules;
 }
+import { registerBdiApi } from "./src/coordination/bdi-api.js";
+import { createMabosEventBus } from "./src/coordination/event-bus.js";
+// Unified MABOS modules (Paperclip + Hermes integration)
+import { registerCoordination } from "./src/coordination/index.js";
 // ── End core imports shim ──────────────────────────────────────────
 import { createCronBridgeService } from "./src/cron-bridge.js";
 import { registerExecutionSandbox } from "./src/execution-sandbox/index.js";
@@ -109,10 +113,6 @@ import { registerGdc } from "./src/gdc/index.js";
 import { GdcOrchestrator } from "./src/gdc/orchestrator.js";
 import { generatePersonaBatch } from "./src/gdc/persona-generator.js";
 import type { CompanyDNA, LlmCallFn } from "./src/gdc/types.js";
-// Unified MABOS modules (Paperclip + Hermes integration)
-import { registerCoordination } from "./src/coordination/index.js";
-import { registerBdiApi } from "./src/coordination/bdi-api.js";
-import { createMabosEventBus } from "./src/coordination/event-bus.js";
 import { registerGovernance } from "./src/governance/index.js";
 import { registerModelRouter } from "./src/model-router/index.js";
 import { createSecurityModule } from "./src/security/index.js";
@@ -151,6 +151,7 @@ import { createOntologyManagementTools } from "./src/tools/ontology-management-t
 import { createOperationsTools } from "./src/tools/operations-tools.js";
 import { createOutreachTools } from "./src/tools/outreach-tools.js";
 import { createPlanningTools } from "./src/tools/planning-tools.js";
+import { discoverPrintedClis } from "./src/tools/printed-cli-tools.js";
 import { createReasoningTools } from "./src/tools/reasoning-tools.js";
 import { createReportingTools } from "./src/tools/reporting-tools.js";
 import { createRuleEngineTools } from "./src/tools/rule-engine.js";
@@ -1187,7 +1188,7 @@ async function seedConnectedHierarchy(
   );
 }
 
-export default function register(api: OpenClawPluginApi) {
+export default async function register(api: OpenClawPluginApi) {
   const log = api.logger;
 
   // ── 1. Register all tools ─────────────────────────────────────
@@ -1250,6 +1251,26 @@ export default function register(api: OpenClawPluginApi) {
     api.registerTool(tool);
     registeredToolNames.push(tool.name);
   }
+
+  // Discover and register printed CLIs (<slug>-pp-cli binaries on PATH).
+  // Fire-and-forget: the plugin loader ignores promises returned from register(),
+  // so we register asynchronously after the static tools so that static tools
+  // win on any ID collision. Discovery never throws (degrades to []) but we add
+  // a defensive .catch anyway. See docs/plans/2026-05-22-mabos-tool-registry-design.md
+  discoverPrintedClis()
+    .then((printedClis) => {
+      for (const tool of printedClis) {
+        api.registerTool(tool);
+        registeredToolNames.push(tool.name);
+      }
+      if (printedClis.length > 0) {
+        log.info?.(`[mabos] Registered ${printedClis.length} printed-CLI tool(s)`);
+      }
+    })
+    .catch((err: unknown) => {
+      const msg = err instanceof Error ? err.message : String(err);
+      log.warn?.(`[mabos] printed-CLI discovery failed: ${msg}; continuing without`);
+    });
 
   // Export tool filter for per-agent scoping (used by cognitive router)
   // Agents can check `isToolAllowedForRole(role, toolName)` at runtime

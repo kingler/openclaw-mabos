@@ -9,3 +9,4 @@
 | `cli.score`       | Score a printed CLI's quality                  | `cli-printing-press score`           | slug            | score report              |
 | `cli.verify`      | Run `--help` + a representative query          | Bash                                 | binary name     | exit code, sample output  |
 | `auth.surface`    | Detect auth requirements and surface to caller | Bash + Read                          | binary name     | auth.json or env var list |
+| `cli.invoke`      | Invoke any printed CLI via the registry        | discovered `cli.*` tools             | command + args  | code, stdout, stderr      |
