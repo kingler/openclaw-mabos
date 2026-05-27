@@ -133,6 +133,7 @@ describe("Ontology Structure", () => {
       "xsd:boolean",
       "xsd:dateTime",
       "xsd:date",
+      "xsd:anyURI",
     ]);
     for (const [ontId, ont] of ontologies) {
       for (const node of ont["@graph"]) {

@@ -72,14 +72,20 @@ Last evaluated: 2026-03-15T00:00:00.000Z
 
 describe("Intention ID parsing — alphanumeric IDs", () => {
   it("parses I-COO-001 style IDs in Intentions.md", async () => {
-    const tomorrow = new Date(Date.now() + 12 * 60 * 60 * 1000).toISOString().split("T")[0];
+    // Deadline 48 h from now as a full ISO timestamp guarantees the value
+    // falls inside scanDeadlines' (0, 72]-hour warning window regardless of
+    // the wall-clock time the test runs at. The previous fixture used
+    // `Date.now() + 12h` then `.split("T")[0]`, which truncated to a date
+    // string interpreted as UTC midnight — that produced a *negative*
+    // hoursRemaining when the test ran before noon UTC, masking the signal.
+    const deadline = new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString();
     const intentionsContent = `# Intentions — coo
 
 ## Active Intentions
 
 ### I-COO-001: Optimize fulfillment pipeline
 - **Status:** executing
-- **Deadline:** ${tomorrow}
+- **Deadline:** ${deadline}
 - **Progress:** 30%
 - **Current Step:** S-2
 `;
