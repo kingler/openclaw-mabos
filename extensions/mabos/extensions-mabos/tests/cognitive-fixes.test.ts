@@ -10,7 +10,7 @@ import { randomUUID } from "node:crypto";
 import { writeFile, mkdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, it, assert, beforeEach } from "vitest";
+import { describe, it, assert, beforeEach, afterEach, vi } from "vitest";
 import { DEFAULT_ROLE_THRESHOLDS } from "../src/tools/cognitive-router-types.js";
 import { computeCognitiveDemand } from "../src/tools/cognitive-router.js";
 import { scanGoalState, scanDeadlines, scanInbox } from "../src/tools/cognitive-signal-scanners.js";
@@ -71,14 +71,25 @@ Last evaluated: 2026-03-15T00:00:00.000Z
 });
 
 describe("Intention ID parsing — alphanumeric IDs", () => {
+  // Fake timers anchor `Date.now()` (used inside `scanDeadlines`) to a fixed
+  // reference. The deadline is then computed as exactly 48 h after that
+  // anchor — fully deterministic, independent of the system clock the test
+  // happens to run under. The previous fixture used a real-time `Date.now()`
+  // and a date-only string truncation that produced negative hoursRemaining
+  // before noon UTC and masked the signal.
+  const NOW = new Date("2026-06-15T10:00:00.000Z");
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(NOW);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it("parses I-COO-001 style IDs in Intentions.md", async () => {
-    // Deadline 48 h from now as a full ISO timestamp guarantees the value
-    // falls inside scanDeadlines' (0, 72]-hour warning window regardless of
-    // the wall-clock time the test runs at. The previous fixture used
-    // `Date.now() + 12h` then `.split("T")[0]`, which truncated to a date
-    // string interpreted as UTC midnight — that produced a *negative*
-    // hoursRemaining when the test ran before noon UTC, masking the signal.
-    const deadline = new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString();
+    const deadline = new Date(NOW.getTime() + 48 * 60 * 60 * 1000).toISOString();
     const intentionsContent = `# Intentions — coo
 
 ## Active Intentions
