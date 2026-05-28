@@ -41,6 +41,8 @@ export interface MabosPluginConfig {
   skillLoop?: import("../skill-loop/types.js").SkillLoopConfig;
   gdcEnabled?: boolean;
   gdc?: import("../gdc/types.js").GdcPipelineConfig;
+  ideationEnabled?: boolean;
+  ideation?: Partial<import("../ideation/types.js").IrcPipelineConfig>;
 }
 
 /**

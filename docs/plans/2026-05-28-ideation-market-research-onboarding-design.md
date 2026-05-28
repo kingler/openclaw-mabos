@@ -271,12 +271,12 @@ The gate is the single most valuable addition — it is the difference between "
 | Any stage throws | Checkpoint preserved; stage retriable; pipeline never deletes prior artifacts. |
 | IRC fully fails | Fall back to the express-lane wizard so the founder still reaches `CompanyDNA`. |
 
-## Phasing (design-only; implementation plan to follow)
+## Phasing
 
-1. **Backend pipeline** — types, orchestrator, research wrapper, validator, simulator, dossier, module registration (Stages 1–6 callable via `irc_run`).
-2. **Handoff + persistence** — `company_dna.json` write, seed-belief writing, golden handoff test.
-3. **UI branch** — Welcome third card, IRC Neo steps, research/citation/thesis components, convergence onto express-lane review.
-4. **Validation gate hardening** — persona tuning, threshold config, budget-ledger high-stakes integration.
+1. **Backend pipeline** — types, orchestrator, research wrapper, validator, simulator, dossier, module registration (Stages 1–6 callable via `irc_run`). **DONE (2026-05-28)** — implemented under `extensions/mabos/extensions-mabos/src/ideation/`, 30 passing tests. See [2026-05-28-ideation-market-research-onboarding-implementation.md](2026-05-28-ideation-market-research-onboarding-implementation.md).
+2. **Handoff + persistence** — `company_dna.json` write, seed-belief writing, golden handoff test. **DONE (2026-05-28)** — folded into Phase 1 (`assembleCompanyDNA`, `persistRun`, `writeDossier`, `ideation-handoff.test.ts`).
+3. **UI branch** — Welcome third card, IRC Neo steps, research/citation/thesis components, convergence onto express-lane review. **Pending.**
+4. **Validation gate hardening** — persona tuning, threshold config, budget-ledger high-stakes integration. **Pending.**
 
 ## Risks and open questions
 

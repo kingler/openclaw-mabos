@@ -110,6 +110,7 @@ import { registerExecutionSandbox } from "./src/execution-sandbox/index.js";
 import { writeCognitiveState } from "./src/gdc/cognitive-writer.js";
 import { generateDomainAgents } from "./src/gdc/domain-agent-generator.js";
 import { registerGdc } from "./src/gdc/index.js";
+import { registerIdeation } from "./src/ideation/index.js";
 import { GdcOrchestrator } from "./src/gdc/orchestrator.js";
 import { generatePersonaBatch } from "./src/gdc/persona-generator.js";
 import type { CompanyDNA, LlmCallFn } from "./src/gdc/types.js";
@@ -7666,6 +7667,15 @@ export default async function register(api: OpenClawPluginApi) {
       registerGdc(api, pluginConfig);
     } catch (err) {
       log.warn(`[mabos] GDC module failed to initialize: ${err}`);
+    }
+  }
+
+  // Module 6b: IRC Pipeline (ideation and research chain — upstream of GDC)
+  if (pluginConfig.ideationEnabled) {
+    try {
+      registerIdeation(api, pluginConfig);
+    } catch (err) {
+      log.warn(`[mabos] IRC module failed to initialize: ${err}`);
     }
   }
 

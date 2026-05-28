@@ -2,8 +2,20 @@
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
-> **Status:** Implementation plan. Design: [2026-05-28-ideation-market-research-onboarding-design.md](2026-05-28-ideation-market-research-onboarding-design.md).
+> **Status:** Phase 1 (backend) IMPLEMENTED and tested (2026-05-28); Phases 2-3 (UI, hardening) pending. Design: [2026-05-28-ideation-market-research-onboarding-design.md](2026-05-28-ideation-market-research-onboarding-design.md).
 > **Date:** 2026-05-28
+
+## Implementation status (2026-05-28)
+
+**Phase 1 — backend — DONE.** Tasks 1-9 implemented under `extensions/mabos/extensions-mabos/src/ideation/` with 30 passing tests (`tests/ideation-*.test.ts`). The pipeline runs end-to-end with an injected `LlmCallFn`, writes `company_dna.json`, and a golden test asserts the output satisfies the GDC input contract. Gated behind `ideationEnabled` and wired into `index.ts` after the GDC module.
+
+Notable decisions made during implementation:
+
+- **Tool `execute(_id, params)` two-arg form** — the canonical signature (per `skill-loop`); the first positional is the agent/session id, params is second. (GDC's single-arg form is a latent bug that only its HTTP route avoids.)
+- **Research backend defaults to `undefined` ⇒ analyst-only.** `research_brief`/`competitor_report` are CRM/prospect-specific, not generic market research, so no backend is wired in v1; the pipeline runs in analyst-only mode (every finding flagged `unverified`) until a real web-search tool is exposed via `ResearchBackend`. The seam is ready (`src/ideation/research.ts`).
+- **Stage 6 lives in the module, not the orchestrator** — keeps `IrcOrchestrator` pure/handoff-free for testing; `assembleCompanyDNA` + `persistRun` are in `src/ideation/index.ts`.
+
+**Phase 2 (UI) and Phase 3 (hardening) — PENDING.** Tasks 10-14 below are unchanged. Phase 2 depends on the GDC conversational wizard surface from [2026-04-05-enhanced-onboarding-with-gdc.md](2026-04-05-enhanced-onboarding-with-gdc.md); verify that wizard exists before starting.
 
 **Goal:** Build the Ideation and Research Chain — a pipeline that turns a raw founder idea into a research-grounded, validated `CompanyDNA`, then hands off to the existing GDC pipeline (`gdc_run`) unchanged. IRC is the front-door analogue of GDC: same staged/validated/checkpointed shape, one stage upstream.
 
