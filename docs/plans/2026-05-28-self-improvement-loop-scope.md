@@ -8,6 +8,12 @@
 
 MABOS has all the ingredients of learning but no closed loop: it can create skills, compute capability gaps, commit beliefs, and run a BDI cycle — but **nothing measures the outcome of what agents do and feeds that measurement back into beliefs, skills, capabilities, and goal priorities.** Today the system acts; it does not yet learn from whether acting worked.
 
+## Framing: outcome-feedback, not deep RL
+
+"Self-improving" invites a heavy reading — policy-gradient / deep reinforcement learning over agent behavior. **That is explicitly not what this scopes.** True RL would need a reward model, a policy network, exploration, and a training loop — none of which fit a multi-tenant business OS where wrong "exploration" spends real money and emails real customers.
+
+The pragmatic, shippable version is a **deterministic outcome-feedback loop**: log decisions → score their outcomes → adjust a small set of explicit, inspectable, operator-gated parameters. The adaptation surface for v1 is intentionally narrow and concrete (two existing tunable levers, below); everything else (goal re-prioritization, new-agent proposals) is advisory output for a human, not an automatic weight update. This keeps the loop legible, reversible, and within the [VISION.md](../../VISION.md) guardrails — no opaque learned policy steering an autonomous business.
+
 ## What already exists (the ingredients)
 
 | Capability | Where | What it does | What it lacks |
@@ -53,7 +59,18 @@ Use the existing reasoning engine (`causal`, `abductive` modules per [MABOS-DESC
 
 ### 5. Adapt — change future behavior
 
-Re-prioritize goals/plans by realized impact, propose new domain agents or new research when a persistent gap can't be closed with current capabilities, and surface a recommendation. **Every adaptation that changes scope, spend, or roster is operator-gated** through the deontic/governance approval path, never auto-applied.
+Two tiers of adaptation, deliberately separated by risk:
+
+**Automatic (narrow, reversible, the v1 surface) — two existing tunable levers:**
+
+1. **Cognitive-router thresholds.** `selectDepth(score, thresholds)` at [cognitive-router.ts:257](../../extensions/mabos/extensions-mabos/src/tools/cognitive-router.ts) already gates depth on a per-role `RoleThresholds { reflexiveCeiling, deliberativeFloor, maxConsecutiveReflexive }`. The loop nudges these from outcomes: if reflexive (0-LLM) handling of a signal class kept producing good results, lower the cost by raising `reflexiveCeiling`; if a class of misses traces to under-deliberation, lower `deliberativeFloor`. This is a bounded scalar tweak per role, fully inspectable, with a config floor/ceiling so it can never disable deliberation entirely.
+2. **Skill ranking.** `injector.ts:31` already scores candidate skills by keyword/tag/capability overlap. The loop attaches a learned **outcome multiplier** per skill (success rate when injected) to that existing score, so skills that demonstrably helped rank higher and chronic underperformers fall off the top-N — without deleting anything.
+
+**Advisory (everything higher-stakes) — surfaced, never auto-applied:**
+
+Re-prioritize goals/plans by realized impact, propose new domain agents or new research when a persistent gap can't be closed with current capabilities. **Every adaptation that changes scope, spend, or roster is operator-gated** through the deontic/governance approval path.
+
+Both tiers write their state as inspectable artifacts (threshold values, skill multipliers) — never opaque weights.
 
 ## Non-goals (hard boundaries)
 
@@ -71,7 +88,7 @@ Re-prioritize goals/plans by realized impact, propose new domain agents or new r
 
 ## Smallest shippable slice (for the eventual design)
 
-One agent, one goal, one KPI: capture the outcome of a single `maintain`-type goal's checkpoint, compute the satisfaction delta against its `kpi_target`, attribute a miss to a stale belief, route the correction through the assimilation gate, and surface (not auto-apply) a re-prioritization. Prove the loop end-to-end on one tracer before generalizing across the roster.
+Prove the loop end-to-end on one **automatic** lever before touching anything advisory: pick one agent and the skill-ranking multiplier. Capture whether each injected skill's intention succeeded (Sense), compute its success rate (Evaluate), attribute the result to that skill (Attribute), update its outcome multiplier in a per-skill stats file (Learn), and let `injector.ts` read the multiplier so ranking shifts on the next turn (Adapt). This exercises every loop stage, changes only a bounded scalar, deletes nothing, and is trivially observable — the right tracer before generalizing to router thresholds, then to the advisory tier (goal re-prioritization, KPI/belief revision via the assimilation gate).
 
 ## Open questions for the design phase
 
