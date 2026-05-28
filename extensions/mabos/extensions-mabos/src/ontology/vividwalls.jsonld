@@ -3,6 +3,7 @@
     "mabos": "https://mabos.io/ontology/",
     "ecom": "https://mabos.io/ontology/ecommerce/",
     "vw": "https://mabos.io/ontology/vividwalls/",
+    "cap": "https://mabos.io/ontology/capability/",
     "owl": "http://www.w3.org/2002/07/owl#",
     "rdfs": "http://www.w3.org/2000/01/rdf-schema#",
     "xsd": "http://www.w3.org/2001/XMLSchema#",
@@ -424,6 +425,27 @@
       "@type": ["mabos:ProofTable"],
       "rdfs:label": "Proof Table: Artist Royalty",
       "sbvr:vocabulary": "vividwalls"
+    },
+    {
+      "@id": "vw:requiresFactSample-1",
+      "@type": "cap:RequiresFact",
+      "rdfs:comment": "Fixture: provenance-integrity goal requires COA issuance capability",
+      "cap:goal": "mabos:Goal/G-VW-TRUST-003",
+      "cap:capability": "cap:Capability/CertificateIssuance"
+    },
+    {
+      "@id": "vw:requiresFactSample-2",
+      "@type": "cap:RequiresFact",
+      "rdfs:comment": "Fixture: provenance-integrity goal requires edition registry capability",
+      "cap:goal": "mabos:Goal/G-VW-TRUST-003",
+      "cap:capability": "cap:Capability/EditionRegistry"
+    },
+    {
+      "@id": "vw:requiresFactSample-3",
+      "@type": "cap:RequiresFact",
+      "rdfs:comment": "Fixture: provenance-integrity goal requires gallery notification capability",
+      "cap:goal": "mabos:Goal/G-VW-TRUST-003",
+      "cap:capability": "cap:Capability/GalleryNotification"
     }
   ]
 }
