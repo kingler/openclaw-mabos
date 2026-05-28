@@ -1489,6 +1489,11 @@ export async function enhancedHeartbeatCycle(
                 workspaceDir,
                 runId: `${agentId}-${Date.now()}`,
                 signalIds: signals.map((s) => s.id),
+                // LLM client for the stakeholder simulator gate (coerces null → "").
+                llm: {
+                  complete: async (p: string) =>
+                    (await callLlm(api, "", p, { maxTokens: 256, temperature: 0.4 })) ?? "",
+                },
                 log,
               });
               const r = await assimilate(llmActions, ctx);

@@ -30,13 +30,18 @@ import {
   type OntologyNode,
 } from "../../ontology/index.js";
 import type { DeonticRule, DeonticStore } from "../../reasoning/formal/deontic.js";
+import {
+  makeStakeholderSimulator,
+  type Simulator,
+  type IntentionContext,
+} from "../../simulators/index.js";
 import type { EntityResolver, FactTypeIndex, ResolveResult } from "./bind.js";
 import type { CommitCtx, TypeDBAdapter, EventBus } from "./commit.js";
 import type { AssimilationCtx } from "./index.js";
 import { NaryFactStore } from "./nary-store.js";
 import { QuarantineStore } from "./quarantine.js";
 import type { ShapeNode } from "./shacl-mini.js";
-import type { ValidatedBelief, Provenance } from "./types.js";
+import type { Bound, ValidatedBelief, Provenance } from "./types.js";
 import type { ValidateCtx } from "./validate.js";
 import { compileFactTemplates, type FactTemplate } from "./vocabulary-index.js";
 
@@ -48,6 +53,13 @@ export interface BuildCtxInput {
   signalIds: string[];
   model?: string;
   promptHash?: string;
+  /**
+   * Optional LLM client used to construct the stakeholder simulator. When
+   * omitted, no simulators are wired and the simulator gate is a no-op.
+   */
+  llm?: { complete(prompt: string): Promise<string> };
+  /** Per-tenant stakeholder persona for the simulator. Falls back to a generic persona. */
+  simulatorPersona?: string;
   log: {
     info: (...args: unknown[]) => void;
     debug: (...args: unknown[]) => void;
@@ -241,6 +253,46 @@ export function buildVocabularyHint(maxFactTypes = 30): string {
   }
 }
 
+/**
+ * Map a bound intention fact to an IntentionContext for the simulator gate.
+ *
+ * Handles two shapes:
+ *  - `mabos:CommitsToFact` — richer intention with impact metadata (produced
+ *    by a future structured intention lifter); maps all fields through.
+ *  - `mabos:NewIntentionFact` — current Plan 1 shape carrying only `content`;
+ *    maps description=content with no impact metadata, so the high-stakes
+ *    `appliesTo` predicate stays false until richer extraction lands.
+ *
+ * Returns null for any non-intention fact, which skips the simulator gate.
+ */
+function intentionFromBound(agentId: string): (b: Bound) => IntentionContext | null {
+  return (b) => {
+    if (b.factTypeId === "mabos:CommitsToFact") {
+      return {
+        agentId,
+        intentionId: String(b.roles.intention ?? ""),
+        description: String(b.roles.description ?? ""),
+        affectedSubjects: String(b.roles.affects ?? "")
+          .split(",")
+          .map((s) => s.trim())
+          .filter(Boolean),
+        estimatedImpactUsd: Number(b.roles.impactUsd) || 0,
+        affectsLegal: String(b.roles.legal ?? "").toLowerCase() === "true",
+        affectsPublicFacing: String(b.roles.publicFacing ?? "").toLowerCase() === "true",
+      };
+    }
+    if (b.factTypeId === "mabos:NewIntentionFact") {
+      return {
+        agentId,
+        intentionId: String(b.roles.intention ?? "I-?"),
+        description: String(b.roles.content ?? ""),
+        affectedSubjects: [],
+      };
+    }
+    return null;
+  };
+}
+
 export async function buildAssimilationCtx(input: BuildCtxInput): Promise<AssimilationCtx> {
   const ontologies = loadOntologies();
   const merged = mergeOntologies(ontologies);
@@ -283,6 +335,20 @@ export async function buildAssimilationCtx(input: BuildCtxInput): Promise<Assimi
     join(input.workspaceDir, ".quarantine", `${input.agentId}.jsonl`),
   );
 
+  // Simulator gate — only wired when an LLM client is supplied. The persona is
+  // per-tenant; falls back to a generic stakeholder. Until a structured
+  // intention lifter emits mabos:CommitsToFact with impact metadata, the
+  // high-stakes appliesTo predicate stays dormant for the current
+  // mabos:NewIntentionFact shape (see intentionFromBound).
+  const simulators: Simulator[] = input.llm
+    ? [
+        makeStakeholderSimulator({
+          llm: input.llm,
+          persona: input.simulatorPersona ?? "the primary affected stakeholder",
+        }),
+      ]
+    : [];
+
   return {
     agentId: input.agentId,
     agentDir: input.agentDir,
@@ -295,6 +361,8 @@ export async function buildAssimilationCtx(input: BuildCtxInput): Promise<Assimi
     store,
     typedb,
     bus,
+    simulators,
+    intentionFromBound: intentionFromBound(input.agentId),
     provenance: {
       run_id: input.runId,
       model: input.model ?? "unknown",

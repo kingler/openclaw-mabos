@@ -44,7 +44,8 @@ export type ValidationResult =
   | { ok: true; validated: ValidatedBelief }
   | { ok: false; reason: "shacl"; report: unknown }
   | { ok: false; reason: "deontic"; ruleId: string; witness: unknown }
-  | { ok: false; reason: "low-confidence"; threshold: number };
+  | { ok: false; reason: "low-confidence"; threshold: number }
+  | { ok: false; reason: "simulator-veto"; verdicts: unknown[] };
 
 export interface Provenance {
   run_id: string;
