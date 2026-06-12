@@ -12,7 +12,7 @@
     "check": "tsc --noEmit",
     "clean": "rm -rf dist ui/dist",
     "dev:ui": "cd ui && npm run dev",
-    "test": "vitest run --config ../../vitest.extensions.config.ts"
+    "test": "vitest run --root ../../.. --config vitest.extensions.config.ts extensions/mabos/extensions-mabos"
   },
   "dependencies": {
     "@sinclair/typebox": "^0.34.0",
