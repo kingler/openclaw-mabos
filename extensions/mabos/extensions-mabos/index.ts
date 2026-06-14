@@ -115,6 +115,7 @@ import { generatePersonaBatch } from "./src/gdc/persona-generator.js";
 import type { CompanyDNA, LlmCallFn } from "./src/gdc/types.js";
 import { registerGovernance } from "./src/governance/index.js";
 import { registerModelRouter } from "./src/model-router/index.js";
+import { registerProvisioning } from "./src/provisioning/index.js";
 import { createSecurityModule } from "./src/security/index.js";
 import { registerSessionIntel } from "./src/session-intel/index.js";
 import { registerSkillLoop } from "./src/skill-loop/index.js";
@@ -7727,6 +7728,13 @@ export default async function register(api: OpenClawPluginApi) {
     registerBdiApi(api);
   } catch (err) {
     log.warn(`[mabos] BDI API module failed to initialize: ${err}`);
+  }
+
+  // Module 8b: Provisioning control plane (create + deploy MABOS instances)
+  try {
+    registerProvisioning(api);
+  } catch (err) {
+    log.warn(`[mabos] Provisioning module failed to initialize: ${err}`);
   }
 
   // Module 9: MABOS Event Bus (cross-subsystem pub/sub)
