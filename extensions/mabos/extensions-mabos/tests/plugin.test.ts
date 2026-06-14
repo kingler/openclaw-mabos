@@ -383,7 +383,8 @@ describe("Plugin API Surface", () => {
 
 describe("buildWorkspaceSkillSnapshot integration", () => {
   it("returns valid SkillSnapshot shape for non-existent directory", async () => {
-    const { buildWorkspaceSkillSnapshot } = await import("../../../src/agents/skills/workspace.js");
+    const { buildWorkspaceSkillSnapshot } =
+      await import("../../../../src/agents/skills/workspace.js");
     const snapshot = buildWorkspaceSkillSnapshot("/tmp/nonexistent-test-dir", {});
     assert.ok(snapshot, "should return a snapshot");
     assert.equal(typeof snapshot.prompt, "string", "prompt should be a string");
