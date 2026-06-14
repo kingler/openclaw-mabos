@@ -11,6 +11,8 @@ function mockApi(config: Record<string, unknown> = {}): any {
       hooks[event] = hooks[event] ?? [];
       hooks[event].push(handler);
     },
+    // createSecurityModule registers status/scan-log/approval HTTP routes.
+    registerHttpRoute() {},
     _hooks: hooks,
   };
 }

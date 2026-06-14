@@ -1,2 +1,7 @@
 dist/
 node_modules/
+
+# Stray tsc output: the build emits to dist/ and the plugin loads index.ts at
+# runtime, so a root-level index.js shadows index.ts and breaks test collection.
+/index.js
+/index.js.map

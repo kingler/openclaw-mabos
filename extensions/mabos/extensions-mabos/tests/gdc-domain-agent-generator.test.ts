@@ -116,7 +116,8 @@ describe("GDC Domain Agent Generator", () => {
       // Verify LLM was called with correct params
       expect(callLlm).toHaveBeenCalledOnce();
       const call = (callLlm as ReturnType<typeof vi.fn>).mock.calls[0][0];
-      expect(call.model).toBe("claude-sonnet-4-6");
+      // Default routes to the task-execution model (see dual-model routing, 55e219d647).
+      expect(call.model).toBe("gpt-5.4");
       expect(call.temperature).toBe(0.3);
       expect(call.maxTokens).toBe(4096);
     });

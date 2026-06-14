@@ -3,6 +3,9 @@ packages:
   - ui
   - packages/*
   - extensions/*
+  # MABOS extension is nested one level deeper than the other extensions
+  - extensions/mabos/extensions-mabos
+  - extensions/mabos/extensions-mabos/ui
 
 onlyBuiltDependencies:
   - "@lydell/node-pty"
@@ -11,6 +14,7 @@ onlyBuiltDependencies:
   - "@tloncorp/api"
   - "@whiskeysockets/baileys"
   - authenticate-pam
+  - better-sqlite3
   - esbuild
   - node-llama-cpp
   - protobufjs
