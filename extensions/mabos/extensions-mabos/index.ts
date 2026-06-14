@@ -121,7 +121,7 @@ import { registerSkillLoop } from "./src/skill-loop/index.js";
 import { createBdiTools } from "./src/tools/bdi-tools.js";
 import { createBpmnMigrateTools } from "./src/tools/bpmn-migrate.js";
 import { createBusinessTools } from "./src/tools/business-tools.js";
-import { createCapabilitiesSyncTools } from "./src/tools/capabilities-sync.js";
+import { createCapabilitiesSyncTools, categorize } from "./src/tools/capabilities-sync.js";
 import { createCatalogSyncTools } from "./src/tools/catalog-sync-tools.js";
 import { createCbrTools } from "./src/tools/cbr-tools.js";
 import {
@@ -1769,6 +1769,52 @@ export default async function register(api: OpenClawPluginApi) {
       return [];
     }
   };
+
+  // API: Unified capabilities — categorized MABOS tools + eligible OpenClaw skills.
+  api.registerHttpRoute({
+    auth: "plugin",
+    path: "/mabos/api/capabilities",
+    handler: async (_req, res) => {
+      if (!(await requireAuth(_req, res))) return;
+
+      const mabosTools = registeredToolNames.map((name) => ({
+        name,
+        source: "mabos" as const,
+        category: categorize(name),
+      }));
+
+      // OpenClaw eligible skills — graceful: getSkillSnapshot is runtime-provided
+      // (not on the static OpenClawPluginApi type) and may be unavailable.
+      let openclawSkills: Array<{ name: string; primaryEnv?: string; source: "openclaw" }> = [];
+      const getSkillSnapshot = (
+        api as {
+          getSkillSnapshot?: (opts: { workspaceDir: string }) => {
+            skills?: Array<{ name: string; primaryEnv?: string }>;
+          };
+        }
+      ).getSkillSnapshot;
+      try {
+        const snapshot = getSkillSnapshot?.({ workspaceDir });
+        openclawSkills = (snapshot?.skills ?? []).map((sk) => ({
+          name: sk.name,
+          primaryEnv: sk.primaryEnv,
+          source: "openclaw" as const,
+        }));
+      } catch {
+        // getSkillSnapshot threw or is unavailable — return MABOS tools only.
+      }
+
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(
+        JSON.stringify({
+          mabosTools,
+          openclawSkills,
+          totalCount: mabosTools.length + openclawSkills.length,
+          generatedAt: new Date().toISOString(),
+        }),
+      );
+    },
+  });
 
   // API: System status (enhanced)
   api.registerHttpRoute({

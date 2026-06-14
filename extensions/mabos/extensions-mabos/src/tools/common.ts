@@ -129,6 +129,57 @@ export function getPluginConfig(api: OpenClawPluginApi): MabosPluginConfig {
   return (api.pluginConfig ?? api.config ?? {}) as MabosPluginConfig;
 }
 
+/**
+ * Agent-to-agent messaging policy, read from the gateway `tools.agentToAgent`
+ * config. Absent config means messaging is allowed with no allowlist.
+ */
+interface AgentToAgentPolicyConfig {
+  enabled?: boolean;
+  /** Glob patterns (e.g. "*", "c*o") matched against the recipient agent id. */
+  allow?: string[];
+}
+
+/** Match a glob pattern ("*", "c*o") against a value; "*" matches anything. */
+function agentGlobMatch(pattern: string, value: string): boolean {
+  if (pattern === "*") return true;
+  const escaped = pattern.replace(/[.+^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`^${escaped.replace(/\*/g, ".*")}$`).test(value);
+}
+
+/**
+ * Check whether agent `from` may send an agent-to-agent message to `to`.
+ * Returns a human-readable denial reason, or `null` when the message is allowed.
+ *
+ * Rules, evaluated in order:
+ *  - An agent may always message itself, regardless of policy.
+ *  - When `tools.agentToAgent.enabled` is explicitly `false`, cross-agent
+ *    messaging is blocked.
+ *  - When `tools.agentToAgent.allow` is non-empty, the recipient must match at
+ *    least one glob pattern; an empty or absent allowlist imposes no restriction.
+ */
+export function checkAgentToAgentPolicy(
+  api: OpenClawPluginApi,
+  from: string,
+  to: string,
+): string | null {
+  // An agent can always message itself.
+  if (from === to) return null;
+
+  const policy = (api.config as { tools?: { agentToAgent?: AgentToAgentPolicyConfig } } | undefined)
+    ?.tools?.agentToAgent;
+
+  if (policy?.enabled === false) {
+    return "agent-to-agent messaging is disabled";
+  }
+
+  const allow = policy?.allow ?? [];
+  if (allow.length > 0 && !allow.some((pattern) => agentGlobMatch(pattern, to))) {
+    return `agent-to-agent messaging denied: '${to}' is not in the allowlist`;
+  }
+
+  return null;
+}
+
 export type ResolvedIntegrationEntry = {
   entry: Record<string, unknown>;
   sourcePath: string;
