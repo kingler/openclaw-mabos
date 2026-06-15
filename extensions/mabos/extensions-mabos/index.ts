@@ -11,7 +11,7 @@
  */
 
 import { randomUUID } from "node:crypto";
-import type { OpenClawPluginApi } from "openclaw/plugin-sdk";
+import type { AnyAgentTool, OpenClawPluginApi } from "openclaw/plugin-sdk";
 
 // ── Core imports shim ──────────────────────────────────────────────
 // These utilities live in the openclaw core repo and are not re-exported
@@ -115,6 +115,8 @@ import { generatePersonaBatch } from "./src/gdc/persona-generator.js";
 import type { CompanyDNA, LlmCallFn } from "./src/gdc/types.js";
 import { registerGovernance } from "./src/governance/index.js";
 import { registerModelRouter } from "./src/model-router/index.js";
+import { registerProvisioning } from "./src/provisioning/index.js";
+import { registerToolApi } from "./src/tool-api/index.js";
 import { createSecurityModule } from "./src/security/index.js";
 import { registerSessionIntel } from "./src/session-intel/index.js";
 import { registerSkillLoop } from "./src/skill-loop/index.js";
@@ -1236,12 +1238,15 @@ export default async function register(api: OpenClawPluginApi) {
 
   // Collect all tool names for capabilities_sync context
   const registeredToolNames: string[] = [];
+  // Collect tool instances so the Tool API can expose them over REST.
+  const registeredTools: AnyAgentTool[] = [];
 
   for (const factory of factories) {
     const tools = factory(api);
     for (const tool of tools) {
       api.registerTool(tool);
       registeredToolNames.push(tool.name);
+      registeredTools.push(tool);
     }
   }
 
@@ -1250,6 +1255,16 @@ export default async function register(api: OpenClawPluginApi) {
   for (const tool of capSyncTools) {
     api.registerTool(tool);
     registeredToolNames.push(tool.name);
+    registeredTools.push(tool);
+  }
+
+  // Expose the full tool surface over REST (/mabos/tools) + unified API index.
+  // Shares the live `registeredTools` array, so any tools appended later
+  // (e.g. printed CLIs) are reflected in the catalog.
+  try {
+    registerToolApi(api, { tools: registeredTools });
+  } catch (err) {
+    log.warn(`[mabos] Tool API failed to initialize: ${err}`);
   }
 
   // Discover and register printed CLIs (<slug>-pp-cli binaries on PATH).
@@ -1262,6 +1277,7 @@ export default async function register(api: OpenClawPluginApi) {
       for (const tool of printedClis) {
         api.registerTool(tool);
         registeredToolNames.push(tool.name);
+        registeredTools.push(tool);
       }
       if (printedClis.length > 0) {
         log.info?.(`[mabos] Registered ${printedClis.length} printed-CLI tool(s)`);
@@ -7727,6 +7743,13 @@ export default async function register(api: OpenClawPluginApi) {
     registerBdiApi(api);
   } catch (err) {
     log.warn(`[mabos] BDI API module failed to initialize: ${err}`);
+  }
+
+  // Module 8b: Provisioning control plane (create + deploy MABOS instances)
+  try {
+    registerProvisioning(api);
+  } catch (err) {
+    log.warn(`[mabos] Provisioning module failed to initialize: ${err}`);
   }
 
   // Module 9: MABOS Event Bus (cross-subsystem pub/sub)
