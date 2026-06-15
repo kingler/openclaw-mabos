@@ -31,6 +31,16 @@ Every agent maintains 10 cognitive files (Persona, Beliefs, Desires, Goals, Inte
 
 ---
 
+## Control-plane API
+
+MABOS exposes REST + tool surfaces (gateway bearer auth) for creating, operating, and enriching instances:
+
+- [Provisioning API](docs/provisioning-api.md) — create + deploy instances (`/mabos/provision/*`).
+- [Tool API](docs/tool-api.md) — invoke any MABOS tool and discover the API (`/mabos/tools`, `/mabos/api/index`).
+- [Enrichment API](docs/enrichment-api.md) — smart-default assumptions, validation, predict/prescribe (`/mabos/enrichment/*`).
+
+---
+
 ## Installation
 
 ### From the Combined Repository

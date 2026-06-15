@@ -1,7 +1,7 @@
 /**
  * Enrichment module entry point — registers the /mabos/enrichment/* REST
  * control plane. The agent tools (createEnrichmentTools) are registered
- * separately via the extension's tool factory loop. See docs/enrichment-api.md.
+ * separately via the extension's tool factory loop. See ../../docs/enrichment-api.md.
  */
 
 import type { OpenClawPluginApi } from "openclaw/plugin-sdk";

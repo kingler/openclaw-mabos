@@ -59,3 +59,6 @@ For how multiple **agent IDs**, workspaces, `agentDir`, and channel **bindings**
 - [.context/README.md](.context/README.md) — module map and area status
 - [docs/concepts/multi-agent.md](docs/concepts/multi-agent.md) — gateway multi-agent routing
 - [docs/tools/multi-agent-sandbox-tools.md](docs/tools/multi-agent-sandbox-tools.md) — sandbox tools
+- [Provisioning API](extensions/mabos/extensions-mabos/docs/provisioning-api.md) — create + deploy instances
+- [Tool API](extensions/mabos/extensions-mabos/docs/tool-api.md) — invoke tools + unified API index
+- [Enrichment API](extensions/mabos/extensions-mabos/docs/enrichment-api.md) — smart defaults, assumptions, predict/prescribe

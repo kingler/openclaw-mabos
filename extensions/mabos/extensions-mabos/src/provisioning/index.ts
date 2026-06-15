@@ -4,7 +4,7 @@
  * Registers the `/mabos/provision/*` REST API that lets a meta harness create
  * and deploy MABOS instances end to end: scaffold → GDC bootstrap → cron seed →
  * deploy (in-gateway | container | cloud). See routes.ts for the contract and
- * docs/provisioning-api.md for the full reference.
+ * ../../docs/provisioning-api.md for the full reference.
  *
  * The GDC bootstrap's LLM calls go through the swappable, effort/capacity/cost
  * aware model router (src/model-router): the request's `effort` selects a model

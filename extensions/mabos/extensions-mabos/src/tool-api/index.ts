@@ -4,7 +4,7 @@
  * Exposes the full MABOS tool surface over REST (`/mabos/tools`) plus a unified
  * discovery index (`/mabos/api/index`). Registered from the extension entry
  * point with the already-assembled tool list so it stays in sync with whatever
- * tools were registered. See docs/tool-api.md for the reference.
+ * tools were registered. See ../../docs/tool-api.md for the reference.
  */
 
 import type { AnyAgentTool, OpenClawPluginApi } from "openclaw/plugin-sdk";
