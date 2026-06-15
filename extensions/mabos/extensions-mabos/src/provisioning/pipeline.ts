@@ -10,7 +10,7 @@
  * for inspection (decommission to remove it).
  */
 
-import type { LlmCallFn } from "../gdc/types.js";
+import type { EffortLevel } from "../model-router/types.js";
 import { runGdcBootstrap } from "./cognitive.js";
 import { runDeploy } from "./deploy.js";
 import { scaffoldInstance } from "./scaffold.js";
@@ -19,6 +19,7 @@ import type {
   DeploySpec,
   InstanceRecord,
   JobStep,
+  LlmCallFactory,
   ProvisionRequest,
   ProvisioningJob,
 } from "./types.js";
@@ -26,7 +27,7 @@ import type {
 export interface PipelineDeps {
   store: ProvisioningStore;
   workspaceDir: string;
-  callLlm: LlmCallFn;
+  makeCallLlm: LlmCallFactory;
   logger: { info: (m: string) => void; error: (m: string) => void };
 }
 
@@ -75,8 +76,20 @@ export async function runProvisioningPipeline(
   job: ProvisioningJob,
   instance: InstanceRecord,
 ): Promise<void> {
-  const { store, workspaceDir, callLlm, logger } = deps;
+  const { store, workspaceDir, makeCallLlm, logger } = deps;
   const deploy = resolveDeploy(req);
+
+  // Build the LLM caller from the request's effort/model; accumulate token cost.
+  const effort = (req.effort ?? "medium") as EffortLevel;
+  let costUsd = 0;
+  const callLlm = makeCallLlm({
+    effort,
+    model: req.model,
+    onUsage: ({ costUsd: c }) => {
+      costUsd += c;
+    },
+  });
+  instance.effort = effort;
 
   job.status = "running";
   await store.saveJob(job);
@@ -100,6 +113,7 @@ export async function runProvisioningPipeline(
     );
     instance.agents = gdc.agents;
     instance.goals_count = gdc.result.stage1?.goals.length ?? 0;
+    instance.cost_usd = Number(costUsd.toFixed(6));
     await store.saveInstance(instance);
 
     // 3. Seed an empty cron jobs file so CronBridge can pick the instance up.
@@ -129,9 +143,13 @@ export async function runProvisioningPipeline(
       deploy: outcome,
       goals_count: instance.goals_count,
       agents: instance.agents,
+      effort,
+      cost_usd: instance.cost_usd,
     };
     await store.saveJob(job);
-    logger.info(`[mabos] provisioned instance '${req.business_id}' (${deploy.target})`);
+    logger.info(
+      `[mabos] provisioned instance '${req.business_id}' (${deploy.target}, effort=${effort}, cost=$${instance.cost_usd})`,
+    );
   } catch (err) {
     const message = String(err instanceof Error ? err.message : err);
     job.status = "failed";

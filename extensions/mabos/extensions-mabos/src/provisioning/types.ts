@@ -12,6 +12,11 @@
 
 import { Type } from "@sinclair/typebox";
 import type { Static } from "@sinclair/typebox";
+import type { LlmCallFn } from "../gdc/types.js";
+import type { EffortCallOptions } from "../model-router/provider.js";
+
+/** Builds a per-request LlmCallFn from effort/model/usage options. */
+export type LlmCallFactory = (opts: EffortCallOptions) => LlmCallFn;
 
 // ---------------------------------------------------------------------------
 // Deployment targets
@@ -126,6 +131,19 @@ export const ProvisionRequestSchema = Type.Object({
   max_stage: Type.Optional(
     Type.Number({ minimum: 1, maximum: 7, description: "Highest GDC stage to run (default 7)" }),
   ),
+  effort: Type.Optional(
+    Type.Union([Type.Literal("low"), Type.Literal("medium"), Type.Literal("high")], {
+      default: "medium",
+      description:
+        "Level of effort for GDC generation. Selects the model pool; the cheapest available provider within it is used (cost-optimized).",
+    }),
+  ),
+  model: Type.Optional(
+    Type.String({
+      description:
+        "Explicit model id override (e.g. 'claude-sonnet-4-6'); bypasses effort selection",
+    }),
+  ),
   deploy: Type.Optional(DeploySpecSchema),
 });
 
@@ -170,6 +188,10 @@ export interface InstanceRecord {
   deploy: DeploySpec;
   agents: string[];
   goals_count?: number;
+  /** Level of effort used for GDC generation. */
+  effort?: string;
+  /** Cumulative GDC LLM token cost (USD) once the pipeline runs. */
+  cost_usd?: number;
   job_id?: string;
   error?: string;
   created_at: string;
