@@ -32,6 +32,7 @@ Implementation lives under `extensions/mabos/extensions-mabos/src/`:
 | `execution-sandbox/` | Docker / SSH / Modal / local backends          |
 | `skill-loop/`        | Skill creation and marketplace hooks           |
 | `provisioning/`      | Control plane to create + deploy instances (`/mabos/provision/*`) |
+| `tool-api/`          | REST access to all MABOS tools + unified API index (`/mabos/tools`, `/mabos/api/index`) |
 | `reasoning/`         | Reasoning methods                              |
 | `ontology/`          | SBVR-aligned schemas                           |
 | `tools/`             | Business integrations (e.g. Shopify)           |
