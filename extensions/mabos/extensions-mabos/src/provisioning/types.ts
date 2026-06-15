@@ -144,6 +144,13 @@ export const ProvisionRequestSchema = Type.Object({
         "Explicit model id override (e.g. 'claude-sonnet-4-6'); bypasses effort selection",
     }),
   ),
+  enrich: Type.Optional(
+    Type.Boolean({
+      default: true,
+      description:
+        "Infer smart-default assumptions for missing CompanyDNA fields before GDC. Set false to skip.",
+    }),
+  ),
   deploy: Type.Optional(DeploySpecSchema),
 });
 

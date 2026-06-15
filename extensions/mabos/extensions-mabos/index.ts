@@ -115,6 +115,8 @@ import { generatePersonaBatch } from "./src/gdc/persona-generator.js";
 import type { CompanyDNA, LlmCallFn } from "./src/gdc/types.js";
 import { registerGovernance } from "./src/governance/index.js";
 import { registerModelRouter } from "./src/model-router/index.js";
+import { registerEnrichment } from "./src/enrichment/index.js";
+import { createEnrichmentTools } from "./src/enrichment/tools.js";
 import { registerProvisioning } from "./src/provisioning/index.js";
 import { registerToolApi } from "./src/tool-api/index.js";
 import { createSecurityModule } from "./src/security/index.js";
@@ -1234,6 +1236,7 @@ export default async function register(api: OpenClawPluginApi) {
     createLeWaitlistTools,
     createLeInventoryTools,
     createCompetitorMonitorTools,
+    createEnrichmentTools,
   ];
 
   // Collect all tool names for capabilities_sync context
@@ -7750,6 +7753,13 @@ export default async function register(api: OpenClawPluginApi) {
     registerProvisioning(api);
   } catch (err) {
     log.warn(`[mabos] Provisioning module failed to initialize: ${err}`);
+  }
+
+  // Module 8c: Enrichment control plane (smart defaults, assumptions, predict/prescribe)
+  try {
+    registerEnrichment(api);
+  } catch (err) {
+    log.warn(`[mabos] Enrichment module failed to initialize: ${err}`);
   }
 
   // Module 9: MABOS Event Bus (cross-subsystem pub/sub)

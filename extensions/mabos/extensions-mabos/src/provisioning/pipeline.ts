@@ -10,6 +10,8 @@
  * for inspection (decommission to remove it).
  */
 
+import { enrichBusiness } from "../enrichment/service.js";
+import { AssumptionStore } from "../enrichment/store.js";
 import type { EffortLevel } from "../model-router/types.js";
 import { runGdcBootstrap } from "./cognitive.js";
 import { runDeploy } from "./deploy.js";
@@ -94,11 +96,32 @@ export async function runProvisioningPipeline(
   job.status = "running";
   await store.saveJob(job);
 
+  let enrichCost = 0;
+
   try {
     // 1. Scaffold the workspace skeleton.
     const scaffold = await step(job, store, "scaffold", () => scaffoldInstance(workspaceDir, req));
     instance.agents = scaffold.agents;
     await store.saveInstance(instance);
+
+    // 1.5 Enrich the CompanyDNA with smart-default assumptions (default on).
+    //     Mutates req.company_dna in-memory so GDC (step 2) consumes the enriched DNA.
+    if (req.enrich !== false) {
+      const enriched = await step(job, store, "enrich", () =>
+        enrichBusiness({
+          workspaceDir,
+          store: new AssumptionStore(workspaceDir),
+          makeCallLlm,
+          businessId: req.business_id,
+          companyDNA: req.company_dna,
+          trigger: "pipeline",
+          effort,
+          model: req.model,
+        }),
+      );
+      req.company_dna = enriched.enrichedDNA;
+      enrichCost = enriched.record.cost_usd;
+    }
 
     // 2. Run GDC to generate goals/plans/tasks and write cognitive state.
     const gdc = await step(job, store, "gdc_bootstrap", () =>
@@ -113,7 +136,7 @@ export async function runProvisioningPipeline(
     );
     instance.agents = gdc.agents;
     instance.goals_count = gdc.result.stage1?.goals.length ?? 0;
-    instance.cost_usd = Number(costUsd.toFixed(6));
+    instance.cost_usd = Number((costUsd + enrichCost).toFixed(6));
     await store.saveInstance(instance);
 
     // 3. Seed an empty cron jobs file so CronBridge can pick the instance up.
