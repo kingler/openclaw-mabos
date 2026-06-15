@@ -30,7 +30,8 @@ export interface PipelineDeps {
   logger: { info: (m: string) => void; error: (m: string) => void };
 }
 
-function resolveDeploy(req: ProvisionRequest): DeploySpec {
+/** Apply DeploySpec defaults (in-gateway, activate). Shared with the routes. */
+export function resolveDeploy(req: Pick<ProvisionRequest, "deploy">): DeploySpec {
   return {
     target: req.deploy?.target ?? "in-gateway",
     provider: req.deploy?.provider,
@@ -101,12 +102,16 @@ export async function runProvisioningPipeline(
     instance.goals_count = gdc.result.stage1?.goals.length ?? 0;
     await store.saveInstance(instance);
 
-    // 3. Seed cron jobs file so CronBridge can pick the instance up.
+    // 3. Seed an empty cron jobs file so CronBridge can pick the instance up.
+    //    Don't clobber one a template may have scaffolded with seeded jobs.
     await step(job, store, "cron_seed", async () => {
+      const { existsSync } = await import("node:fs");
       const { mkdir, writeFile } = await import("node:fs/promises");
       const { join } = await import("node:path");
-      const cronPath = join(workspaceDir, "businesses", req.business_id, "cron-jobs.json");
-      await mkdir(join(workspaceDir, "businesses", req.business_id), { recursive: true });
+      const bizDir = join(workspaceDir, "businesses", req.business_id);
+      const cronPath = join(bizDir, "cron-jobs.json");
+      if (existsSync(cronPath)) return;
+      await mkdir(bizDir, { recursive: true });
       await writeFile(cronPath, JSON.stringify([], null, 2), "utf-8");
     });
 

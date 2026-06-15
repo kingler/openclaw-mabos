@@ -33,6 +33,7 @@ async function callAnthropic(
       messages: [{ role: "user", content: user }],
     },
     120_000,
+    0, // no retries: GDC calls are long (120s); fail fast rather than retry-storm
   );
   if (resp.status !== 200) {
     const errMsg = typeof resp.data === "object" ? JSON.stringify(resp.data) : String(resp.data);
@@ -65,6 +66,7 @@ async function callOpenAi(
       ],
     },
     120_000,
+    0, // no retries: GDC calls are long (120s); fail fast rather than retry-storm
   );
   if (resp.status !== 200) {
     const errMsg = typeof resp.data === "object" ? JSON.stringify(resp.data) : String(resp.data);

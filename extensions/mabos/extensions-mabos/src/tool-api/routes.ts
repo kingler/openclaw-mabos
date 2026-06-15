@@ -27,10 +27,16 @@ function sendJson(res: ServerResponse, status: number, body: unknown): void {
   res.end(JSON.stringify(body));
 }
 
+const MAX_BODY_BYTES = 1024 * 1024; // 1 MiB
+
 async function readBody(req: IncomingMessage): Promise<unknown> {
   const chunks: Buffer[] = [];
+  let total = 0;
   for await (const chunk of req) {
-    chunks.push(typeof chunk === "string" ? Buffer.from(chunk) : (chunk as Buffer));
+    const buf = typeof chunk === "string" ? Buffer.from(chunk) : (chunk as Buffer);
+    total += buf.length;
+    if (total > MAX_BODY_BYTES) throw new Error("Request body too large");
+    chunks.push(buf);
   }
   if (chunks.length === 0) return {};
   return JSON.parse(Buffer.concat(chunks).toString("utf-8"));
@@ -117,11 +123,9 @@ async function invokeTool(
     return sendJson(res, 400, { error: "Invalid JSON body" });
   }
 
-  // Body is the params object. Accept `{ params: {...} }` as a convenience too.
-  const params =
-    body && typeof body === "object" && "params" in (body as Record<string, unknown>)
-      ? (body as Record<string, unknown>).params
-      : body;
+  // The request body IS the tool's params. (No `{ params: ... }` unwrap: some
+  // tools have a top-level field literally named `params`, e.g. integration_call.)
+  const params = body;
 
   // Validate against the tool's TypeBox schema when present.
   const schema = tool.parameters as unknown;

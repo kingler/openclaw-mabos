@@ -54,9 +54,9 @@ clients.
 
 ### Invoke
 
-`POST /mabos/tools/:name` — the request body is the tool's params (or
-`{ "params": { … } }`). Params are validated against the tool's schema before
-execution; a `400` with `details` is returned on a mismatch.
+`POST /mabos/tools/:name` — the request body **is** the tool's params object.
+Params are validated against the tool's schema before execution; a `400` with
+`details` is returned on a mismatch.
 
 ```jsonc
 // POST /mabos/tools/bdi_get_beliefs

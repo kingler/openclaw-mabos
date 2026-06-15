@@ -134,6 +134,29 @@ describe("tool-api: routes", () => {
     expect(out.details.echoed).toEqual({ business_id: "acme" });
   });
 
+  it("POST does not unwrap a top-level field named 'params'", async () => {
+    // Regression: integration_call has a top-level `params` field; the body
+    // must pass through verbatim, not be replaced by body.params.
+    const integ = {
+      name: "integration_call",
+      label: "Integration Call",
+      description: "calls an integration",
+      parameters: Type.Object({ business_id: Type.String(), params: Type.Object({}) }),
+      execute: async (_id: string, p: unknown) => ({ content: [], details: { got: p } }),
+    } as never;
+    const captured = setup([integ]);
+    const res = makeRes();
+    const body = { business_id: "acme", params: { foo: 1 } };
+    await dispatch(
+      captured,
+      "/mabos/tools",
+      makeReq("POST", "/mabos/tools/integration_call", body),
+      res,
+    );
+    expect(res.statusCode).toBe(200);
+    expect(JSON.parse(res.body).details.got).toEqual(body);
+  });
+
   it("POST validates params against the tool schema", async () => {
     const captured = setup();
     const res = makeRes();

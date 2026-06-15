@@ -16,6 +16,7 @@ import type {
   LlmCallFn,
   ToolInventoryItem,
 } from "../gdc/types.js";
+import { CORE_ROLES } from "./scaffold.js";
 
 function defaultPipelineConfig(maxStage?: number): GdcPipelineConfig {
   return {
@@ -62,18 +63,7 @@ export async function runGdcBootstrap(params: {
     });
   }
 
-  const roles = [
-    "ceo",
-    "cfo",
-    "coo",
-    "cmo",
-    "cto",
-    "hr",
-    "legal",
-    "strategy",
-    "knowledge",
-    ...result.domain_agents.map((a) => a.id),
-  ];
+  const roles = [...CORE_ROLES, ...result.domain_agents.map((a) => a.id)];
 
   const businessName = companyDNA.business_description.split(".")[0] ?? businessId;
   let filesWritten = 0;

@@ -20,7 +20,7 @@ import { Value } from "@sinclair/typebox/value";
 import type { OpenClawPluginApi } from "openclaw/plugin-sdk";
 import type { LlmCallFn } from "../gdc/types.js";
 import { runDeploy } from "./deploy.js";
-import { runProvisioningPipeline } from "./pipeline.js";
+import { resolveDeploy, runProvisioningPipeline } from "./pipeline.js";
 import { CORE_ROLES } from "./scaffold.js";
 import { ProvisioningStore } from "./store.js";
 import { ProvisionRequestSchema } from "./types.js";
@@ -34,10 +34,16 @@ function sendJson(res: ServerResponse, status: number, body: unknown): void {
   res.end(JSON.stringify(body));
 }
 
+const MAX_BODY_BYTES = 1024 * 1024; // 1 MiB
+
 async function readBody(req: IncomingMessage): Promise<unknown> {
   const chunks: Buffer[] = [];
+  let total = 0;
   for await (const chunk of req) {
-    chunks.push(typeof chunk === "string" ? Buffer.from(chunk) : (chunk as Buffer));
+    const buf = typeof chunk === "string" ? Buffer.from(chunk) : (chunk as Buffer);
+    total += buf.length;
+    if (total > MAX_BODY_BYTES) throw new Error("Request body too large");
+    chunks.push(buf);
   }
   if (chunks.length === 0) return {};
   return JSON.parse(Buffer.concat(chunks).toString("utf-8"));
@@ -178,13 +184,7 @@ async function handleCreate(
     type: req2.company_dna.industry,
     template: req2.template ?? "base",
     status: "provisioning",
-    deploy: {
-      target: req2.deploy?.target ?? "in-gateway",
-      provider: req2.deploy?.provider,
-      channels: req2.deploy?.channels,
-      activate: req2.deploy?.activate ?? true,
-      region: req2.deploy?.region,
-    },
+    deploy: resolveDeploy(req2),
     agents: [],
     job_id: job.id,
     created_at: now,
@@ -242,6 +242,9 @@ async function handleRedeploy(
 ): Promise<void> {
   const inst = await store.getInstance(id);
   if (!inst) return sendJson(res, 404, { error: "Instance not found" });
+  if (inst.status === "decommissioned") {
+    return sendJson(res, 409, { error: "Instance is decommissioned; its workspace was archived" });
+  }
 
   let body: Record<string, unknown> = {};
   try {
@@ -251,6 +254,15 @@ async function handleRedeploy(
   }
 
   const deploy = { ...inst.deploy, ...(body as Partial<typeof inst.deploy>) };
+
+  // Validate the merged spec — the body is otherwise unvalidated.
+  if (!["in-gateway", "container", "cloud"].includes(deploy.target)) {
+    return sendJson(res, 400, { error: `Invalid deploy target '${deploy.target}'` });
+  }
+  if (deploy.provider && !["fly", "render"].includes(deploy.provider)) {
+    return sendJson(res, 400, { error: `Invalid cloud provider '${deploy.provider}'` });
+  }
+
   const { join } = await import("node:path");
   const outcome = await runDeploy({
     businessDir: join(workspaceDir, "businesses", id),
@@ -259,8 +271,10 @@ async function handleRedeploy(
   });
 
   inst.deploy = deploy;
+  // in-gateway+activate is live in this gateway; container/cloud only render
+  // artifacts here, so the instance awaits its external apply step.
   inst.status =
-    deploy.target === "in-gateway" && (deploy.activate ?? true) ? "active" : inst.status;
+    deploy.target === "in-gateway" && (deploy.activate ?? true) ? "active" : "provisioning";
   await store.saveInstance(inst);
   return sendJson(res, 200, { ok: true, instance_id: id, deploy: outcome });
 }

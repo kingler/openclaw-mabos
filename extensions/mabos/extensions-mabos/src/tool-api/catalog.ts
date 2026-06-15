@@ -20,13 +20,6 @@ export interface CatalogEntryDetail extends CatalogEntry {
   parameters: unknown;
 }
 
-/** Index tools by name for O(1) invocation lookup. */
-export function indexTools(tools: AnyAgentTool[]): Map<string, AnyAgentTool> {
-  const map = new Map<string, AnyAgentTool>();
-  for (const t of tools) map.set(t.name, t);
-  return map;
-}
-
 function toEntry(tool: AnyAgentTool): CatalogEntry {
   return {
     name: tool.name,

@@ -20,4 +20,4 @@ export function registerToolApi(api: OpenClawPluginApi, params: { tools: AnyAgen
   });
 }
 
-export { buildCatalog, indexTools, toDetail } from "./catalog.js";
+export { buildCatalog, toDetail } from "./catalog.js";
