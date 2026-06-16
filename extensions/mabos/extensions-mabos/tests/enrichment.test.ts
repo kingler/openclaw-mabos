@@ -11,6 +11,13 @@ import type { Assumption } from "../src/enrichment/types.js";
 import { bayesUpdate, validateByEvidence, validateExplicit } from "../src/enrichment/validator.js";
 import type { CompanyDNA, LlmCallFn } from "../src/gdc/types.js";
 
+// Minimal plugin API stub: assertFactDirect only needs resolveWorkspaceDir(api),
+// which reads config.workspaceDir. TypeDB write-through is best-effort and is a
+// no-op here (no client available), so the JSON mirror is the source of truth.
+function fakeApi(workspaceDir: string) {
+  return { config: { workspaceDir } } as never;
+}
+
 function dna(overrides: Partial<CompanyDNA> = {}): CompanyDNA {
   return {
     business_description: "Acme sells widgets globally.",
@@ -228,11 +235,13 @@ describe("validator", () => {
     );
   }
 
-  it("explicit validate promotes to the business fact store; reject does not", async () => {
+  it("explicit validate promotes to the knowledge-agent fact store; reject does not", async () => {
     const store = new AssumptionStore(ws);
     await seed(store);
-    await validateExplicit(store, ws, "acme", "A-1", "validated");
-    const factsPath = join(ws, "businesses", "acme", "agents", "knowledge", "facts.json");
+    await validateExplicit(store, fakeApi(ws), "acme", "A-1", "validated");
+    // Promotion routes through assertFactDirect → canonical agents/<role>/facts.json
+    // (role-global "knowledge" agent, business carried as the SPO subject).
+    const factsPath = join(ws, "agents", "knowledge", "facts.json");
     expect(existsSync(factsPath)).toBe(true);
     const facts = JSON.parse(await readFile(factsPath, "utf-8"));
     expect(facts.facts[0]).toMatchObject({ subject: "acme", predicate: "mission" });
@@ -241,7 +250,7 @@ describe("validator", () => {
   it("evidence-based validation flips status across threshold", async () => {
     const store = new AssumptionStore(ws);
     await seed(store);
-    const out = await validateByEvidence(store, ws, "acme", "A-1", [
+    const out = await validateByEvidence(store, fakeApi(ws), "acme", "A-1", [
       {
         description: "strong signal",
         source: "market",

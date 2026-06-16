@@ -140,7 +140,7 @@ export function createEnrichmentTools(api: OpenClawPluginApi): AnyAgentTool[] {
         if (!params.decision && evidence?.some((e) => e.likelihood !== undefined)) {
           const out = await validateByEvidence(
             store,
-            workspaceDir,
+            api,
             params.business_id,
             params.assumption_id,
             evidence,
@@ -151,7 +151,7 @@ export function createEnrichmentTools(api: OpenClawPluginApi): AnyAgentTool[] {
         }
         const a = await validateExplicit(
           store,
-          workspaceDir,
+          api,
           params.business_id,
           params.assumption_id,
           params.decision ?? "validated",

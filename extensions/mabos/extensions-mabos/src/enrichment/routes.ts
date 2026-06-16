@@ -183,7 +183,7 @@ export function registerEnrichmentRoutes(api: OpenClawPluginApi, deps: Enrichmen
             }
             const a = await validateExplicit(
               store,
-              deps.workspaceDir,
+              api,
               businessId,
               aid,
               body.decision,
@@ -198,7 +198,7 @@ export function registerEnrichmentRoutes(api: OpenClawPluginApi, deps: Enrichmen
           }
           const out = await validateByEvidence(
             store,
-            deps.workspaceDir,
+            api,
             businessId,
             aid,
             normalizeEvidence(body.evidence) ?? [],

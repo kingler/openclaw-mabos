@@ -4,16 +4,24 @@
  *  - evidence-based: a Bayesian update over supplied evidence moves the
  *    posterior across thresholds (validated ≥ 0.75, rejected ≤ 0.25).
  *
- * When an assumption becomes `validated` it is promoted into the business fact
- * store (businesses/<id>/agents/knowledge/facts.json) so reasoning over facts
- * only ever sees confirmed knowledge — never speculative guesses.
+ * When an assumption becomes `validated` it is promoted into the canonical
+ * fact store via `assertFactDirect`, so it lands in TypeDB (the graph
+ * db/ontology) and the JSON mirror exactly like every other fact — and gets
+ * contradiction detection + materialization for free. Reasoning over facts
+ * then only ever sees confirmed knowledge, never speculative guesses.
+ *
+ * Following the canonical convention (see src/sync/shopify-sync.ts,
+ * src/tools/outreach-tools.ts), the agent is the role — here the "knowledge"
+ * agent — and the business identity is carried as the SPO subject.
  */
 
-import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
-import { generatePrefixedId } from "../tools/common.js";
+import type { OpenClawPluginApi } from "openclaw/plugin-sdk";
+import { assertFactDirect } from "../tools/fact-store.js";
 import type { AssumptionStore } from "./store.js";
 import type { Assumption, AssumptionEvidence } from "./types.js";
+
+/** The core "knowledge" agent that owns business facts (CORE_AGENT_IDS). */
+const KNOWLEDGE_AGENT_ID = "knowledge";
 
 export const VALIDATE_THRESHOLD = 0.75;
 export const REJECT_THRESHOLD = 0.25;
@@ -27,35 +35,27 @@ export function bayesUpdate(prior: number, evidence: AssumptionEvidence[]): numb
   }, prior);
 }
 
-/** Promote a validated assumption into the business knowledge agent's fact store. */
-async function promoteToFacts(workspaceDir: string, a: Assumption): Promise<void> {
-  const path = join(workspaceDir, "businesses", a.business_id, "agents", "knowledge", "facts.json");
-  let store: { facts: Array<Record<string, unknown>>; version: number };
-  try {
-    store = JSON.parse(await readFile(path, "utf-8"));
-  } catch {
-    store = { facts: [], version: 0 };
-  }
-  const now = new Date().toISOString();
-  store.facts.push({
-    id: generatePrefixedId("F"),
+/**
+ * Promote a validated assumption into the canonical knowledge-agent fact store.
+ * Routes through `assertFactDirect` so the triple is written to TypeDB (db
+ * `mabos_knowledge`, scoped via `agent_owns`) and the JSON mirror, with
+ * contradiction detection + materialization applied.
+ */
+async function promoteToFacts(api: OpenClawPluginApi, a: Assumption): Promise<void> {
+  await assertFactDirect(api, {
+    agent_id: KNOWLEDGE_AGENT_ID,
     subject: a.business_id,
     predicate: a.field,
     object: typeof a.value === "string" ? a.value : JSON.stringify(a.value),
     confidence: a.confidence,
     source: `assumption:${a.id}`,
-    valid_from: now,
-    created_at: now,
-    updated_at: now,
+    valid_from: new Date().toISOString(),
   });
-  store.version += 1;
-  await mkdir(dirname(path), { recursive: true });
-  await writeFile(path, JSON.stringify(store, null, 2), "utf-8");
 }
 
 export async function validateExplicit(
   store: AssumptionStore,
-  workspaceDir: string,
+  api: OpenClawPluginApi,
   businessId: string,
   assumptionId: string,
   decision: "validated" | "rejected",
@@ -68,13 +68,13 @@ export async function validateExplicit(
     note,
     evidence,
   });
-  if (decision === "validated") await promoteToFacts(workspaceDir, updated);
+  if (decision === "validated") await promoteToFacts(api, updated);
   return updated;
 }
 
 export async function validateByEvidence(
   store: AssumptionStore,
-  workspaceDir: string,
+  api: OpenClawPluginApi,
   businessId: string,
   assumptionId: string,
   evidence: AssumptionEvidence[],
@@ -99,7 +99,7 @@ export async function validateByEvidence(
   });
 
   const transitioned = status !== current.status;
-  if (status === "validated" && transitioned) await promoteToFacts(workspaceDir, assumption);
+  if (status === "validated" && transitioned) await promoteToFacts(api, assumption);
 
   return { assumption, posterior, transitioned };
 }
