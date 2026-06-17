@@ -4,18 +4,23 @@
  * Registers the `/mabos/provision/*` REST API that lets a meta harness create
  * and deploy MABOS instances end to end: scaffold → GDC bootstrap → cron seed →
  * deploy (in-gateway | container | cloud). See routes.ts for the contract and
- * docs/provisioning-api.md for the full reference.
+ * ../../docs/provisioning-api.md for the full reference.
+ *
+ * The GDC bootstrap's LLM calls go through the swappable, effort/capacity/cost
+ * aware model router (src/model-router): the request's `effort` selects a model
+ * pool and the cheapest provider with capacity is used.
  */
 
 import type { OpenClawPluginApi } from "openclaw/plugin-sdk";
-import type { LlmCallFn } from "../gdc/types.js";
-import { resolveWorkspaceDir } from "../tools/common.js";
-import { defaultCallLlm } from "./llm.js";
+import { createEffortModelRouter } from "../model-router/factory.js";
+import type { EffortCallOptions } from "../model-router/provider.js";
+import { getPluginConfig, resolveWorkspaceDir } from "../tools/common.js";
 import { registerProvisioningRoutes } from "./routes.js";
+import type { LlmCallFactory } from "./types.js";
 
 export interface ProvisioningModuleDeps {
-  /** Override the LLM router used by the GDC bootstrap step. */
-  callLlm?: LlmCallFn;
+  /** Override the LLM call factory (mainly for tests). */
+  makeCallLlm?: LlmCallFactory;
 }
 
 /** Register the provisioning control plane on the plugin API. */
@@ -24,9 +29,15 @@ export function registerProvisioning(
   deps: ProvisioningModuleDeps = {},
 ): void {
   const workspaceDir = resolveWorkspaceDir(api);
+  const config = getPluginConfig(api);
+  const router = createEffortModelRouter(config.modelRouter ?? {});
+
+  const makeCallLlm: LlmCallFactory =
+    deps.makeCallLlm ?? ((opts: EffortCallOptions) => router.makeCallLlm(opts));
+
   registerProvisioningRoutes(api, {
     workspaceDir,
-    callLlm: deps.callLlm ?? defaultCallLlm,
+    makeCallLlm,
     logger: {
       info: (m) => api.logger.info(m),
       error: (m) => api.logger.error(m),

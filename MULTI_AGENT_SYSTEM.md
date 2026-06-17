@@ -33,6 +33,7 @@ Implementation lives under `extensions/mabos/extensions-mabos/src/`:
 | `skill-loop/`        | Skill creation and marketplace hooks           |
 | `provisioning/`      | Control plane to create + deploy instances (`/mabos/provision/*`) |
 | `tool-api/`          | REST access to all MABOS tools + unified API index (`/mabos/tools`, `/mabos/api/index`) |
+| `enrichment/`        | Smart-default assumptions, continuous enrichment, validation, predict/prescribe (`/mabos/enrichment/*`) |
 | `reasoning/`         | Reasoning methods                              |
 | `ontology/`          | SBVR-aligned schemas                           |
 | `tools/`             | Business integrations (e.g. Shopify)           |
@@ -58,3 +59,6 @@ For how multiple **agent IDs**, workspaces, `agentDir`, and channel **bindings**
 - [.context/README.md](.context/README.md) — module map and area status
 - [docs/concepts/multi-agent.md](docs/concepts/multi-agent.md) — gateway multi-agent routing
 - [docs/tools/multi-agent-sandbox-tools.md](docs/tools/multi-agent-sandbox-tools.md) — sandbox tools
+- [Provisioning API](extensions/mabos/extensions-mabos/docs/provisioning-api.md) — create + deploy instances
+- [Tool API](extensions/mabos/extensions-mabos/docs/tool-api.md) — invoke tools + unified API index
+- [Enrichment API](extensions/mabos/extensions-mabos/docs/enrichment-api.md) — smart defaults, assumptions, predict/prescribe

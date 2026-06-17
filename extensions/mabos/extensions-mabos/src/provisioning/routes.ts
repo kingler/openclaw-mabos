@@ -18,13 +18,12 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { Value } from "@sinclair/typebox/value";
 import type { OpenClawPluginApi } from "openclaw/plugin-sdk";
-import type { LlmCallFn } from "../gdc/types.js";
 import { runDeploy } from "./deploy.js";
 import { resolveDeploy, runProvisioningPipeline } from "./pipeline.js";
 import { CORE_ROLES } from "./scaffold.js";
 import { ProvisioningStore } from "./store.js";
 import { ProvisionRequestSchema } from "./types.js";
-import type { InstanceRecord, ProvisionRequest } from "./types.js";
+import type { InstanceRecord, LlmCallFactory, ProvisionRequest } from "./types.js";
 
 const PREFIX = "/mabos/provision";
 
@@ -60,6 +59,7 @@ const CAPABILITY_MANIFEST = {
   deploy_targets: ["in-gateway", "container", "cloud"],
   cloud_providers: ["fly", "render"],
   gdc_max_stage: 7,
+  effort_levels: ["low", "medium", "high"],
   endpoints: [
     "POST /mabos/provision/instances",
     "GET /mabos/provision/instances",
@@ -73,7 +73,7 @@ const CAPABILITY_MANIFEST = {
 
 export interface ProvisioningRoutesDeps {
   workspaceDir: string;
-  callLlm: LlmCallFn;
+  makeCallLlm: LlmCallFactory;
   logger: { info: (m: string) => void; error: (m: string) => void };
 }
 
@@ -195,7 +195,7 @@ async function handleCreate(
 
   // Run the pipeline in the background; the harness polls the job.
   void runProvisioningPipeline(
-    { store, workspaceDir: deps.workspaceDir, callLlm: deps.callLlm, logger: deps.logger },
+    { store, workspaceDir: deps.workspaceDir, makeCallLlm: deps.makeCallLlm, logger: deps.logger },
     req2,
     job,
     instance,

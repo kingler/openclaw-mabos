@@ -70,6 +70,8 @@ Authorization: Bearer <OPENCLAW_GATEWAY_TOKEN>
   "tool_inventory": [],
   "integrations": { "stripe": { "api_key": "sk_live_…" } },
   "max_stage": 7,
+  "effort": "medium",            // low | medium | high — selects the model pool
+  "model": "claude-sonnet-4-6",  // optional explicit override (bypasses effort)
   "deploy": { "target": "in-gateway", "channels": ["slack"], "activate": true }
 }
 ```
@@ -88,7 +90,28 @@ Response `202 Accepted`:
 ### Poll the job
 
 `GET /mabos/provision/jobs/:id` returns the job with per-step status. On
-success the `result` carries the deploy outcome, agent roster, and goal count.
+success the `result` carries the deploy outcome, agent roster, goal count,
+the `effort` used, and the cumulative GDC token `cost_usd`.
+
+### LLM provider selection (effort, capacity, cost)
+
+The GDC bootstrap's LLM calls go through the swappable model router
+(`src/model-router`). The provider/model is **not** hardcoded — it is chosen per
+call from:
+
+- **Effort** (`effort: low | medium | high`) — picks a candidate model pool
+  (configurable via `modelRouter.effortPolicy`). Defaults: low → Haiku / GPT-4.1-mini /
+  Gemini Flash; medium → Sonnet / GPT-4.1 / Gemini Pro; high → Opus / o3 / Gemini Pro.
+- **Capacity** — only providers whose API key is set are considered; a provider
+  that returns 429/5xx is put on a cooldown and the next call fails over to the
+  next-cheapest available provider automatically.
+- **Token cost** — among the eligible models the **cheapest** (blended
+  input+output price) is selected, subject to an optional
+  `modelRouter.costBudget.maxUsdPer1kBlended` cap.
+
+Set `model` on the request to pin an explicit model and bypass effort selection.
+Configure providers/keys/base URLs and the effort policy under the `modelRouter`
+plugin config (`providers`, `effortPolicy`, `costBudget`, `capacityCooldownMs`).
 
 ## Deploy targets
 
