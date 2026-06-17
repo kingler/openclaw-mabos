@@ -41,6 +41,13 @@ MABOS exposes REST + tool surfaces (gateway bearer auth) for creating, operating
 
 ---
 
+## Developer documentation
+
+- [Developer Guide](docs/developer-guide.md) — set up, run, configure, extend, and test MABOS end to end.
+- [TypeDB Knowledge Graph](docs/typedb-knowledge-graph.md) — the ontology graph store, plus a Docker stack (`docker/`) for running a local instance.
+
+---
+
 ## Installation
 
 ### From the Combined Repository
@@ -567,6 +574,8 @@ MABOS connects to the [mabos-workbench](https://github.com/kingler/mabos-workben
 | Redis      | State caching, session data, real-time metrics                      |
 
 The extension works fully offline with file-based storage. Backend sync is best-effort — if unavailable, SBVR exports are saved locally for later sync.
+
+To run a local TypeDB knowledge graph (Docker), see [TypeDB Knowledge Graph](docs/typedb-knowledge-graph.md) — the `docker/` directory ships a compose stack and a `typedb.sh` management script.
 
 ---
 

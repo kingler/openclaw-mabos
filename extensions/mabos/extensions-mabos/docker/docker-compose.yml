@@ -1,0 +1,42 @@
+# MABOS — TypeDB ontology knowledge graph
+#
+# Brings up a local TypeDB 3.x server that backs the MABOS knowledge graph
+# (SBVR ontology schema, SPO facts, rules, memory, BDI state, workflows).
+#
+# MABOS talks to TypeDB over its HTTP API. Inside the container the HTTP API
+# listens on 8000; we publish it on the host as 8729 so the MABOS default
+# `TYPEDB_URL` convention (`http://<host>:8729`) works locally — just point it
+# at 127.0.0.1:
+#
+#   export TYPEDB_URL=http://127.0.0.1:8729
+#
+# The native protocol port (1729) is also published for TypeDB Studio / native
+# drivers. Override any value via a sibling `.env` file (see typedb.env.example).
+#
+# Usage (from this directory):
+#   ./typedb.sh up         # start + wait until ready
+#   ./typedb.sh bootstrap  # create a database and apply the base schema
+#   ./typedb.sh down        # stop
+#
+# Or directly: `docker compose --env-file typedb.env up -d`
+
+services:
+  typedb:
+    image: typedb/typedb:${TYPEDB_VERSION:-3.7.0}
+    container_name: ${TYPEDB_CONTAINER:-mabos-typedb}
+    restart: unless-stopped
+    ports:
+      # host:container — HTTP API (MABOS connects here via TYPEDB_URL)
+      - "${TYPEDB_HTTP_PORT:-8729}:8000"
+      # host:container — native protocol (TypeDB Studio, native drivers)
+      - "${TYPEDB_NATIVE_PORT:-1729}:1729"
+    volumes:
+      # Persist all databases across restarts. Path is TypeDB 3.x specific.
+      - typedb-data:/opt/typedb-server-linux-x86_64/server/data
+    # No container-level healthcheck: the stock image has no curl/bash TCP
+    # helper we can rely on. `typedb.sh up` performs a host-side readiness
+    # probe against the HTTP port instead.
+
+volumes:
+  typedb-data:
+    name: ${TYPEDB_VOLUME:-mabos-typedb-data}
