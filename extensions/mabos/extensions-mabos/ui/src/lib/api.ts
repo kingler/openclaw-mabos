@@ -40,6 +40,11 @@ import type {
   FinancialStatement,
   CompliancePolicy,
   ComplianceViolation,
+  ChannelDescriptor,
+  ConfiguredChannel,
+  ChannelTestResult,
+  ProvisionChannelBody,
+  ProvisionResult,
 } from "./types";
 
 const BASE = "/mabos/api";
@@ -438,4 +443,11 @@ export const api = {
     );
   },
   getViolation: (id: string) => get<ComplianceViolation>(`/erp/compliance/violations/${id}`),
+
+  // --- Channel integration ---
+  getChannelCatalog: () => get<{ channels: ChannelDescriptor[] }>("/channels/catalog"),
+  getChannels: () => get<{ count: number; channels: ConfiguredChannel[] }>("/channels"),
+  testChannel: (body: { channel_type: string; credentials: Record<string, string> }) =>
+    post<ChannelTestResult>("/channels/test", body),
+  saveChannel: (body: ProvisionChannelBody) => post<ProvisionResult>("/channels", body),
 };
