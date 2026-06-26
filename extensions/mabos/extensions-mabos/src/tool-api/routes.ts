@@ -174,6 +174,15 @@ function buildApiIndex(toolCount: number) {
         "GET /mabos/provision/manifest",
       ],
     },
+    channels: {
+      base: "/mabos/api/channels",
+      endpoints: [
+        "GET /mabos/api/channels/catalog",
+        "GET /mabos/api/channels",
+        "POST /mabos/api/channels/test",
+        "POST /mabos/api/channels",
+      ],
+    },
     capabilities: "GET /mabos/api/capabilities",
     operational: {
       agents: [

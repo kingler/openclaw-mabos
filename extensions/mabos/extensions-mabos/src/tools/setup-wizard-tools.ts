@@ -9,7 +9,8 @@ import { join, dirname } from "node:path";
 import { promisify } from "node:util";
 import { Type, type Static } from "@sinclair/typebox";
 import type { OpenClawPluginApi, AnyAgentTool } from "openclaw/plugin-sdk";
-import { textResult, resolveWorkspaceDir, httpRequest } from "./common.js";
+import { textResult, resolveWorkspaceDir } from "./common.js";
+import { testChannelConnection } from "../channels/channel-provisioning.js";
 
 const exec = promisify(execCallback);
 
@@ -128,123 +129,6 @@ async function checkGatewayVersion(): Promise<VersionHealth> {
       plugin_version: "unknown",
       compatible: false,
     };
-  }
-}
-
-async function testChannelConnection(
-  channelType: string,
-  credentials: any,
-): Promise<{ success: boolean; error?: string; bot_info?: any }> {
-  // Step 1: Validate credential format
-  switch (channelType) {
-    case "telegram":
-      if (!credentials.bot_token || !credentials.bot_token.match(/^\d+:[A-Za-z0-9_-]+$/)) {
-        return { success: false, error: "Invalid Telegram bot token format" };
-      }
-      break;
-    case "discord":
-      if (!credentials.bot_token || !credentials.application_id) {
-        return { success: false, error: "Discord bot token and application ID required" };
-      }
-      break;
-    case "slack":
-      if (!credentials.bot_token || !credentials.bot_token.startsWith("xoxb-")) {
-        return { success: false, error: "Invalid Slack bot token format (must start with xoxb-)" };
-      }
-      break;
-    case "signal":
-      if (!credentials.account) {
-        return { success: false, error: "Signal account (E.164 phone number) required" };
-      }
-      break;
-    case "whatsapp":
-      if (!credentials.access_token && !credentials.session_path) {
-        return { success: false, error: "WhatsApp access_token or session_path required" };
-      }
-      break;
-    default:
-      return { success: false, error: `Unsupported channel type: ${channelType}` };
-  }
-
-  // Step 2: Make real API call to verify credentials
-  try {
-    let result: { status: number; data: any };
-
-    switch (channelType) {
-      case "telegram":
-        result = await httpRequest(
-          `https://api.telegram.org/bot${credentials.bot_token}/getMe`,
-          "GET",
-          {},
-        );
-        if (result.status === 0) {
-          return { success: true, error: "Network unavailable; format validated only" };
-        }
-        if (result.data?.ok === true) {
-          return { success: true, bot_info: result.data.result };
-        }
-        return { success: false, error: result.data?.description || "Telegram token rejected" };
-
-      case "discord":
-        result = await httpRequest("https://discord.com/api/v10/oauth2/applications/@me", "GET", {
-          Authorization: `Bot ${credentials.bot_token}`,
-        });
-        if (result.status === 0) {
-          return { success: true, error: "Network unavailable; format validated only" };
-        }
-        if (result.data?.id) {
-          return { success: true, bot_info: { id: result.data.id, name: result.data.name } };
-        }
-        return { success: false, error: result.data?.message || "Discord token rejected" };
-
-      case "slack":
-        result = await httpRequest("https://slack.com/api/auth.test", "GET", {
-          Authorization: `Bearer ${credentials.bot_token}`,
-        });
-        if (result.status === 0) {
-          return { success: true, error: "Network unavailable; format validated only" };
-        }
-        if (result.data?.ok === true) {
-          return { success: true, bot_info: { team: result.data.team, user: result.data.user } };
-        }
-        return { success: false, error: result.data?.error || "Slack token rejected" };
-
-      case "signal": {
-        const cliUrl = credentials.cli_url || "http://localhost:8080";
-        result = await httpRequest(`${cliUrl}/v1/about`, "GET", {}, undefined, 3000);
-        if (result.status === 0) {
-          return { success: true, error: "Network unavailable; format validated only" };
-        }
-        if (result.status === 200) {
-          return { success: true, bot_info: result.data };
-        }
-        return { success: false, error: "Signal CLI API not responding" };
-      }
-
-      case "whatsapp":
-        if (!credentials.access_token || !credentials.phone_number_id) {
-          // Session-based WhatsApp doesn't support API test
-          return { success: true, error: "Session-based setup; cannot verify remotely" };
-        }
-        result = await httpRequest(
-          `https://graph.facebook.com/v19.0/${credentials.phone_number_id}`,
-          "GET",
-          { Authorization: `Bearer ${credentials.access_token}` },
-        );
-        if (result.status === 0) {
-          return { success: true, error: "Network unavailable; format validated only" };
-        }
-        if (result.status === 200) {
-          return { success: true, bot_info: result.data };
-        }
-        return { success: false, error: result.data?.error?.message || "WhatsApp token rejected" };
-
-      default:
-        return { success: true };
-    }
-  } catch {
-    // Network failure should not block setup
-    return { success: true, error: "Network unavailable; format validated only" };
   }
 }
 
