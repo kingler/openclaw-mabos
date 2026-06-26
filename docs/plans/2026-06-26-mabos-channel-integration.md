@@ -68,6 +68,16 @@
 
 ---
 
+## Phase 1 status (Telegram vertical slice — implemented)
+
+- **Config write-through (D1):** `src/plugin-sdk/config-write.ts` adds `updateGatewayConfig(mutator)` + `setDurableSecretEnv(id, value)` + `envSecretRefTemplate(id)`, re-exported from `src/plugin-sdk/index.ts`. Implemented as standalone typed functions rather than new `OpenClawPluginApi` methods to avoid the broad blast radius of changing the API interface (many test constructors).
+- **Secrets (D2):** secrets are written to the gateway's durable dotenv (`<configDir>/.env`, loaded by `loadDotEnv` at startup) and referenced from config as `${ENV}`. `process.env` is set in-process so the immediate refresh resolves without a restart.
+- **Live reload (D4):** verified by code inspection that `writeConfigFile` (config/io.ts) invokes `runtimeConfigSnapshotRefreshHandler.refresh()` internally, so the channel goes live on write. End-to-end runtime verification is pending an environment with dependencies installed (local install is blocked by an org-policy 403 on the transitive `libsignal-node` git dependency).
+- **Catalog/provisioning:** `extensions/mabos/.../src/channels/channel-catalog.ts` (Telegram descriptor) + `channel-provisioning.ts` (`provisionChannel`, `testChannelConnection`, `listConfiguredChannels`). `setup-wizard-tools.ts` now reuses the shared `testChannelConnection` (dedup).
+- **HTTP routes:** `channels/routes.ts` registers `GET /mabos/api/channels/catalog`, `GET /mabos/api/channels`, `POST /mabos/api/channels/test`, `POST /mabos/api/channels` (all `auth: "gateway"`), wired in `index.ts`.
+- **UI:** `IntegrationsPage.tsx` + `useChannels.ts` + api/types + router + nav ("Setup -> Integrations").
+- **Tests:** `tests/channel-integration.test.ts` covers catalog validation, env-ref write-through, secret masking, and record listing (plugin-sdk config boundary mocked).
+
 ## Risks / notes
 
 - **Live reload (D4)** is the main unknown — verify early; it gates the "no terminal" promise.
