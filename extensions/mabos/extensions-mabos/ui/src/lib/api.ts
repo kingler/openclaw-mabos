@@ -450,4 +450,9 @@ export const api = {
   testChannel: (body: { channel_type: string; credentials: Record<string, string> }) =>
     post<ChannelTestResult>("/channels/test", body),
   saveChannel: (body: ProvisionChannelBody) => post<ProvisionResult>("/channels", body),
+  getChannelStatus: (id: string) =>
+    get<ChannelTestResult & { id: string }>(`/channels/${encodeURIComponent(id)}/status`),
+  setChannelEnabled: (id: string, enabled: boolean) =>
+    patch<ProvisionResult>(`/channels/${encodeURIComponent(id)}`, { enabled }),
+  removeChannel: (id: string) => del<ProvisionResult>(`/channels/${encodeURIComponent(id)}`),
 };

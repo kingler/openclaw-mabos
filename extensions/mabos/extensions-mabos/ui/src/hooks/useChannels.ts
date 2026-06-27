@@ -39,3 +39,33 @@ export function useSaveChannel() {
     },
   });
 }
+
+export function useSetChannelEnabled() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, enabled }: { id: string; enabled: boolean }) =>
+      api.setChannelEnabled(id, enabled),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["channels"] });
+    },
+  });
+}
+
+export function useRemoveChannel() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.removeChannel(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["channels"] });
+    },
+  });
+}
+
+export function useChannelStatus(id: string, enabled: boolean) {
+  return useQuery({
+    queryKey: ["channelStatus", id],
+    queryFn: () => api.getChannelStatus(id),
+    enabled,
+    refetchInterval: 30_000,
+  });
+}

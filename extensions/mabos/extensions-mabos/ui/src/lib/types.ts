@@ -633,6 +633,7 @@ export type ChannelField = {
   required: boolean;
   secret: boolean;
   configKey: string;
+  persist?: boolean;
   placeholder?: string;
   help?: string;
   validationRegex?: string;

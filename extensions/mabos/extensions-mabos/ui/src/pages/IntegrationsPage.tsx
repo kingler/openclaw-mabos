@@ -1,13 +1,16 @@
-import { Plug, Plus, CheckCircle2, XCircle, Loader2, ArrowLeft } from "lucide-react";
+import { Plug, Plus, CheckCircle2, XCircle, Loader2, ArrowLeft, Power, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { useBusinessContext } from "@/contexts/BusinessContext";
 import {
   useChannelCatalog,
   useChannels,
+  useChannelStatus,
+  useRemoveChannel,
   useSaveChannel,
+  useSetChannelEnabled,
   useTestChannel,
 } from "@/hooks/useChannels";
-import type { ChannelDescriptor, ChannelTestResult } from "@/lib/types";
+import type { ChannelDescriptor, ChannelTestResult, ConfiguredChannel } from "@/lib/types";
 
 export function IntegrationsPage() {
   const { activeBusinessId } = useBusinessContext();
@@ -43,38 +46,7 @@ export function IntegrationsPage() {
                 Loading channels...
               </p>
             ) : channels && channels.length > 0 ? (
-              channels.map((c) => (
-                <div
-                  key={c.id}
-                  className="flex items-center justify-between rounded-lg border px-4 py-3"
-                  style={{
-                    borderColor: "var(--border-mabos)",
-                    backgroundColor: "var(--bg-secondary)",
-                  }}
-                >
-                  <div className="flex items-center gap-3">
-                    <Plug className="h-4 w-4" style={{ color: "var(--accent-green)" }} />
-                    <div>
-                      <div className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>
-                        {c.name}
-                      </div>
-                      <div className="text-xs" style={{ color: "var(--text-secondary)" }}>
-                        {c.type}
-                        {c.businessId ? ` · ${c.businessId}` : ""}
-                      </div>
-                    </div>
-                  </div>
-                  <span
-                    className="rounded-full px-2 py-0.5 text-xs"
-                    style={{
-                      color: c.status === "active" ? "var(--accent-green)" : "var(--text-muted)",
-                      backgroundColor: "var(--bg-tertiary)",
-                    }}
-                  >
-                    {c.status}
-                  </span>
-                </div>
-              ))
+              channels.map((c) => <ChannelRow key={c.id} channel={c} />)
             ) : (
               <p className="text-sm" style={{ color: "var(--text-secondary)" }}>
                 No channels connected yet.
@@ -106,6 +78,71 @@ export function IntegrationsPage() {
           </section>
         </>
       )}
+    </div>
+  );
+}
+
+function ChannelRow({ channel }: { channel: ConfiguredChannel }) {
+  const enabled = channel.status === "active";
+  const status = useChannelStatus(channel.id, enabled);
+  const toggle = useSetChannelEnabled();
+  const remove = useRemoveChannel();
+
+  const live = status.data;
+  const dotColor = !enabled
+    ? "var(--text-muted)"
+    : status.isLoading
+      ? "var(--text-muted)"
+      : live?.success
+        ? "var(--accent-green)"
+        : "var(--accent-red, #e5484d)";
+
+  return (
+    <div
+      className="flex items-center justify-between rounded-lg border px-4 py-3"
+      style={{ borderColor: "var(--border-mabos)", backgroundColor: "var(--bg-secondary)" }}
+    >
+      <div className="flex items-center gap-3">
+        <Plug className="h-4 w-4" style={{ color: dotColor }} />
+        <div>
+          <div className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>
+            {channel.name}
+          </div>
+          <div className="text-xs" style={{ color: "var(--text-secondary)" }}>
+            {channel.type}
+            {channel.businessId ? ` · ${channel.businessId}` : ""}
+            {enabled && live ? ` · ${live.success ? "connected" : live.error || "error"}` : ""}
+          </div>
+        </div>
+      </div>
+      <div className="flex items-center gap-2">
+        <span
+          className="rounded-full px-2 py-0.5 text-xs"
+          style={{ color: dotColor, backgroundColor: "var(--bg-tertiary)" }}
+        >
+          {channel.status}
+        </span>
+        <button
+          title={enabled ? "Disable" : "Enable"}
+          onClick={() => toggle.mutate({ id: channel.id, enabled: !enabled })}
+          disabled={toggle.isPending}
+          className="rounded-md p-1.5"
+          style={{ color: "var(--text-secondary)" }}
+        >
+          <Power className="h-4 w-4" />
+        </button>
+        <button
+          title="Remove"
+          onClick={() => {
+            if (confirm(`Remove channel "${channel.name}"?`)) remove.mutate(channel.id);
+          }}
+          disabled={remove.isPending}
+          className="rounded-md p-1.5"
+          style={{ color: "var(--accent-red, #e5484d)" }}
+        >
+          <Trash2 className="h-4 w-4" />
+        </button>
+      </div>
     </div>
   );
 }
