@@ -17,14 +17,30 @@ vi.mock("openclaw/plugin-sdk", () => ({
   },
   setDurableSecretEnv: async (id: string, value: string) => {
     sdkState.secrets.push({ id, value });
+    process.env[id] = value; // mirror real behaviour so status reconstruction works
   },
   envSecretRefTemplate: (id: string) => `\${${id}}`,
 }));
 
+// Make the live credential test deterministic (no real network) for status checks.
+vi.mock("../src/tools/common.js", async (orig) => {
+  const actual = (await orig()) as Record<string, unknown>;
+  return {
+    ...actual,
+    httpRequest: vi.fn(async () => ({
+      status: 200,
+      data: { ok: true, result: { id: 42, username: "bot" } },
+    })),
+  };
+});
+
 import { getChannelDescriptor } from "../src/channels/channel-catalog.js";
 import {
+  getChannelStatus,
   listConfiguredChannels,
   provisionChannel,
+  removeChannel,
+  setChannelEnabled,
   validateCredentials,
 } from "../src/channels/channel-provisioning.js";
 
@@ -128,5 +144,86 @@ describe("provisionChannel", () => {
     expect(result.ok).toBe(false);
     expect(sdkState.secrets).toHaveLength(0);
     expect(sdkState.config).toEqual({});
+  });
+});
+
+describe("channel mappings + lifecycle (Phase 2)", () => {
+  let ws: string;
+
+  beforeEach(async () => {
+    ws = await mkdtemp(join(tmpdir(), "mabos-channels-"));
+    sdkState.config = {};
+    sdkState.secrets = [];
+  });
+
+  afterEach(async () => {
+    await rm(ws, { recursive: true, force: true });
+  });
+
+  it("discord: persists token as env ref, keeps application_id out of config", async () => {
+    const res = await provisionChannel(fakeApi(ws), {
+      channelType: "discord",
+      credentials: { bot_token: "discord-secret-token", application_id: "123456789012345678" }, // pragma: allowlist secret
+      test: false,
+    });
+    expect(res.ok).toBe(true);
+    const acct = (sdkState.config.channels as any).discord.accounts[res.channel!.id];
+    expect(acct.token).toMatch(/^\$\{.*\}$/);
+    expect(acct.applicationId).toBeUndefined();
+    // application_id is captured for status reconstruction in the on-disk record.
+    const rec = JSON.parse(
+      await readFile(join(ws, "channels", `${res.channel!.id}.json`), "utf-8"),
+    );
+    expect(rec.publicCredentials.application_id).toBe("123456789012345678");
+  });
+
+  it("signal: maps cli_url->httpUrl with no secret stored", async () => {
+    const res = await provisionChannel(fakeApi(ws), {
+      channelType: "signal",
+      credentials: { account: "+15551234567", cli_url: "http://localhost:8080" },
+      test: false,
+    });
+    expect(res.ok).toBe(true);
+    expect(sdkState.secrets).toHaveLength(0);
+    const acct = (sdkState.config.channels as any).signal.accounts[res.channel!.id];
+    expect(acct.account).toBe("+15551234567");
+    expect(acct.httpUrl).toBe("http://localhost:8080");
+  });
+
+  it("enable/disable toggles account.enabled and record status", async () => {
+    const { channel } = await provisionChannel(fakeApi(ws), {
+      channelType: "telegram",
+      credentials: { bot_token: TOKEN },
+      test: false,
+    });
+    await setChannelEnabled(fakeApi(ws), channel!.id, false);
+    expect((sdkState.config.channels as any).telegram.accounts[channel!.id].enabled).toBe(false);
+    expect((await listConfiguredChannels(fakeApi(ws)))[0].status).toBe("inactive");
+
+    await setChannelEnabled(fakeApi(ws), channel!.id, true);
+    expect((sdkState.config.channels as any).telegram.accounts[channel!.id].enabled).toBe(true);
+  });
+
+  it("remove deletes the config account and the record", async () => {
+    const { channel } = await provisionChannel(fakeApi(ws), {
+      channelType: "telegram",
+      credentials: { bot_token: TOKEN },
+      test: false,
+    });
+    const res = await removeChannel(fakeApi(ws), channel!.id);
+    expect(res.ok).toBe(true);
+    expect((sdkState.config.channels as any).telegram.accounts[channel!.id]).toBeUndefined();
+    expect(await listConfiguredChannels(fakeApi(ws))).toHaveLength(0);
+  });
+
+  it("status reconstructs credentials and runs the live test", async () => {
+    const { channel } = await provisionChannel(fakeApi(ws), {
+      channelType: "telegram",
+      credentials: { bot_token: TOKEN },
+      test: false,
+    });
+    const status = await getChannelStatus(fakeApi(ws), channel!.id);
+    expect(status.id).toBe(channel!.id);
+    expect(status.success).toBe(true); // httpRequest mocked to ok:true
   });
 });

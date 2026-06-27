@@ -9,7 +9,7 @@
  * metadata for UI listing + business binding -> return a masked status.
  */
 
-import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import {
   envSecretRefTemplate,
@@ -250,20 +250,31 @@ export async function provisionChannel(
   const accountId = `${input.channelType}_${input.businessId ?? "default"}_${Date.now()}`;
 
   // Build the per-account config entry, persisting secret fields as ${ENV} refs.
+  // Also capture reconstruction data (env var ids + non-secret values) so a later
+  // status check can re-run the live test without storing plaintext secrets.
   const accountConfig: Record<string, unknown> = {};
   const maskedCredentials: Record<string, string> = {};
+  const envRefs: Record<string, string> = {};
+  const publicCredentials: Record<string, string> = {};
   for (const field of descriptor.fields) {
     const value = input.credentials[field.name];
     if (value === undefined || value === "") {
       continue;
     }
+    const persist = field.persist !== false;
     if (field.secret) {
       const envId = envSecretId(input.channelType, accountId, field.name);
       await setDurableSecretEnv(envId, value);
-      accountConfig[field.configKey] = envSecretRefTemplate(envId);
+      envRefs[field.name] = envId;
+      if (persist) {
+        accountConfig[field.configKey] = envSecretRefTemplate(envId);
+      }
       maskedCredentials[field.name] = maskSecret(value);
     } else {
-      accountConfig[field.configKey] = value;
+      publicCredentials[field.name] = value;
+      if (persist) {
+        accountConfig[field.configKey] = value;
+      }
       maskedCredentials[field.name] = value;
     }
   }
@@ -281,7 +292,7 @@ export async function provisionChannel(
   });
 
   // Record non-secret MABOS metadata for UI listing + business binding.
-  const record: ProvisionedChannel = {
+  const record: ChannelRecord = {
     id: accountId,
     type: input.channelType,
     name: input.name ?? `${descriptor.label} (${accountId})`,
@@ -290,12 +301,115 @@ export async function provisionChannel(
     businessId: input.businessId,
     createdAt,
     maskedCredentials,
+    envRefs,
+    publicCredentials,
   };
+  await writeChannelRecord(api, record);
+
+  return { ok: true, channel: toApiChannel(record), test };
+}
+
+/** Full on-disk record (includes data needed to reconstruct a status check). */
+type ChannelRecord = ProvisionedChannel & {
+  /** Secret field name -> durable env var id. */
+  envRefs?: Record<string, string>;
+  /** Non-secret field name -> value (e.g. discord application_id, signal account). */
+  publicCredentials?: Record<string, string>;
+};
+
+/** Strip reconstruction internals before returning a channel over the API. */
+function toApiChannel(record: ChannelRecord): ProvisionedChannel {
+  const { envRefs: _e, publicCredentials: _p, ...api } = record;
+  return api;
+}
+
+async function writeChannelRecord(api: OpenClawPluginApi, record: ChannelRecord): Promise<void> {
   const dir = channelsRecordDir(api);
   await mkdir(dir, { recursive: true });
-  await writeFile(join(dir, `${accountId}.json`), JSON.stringify(record, null, 2), "utf-8");
+  await writeFile(join(dir, `${record.id}.json`), JSON.stringify(record, null, 2), "utf-8");
+}
 
-  return { ok: true, channel: record, test };
+async function readChannelRecord(
+  api: OpenClawPluginApi,
+  accountId: string,
+): Promise<ChannelRecord | null> {
+  try {
+    const raw = await readFile(join(channelsRecordDir(api), `${accountId}.json`), "utf-8");
+    return JSON.parse(raw) as ChannelRecord;
+  } catch {
+    return null;
+  }
+}
+
+/** Enable or disable a configured channel account (updates gateway config + record). */
+export async function setChannelEnabled(
+  api: OpenClawPluginApi,
+  accountId: string,
+  enabled: boolean,
+): Promise<ProvisionResult> {
+  const record = await readChannelRecord(api, accountId);
+  if (!record) {
+    return { ok: false, error: `Unknown channel: ${accountId}` };
+  }
+  await updateGatewayConfig((draft: OpenClawConfig) => {
+    const cfg = draft as Record<string, unknown>;
+    const channel = (cfg.channels as Record<string, unknown>)?.[record.type] as
+      | Record<string, unknown>
+      | undefined;
+    const account = (channel?.accounts as Record<string, Record<string, unknown>>)?.[accountId];
+    if (account) {
+      account.enabled = enabled;
+    }
+  });
+  record.status = enabled ? "active" : "inactive";
+  await writeChannelRecord(api, record);
+  return { ok: true, channel: toApiChannel(record) };
+}
+
+/** Remove a configured channel account from gateway config and MABOS records. */
+export async function removeChannel(
+  api: OpenClawPluginApi,
+  accountId: string,
+): Promise<ProvisionResult> {
+  const record = await readChannelRecord(api, accountId);
+  if (!record) {
+    return { ok: false, error: `Unknown channel: ${accountId}` };
+  }
+  await updateGatewayConfig((draft: OpenClawConfig) => {
+    const cfg = draft as Record<string, unknown>;
+    const channel = (cfg.channels as Record<string, unknown>)?.[record.type] as
+      | Record<string, unknown>
+      | undefined;
+    const accounts = channel?.accounts as Record<string, unknown> | undefined;
+    if (accounts) {
+      delete accounts[accountId];
+    }
+  });
+  // Note: the durable env secret is intentionally left in place (orphaned but
+  // harmless); cleanup is a follow-up.
+  await rm(join(channelsRecordDir(api), `${accountId}.json`), { force: true });
+  return { ok: true };
+}
+
+/** Re-run the live credential test for a configured channel, reconstructing
+ * credentials from the durable env secret + stored non-secret values. */
+export async function getChannelStatus(
+  api: OpenClawPluginApi,
+  accountId: string,
+): Promise<ChannelTestResult & { id: string }> {
+  const record = await readChannelRecord(api, accountId);
+  if (!record) {
+    return { id: accountId, success: false, error: `Unknown channel: ${accountId}` };
+  }
+  const creds: Record<string, unknown> = { ...(record.publicCredentials ?? {}) };
+  for (const [name, envId] of Object.entries(record.envRefs ?? {})) {
+    const value = process.env[envId];
+    if (value !== undefined) {
+      creds[name] = value;
+    }
+  }
+  const result = await testChannelConnection(record.type, creds);
+  return { id: accountId, ...result };
 }
 
 /** List configured channels from MABOS metadata records (masked, no secrets). */
@@ -315,8 +429,8 @@ export async function listConfiguredChannels(
       continue;
     }
     try {
-      const record = JSON.parse(await readFile(join(dir, file), "utf-8")) as ProvisionedChannel;
-      out.push(record);
+      const record = JSON.parse(await readFile(join(dir, file), "utf-8")) as ChannelRecord;
+      out.push(toApiChannel(record));
     } catch {
       // Skip malformed records.
     }

@@ -15,8 +15,11 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import type { OpenClawPluginApi } from "openclaw/plugin-sdk";
 import { CHANNEL_CATALOG } from "./channel-catalog.js";
 import {
+  getChannelStatus,
   listConfiguredChannels,
   provisionChannel,
+  removeChannel,
+  setChannelEnabled,
   testChannelConnection,
   type ProvisionChannelInput,
 } from "./channel-provisioning.js";
@@ -97,6 +100,32 @@ export function registerChannelRoutes(api: OpenClawPluginApi, deps: ChannelRoute
             test: body.test,
           });
           return sendJson(res, result.ok ? 200 : 400, result);
+        }
+
+        // GET /mabos/api/channels/:id/status
+        const statusMatch = rest.match(/^\/([^/]+)\/status$/);
+        if (method === "GET" && statusMatch) {
+          const result = await getChannelStatus(api, decodeURIComponent(statusMatch[1]));
+          return sendJson(res, 200, result);
+        }
+
+        // PATCH /mabos/api/channels/:id   { enabled }
+        // DELETE /mabos/api/channels/:id
+        const idMatch = rest.match(/^\/([^/]+)$/);
+        if (idMatch) {
+          const id = decodeURIComponent(idMatch[1]);
+          if (method === "PATCH") {
+            const body = (await readBody(req)) as { enabled?: boolean };
+            if (typeof body.enabled !== "boolean") {
+              return sendJson(res, 400, { error: "enabled (boolean) is required" });
+            }
+            const result = await setChannelEnabled(api, id, body.enabled);
+            return sendJson(res, result.ok ? 200 : 404, result);
+          }
+          if (method === "DELETE") {
+            const result = await removeChannel(api, id);
+            return sendJson(res, result.ok ? 200 : 404, result);
+          }
         }
 
         return sendJson(res, 404, { error: "Not found" });
