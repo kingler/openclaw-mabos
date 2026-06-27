@@ -87,6 +87,12 @@
 - **UI:** Integrations page now shows per-channel live status (30s polling), enable/disable, and remove.
 - **Tests:** extended `tests/channel-integration.test.ts` with Discord/Signal mappings and enable/disable/remove/status (network mocked).
 
+## Phase 2.1 status (unification + cleanup — implemented)
+
+- **Unified `setup_channel`:** the agent tool now provisions through the shared `provisionChannel` (validate -> test -> write real gateway config with `${ENV}` secrets -> live refresh), instead of writing a plaintext-credential workspace record. The conversational path and the web UI path now share one implementation. (WhatsApp via the agent tool now returns an honest "unsupported" until the QR flow lands.)
+- **Durable-secret cleanup:** `plugin-sdk` adds `unsetDurableSecretEnv(id)`; `removeChannel` now deletes the channel's env secrets from `<configDir>/.env` and `process.env` (no more orphaned secrets).
+- **Tests:** remove test asserts secret cleanup; mock extended with `unsetDurableSecretEnv`.
+
 ## Risks / notes
 
 - **Live reload (D4)** is the main unknown — verify early; it gates the "no terminal" promise.
