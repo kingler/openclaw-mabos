@@ -40,6 +40,13 @@ import type {
   FinancialStatement,
   CompliancePolicy,
   ComplianceViolation,
+  ChannelDescriptor,
+  ConfiguredChannel,
+  ChannelTestResult,
+  ProvisionChannelBody,
+  ProvisionResult,
+  WhatsAppLoginStart,
+  WhatsAppLoginWait,
 } from "./types";
 
 const BASE = "/mabos/api";
@@ -438,4 +445,20 @@ export const api = {
     );
   },
   getViolation: (id: string) => get<ComplianceViolation>(`/erp/compliance/violations/${id}`),
+
+  // --- Channel integration ---
+  getChannelCatalog: () => get<{ channels: ChannelDescriptor[] }>("/channels/catalog"),
+  getChannels: () => get<{ count: number; channels: ConfiguredChannel[] }>("/channels"),
+  testChannel: (body: { channel_type: string; credentials: Record<string, string> }) =>
+    post<ChannelTestResult>("/channels/test", body),
+  saveChannel: (body: ProvisionChannelBody) => post<ProvisionResult>("/channels", body),
+  getChannelStatus: (id: string) =>
+    get<ChannelTestResult & { id: string }>(`/channels/${encodeURIComponent(id)}/status`),
+  setChannelEnabled: (id: string, enabled: boolean) =>
+    patch<ProvisionResult>(`/channels/${encodeURIComponent(id)}`, { enabled }),
+  removeChannel: (id: string) => del<ProvisionResult>(`/channels/${encodeURIComponent(id)}`),
+  startWhatsAppLogin: (body: { force?: boolean }) =>
+    post<WhatsAppLoginStart>("/channels/whatsapp/login/start", body),
+  waitWhatsAppLogin: (body: { businessId?: string; agentId?: string; timeoutMs?: number }) =>
+    post<WhatsAppLoginWait>("/channels/whatsapp/login/wait", body),
 };

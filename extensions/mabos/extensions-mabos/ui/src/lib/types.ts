@@ -624,3 +624,62 @@ export type ComplianceViolation = {
   detected_at: string;
   resolved_at?: string;
 };
+
+// ── Channel integration ────────────────────────────────────────────────
+export type ChannelField = {
+  name: string;
+  label: string;
+  type: "string" | "password";
+  required: boolean;
+  secret: boolean;
+  configKey: string;
+  persist?: boolean;
+  placeholder?: string;
+  help?: string;
+  validationRegex?: string;
+};
+
+export type ChannelDescriptor = {
+  type: string;
+  label: string;
+  docsUrl?: string;
+  capabilities?: string[];
+  pairingType?: "credentials" | "qr";
+  fields: ChannelField[];
+};
+
+export type WhatsAppLoginStart = { qrDataUrl?: string; message: string };
+export type WhatsAppLoginWait = {
+  connected: boolean;
+  message: string;
+  channel?: ConfiguredChannel;
+};
+
+export type ConfiguredChannel = {
+  id: string;
+  type: string;
+  name: string;
+  status: "active" | "inactive";
+  agentId?: string;
+  businessId?: string;
+  createdAt: string;
+  maskedCredentials: Record<string, string>;
+};
+
+export type ChannelTestResult = { success: boolean; error?: string; bot_info?: unknown };
+
+export type ProvisionChannelBody = {
+  channelType: string;
+  credentials: Record<string, string>;
+  agentId?: string;
+  businessId?: string;
+  name?: string;
+  test?: boolean;
+};
+
+export type ProvisionResult = {
+  ok: boolean;
+  channel?: ConfiguredChannel;
+  test?: ChannelTestResult;
+  error?: string;
+};

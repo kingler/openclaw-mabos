@@ -9,7 +9,12 @@ import { join, dirname } from "node:path";
 import { promisify } from "node:util";
 import { Type, type Static } from "@sinclair/typebox";
 import type { OpenClawPluginApi, AnyAgentTool } from "openclaw/plugin-sdk";
-import { textResult, resolveWorkspaceDir, httpRequest } from "./common.js";
+import { textResult, resolveWorkspaceDir } from "./common.js";
+import {
+  getChannelStatus,
+  provisionChannel,
+  testChannelConnection,
+} from "../channels/channel-provisioning.js";
 
 const exec = promisify(execCallback);
 
@@ -128,123 +133,6 @@ async function checkGatewayVersion(): Promise<VersionHealth> {
       plugin_version: "unknown",
       compatible: false,
     };
-  }
-}
-
-async function testChannelConnection(
-  channelType: string,
-  credentials: any,
-): Promise<{ success: boolean; error?: string; bot_info?: any }> {
-  // Step 1: Validate credential format
-  switch (channelType) {
-    case "telegram":
-      if (!credentials.bot_token || !credentials.bot_token.match(/^\d+:[A-Za-z0-9_-]+$/)) {
-        return { success: false, error: "Invalid Telegram bot token format" };
-      }
-      break;
-    case "discord":
-      if (!credentials.bot_token || !credentials.application_id) {
-        return { success: false, error: "Discord bot token and application ID required" };
-      }
-      break;
-    case "slack":
-      if (!credentials.bot_token || !credentials.bot_token.startsWith("xoxb-")) {
-        return { success: false, error: "Invalid Slack bot token format (must start with xoxb-)" };
-      }
-      break;
-    case "signal":
-      if (!credentials.account) {
-        return { success: false, error: "Signal account (E.164 phone number) required" };
-      }
-      break;
-    case "whatsapp":
-      if (!credentials.access_token && !credentials.session_path) {
-        return { success: false, error: "WhatsApp access_token or session_path required" };
-      }
-      break;
-    default:
-      return { success: false, error: `Unsupported channel type: ${channelType}` };
-  }
-
-  // Step 2: Make real API call to verify credentials
-  try {
-    let result: { status: number; data: any };
-
-    switch (channelType) {
-      case "telegram":
-        result = await httpRequest(
-          `https://api.telegram.org/bot${credentials.bot_token}/getMe`,
-          "GET",
-          {},
-        );
-        if (result.status === 0) {
-          return { success: true, error: "Network unavailable; format validated only" };
-        }
-        if (result.data?.ok === true) {
-          return { success: true, bot_info: result.data.result };
-        }
-        return { success: false, error: result.data?.description || "Telegram token rejected" };
-
-      case "discord":
-        result = await httpRequest("https://discord.com/api/v10/oauth2/applications/@me", "GET", {
-          Authorization: `Bot ${credentials.bot_token}`,
-        });
-        if (result.status === 0) {
-          return { success: true, error: "Network unavailable; format validated only" };
-        }
-        if (result.data?.id) {
-          return { success: true, bot_info: { id: result.data.id, name: result.data.name } };
-        }
-        return { success: false, error: result.data?.message || "Discord token rejected" };
-
-      case "slack":
-        result = await httpRequest("https://slack.com/api/auth.test", "GET", {
-          Authorization: `Bearer ${credentials.bot_token}`,
-        });
-        if (result.status === 0) {
-          return { success: true, error: "Network unavailable; format validated only" };
-        }
-        if (result.data?.ok === true) {
-          return { success: true, bot_info: { team: result.data.team, user: result.data.user } };
-        }
-        return { success: false, error: result.data?.error || "Slack token rejected" };
-
-      case "signal": {
-        const cliUrl = credentials.cli_url || "http://localhost:8080";
-        result = await httpRequest(`${cliUrl}/v1/about`, "GET", {}, undefined, 3000);
-        if (result.status === 0) {
-          return { success: true, error: "Network unavailable; format validated only" };
-        }
-        if (result.status === 200) {
-          return { success: true, bot_info: result.data };
-        }
-        return { success: false, error: "Signal CLI API not responding" };
-      }
-
-      case "whatsapp":
-        if (!credentials.access_token || !credentials.phone_number_id) {
-          // Session-based WhatsApp doesn't support API test
-          return { success: true, error: "Session-based setup; cannot verify remotely" };
-        }
-        result = await httpRequest(
-          `https://graph.facebook.com/v19.0/${credentials.phone_number_id}`,
-          "GET",
-          { Authorization: `Bearer ${credentials.access_token}` },
-        );
-        if (result.status === 0) {
-          return { success: true, error: "Network unavailable; format validated only" };
-        }
-        if (result.status === 200) {
-          return { success: true, bot_info: result.data };
-        }
-        return { success: false, error: result.data?.error?.message || "WhatsApp token rejected" };
-
-      default:
-        return { success: true };
-    }
-  } catch {
-    // Network failure should not block setup
-    return { success: true, error: "Network unavailable; format validated only" };
   }
 }
 
@@ -523,69 +411,39 @@ Use other setup wizard tools to complete the configuration.`);
       description: "Guided channel configuration with credential validation and connection testing",
       parameters: SetupChannelParams,
       async execute(_id: string, params: Static<typeof SetupChannelParams>) {
-        const ws = resolveWorkspaceDir(api);
         const { channel_type, credentials, test_connection = true } = params;
 
         try {
-          // Get channel-specific credentials
-          const channelCredentials = credentials[channel_type];
+          // Get channel-specific credentials (keyed by catalog field names).
+          const channelCredentials = credentials[channel_type] as
+            | Record<string, string>
+            | undefined;
           if (!channelCredentials) {
             return textResult(`❌ No credentials provided for ${channel_type}`);
           }
 
-          // Test connection if requested
-          let testResults;
-          if (test_connection) {
-            const testResult = await testChannelConnection(channel_type, channelCredentials);
-            testResults = {
-              connection_ok: testResult.success,
-              test_message_sent: testResult.success,
-              error: testResult.error,
-            };
-          }
-
-          // Generate channel configuration
-          const channelId = `${channel_type}_${Date.now()}`;
-          const channelConfig = {
-            id: channelId,
-            type: channel_type,
-            name: `${channel_type.charAt(0).toUpperCase() + channel_type.slice(1)} Channel`,
+          // Provision through the shared module: validates, tests, writes the
+          // channel into the real gateway config (secrets as ${ENV} refs), and
+          // refreshes the runtime so it goes live. Same path the web UI uses.
+          const result = await provisionChannel(api, {
+            channelType: channel_type,
             credentials: channelCredentials,
-            created_at: new Date().toISOString(),
-            status: testResults?.connection_ok ? "active" : "inactive",
-          };
+            test: test_connection,
+          });
 
-          // Save channel configuration
-          const channelsDir = join(ws, "channels");
-          await mkdir(channelsDir, { recursive: true });
-          await writeJson(join(channelsDir, `${channelId}.json`), channelConfig);
-
-          const nextSteps = [
-            "Configure additional channels or proceed to business setup",
-            "Test channel functionality with a real message",
-          ];
-
-          if (!testResults?.connection_ok) {
-            nextSteps.unshift("Fix connection issues before proceeding");
+          if (!result.ok) {
+            return textResult(`❌ Channel setup failed: ${result.error ?? "unknown error"}`);
           }
 
-          return textResult(`## Channel Configuration ${testResults?.connection_ok ? "✅ Success" : "⚠️ Partial"}
+          const ch = result.channel!;
+          const note = result.test?.error ? `\n**Note:** ${result.test.error}` : "";
+          return textResult(`## Channel Configuration ✅ Success
 
 **Channel:** ${channel_type}
-**ID:** ${channelId}
-**Status:** ${channelConfig.status}
+**ID:** ${ch.id}
+**Status:** ${ch.status}${note}
 
-${
-  testResults
-    ? `**Connection Test:**
-- Connection OK: ${testResults.connection_ok ? "✅" : "❌"}
-- Test Message: ${testResults.test_message_sent ? "✅" : "❌"}
-${testResults.error ? `- Error: ${testResults.error}` : ""}`
-    : "**Connection test skipped**"
-}
-
-**Next Steps:**
-${nextSteps.map((step, i) => `${i + 1}. ${step}`).join("\n")}`);
+The channel was written to the gateway config and is live. Configure another channel or proceed to business setup.`);
         } catch (error) {
           api.logger.error(`Channel setup failed: ${error}`);
           return textResult(`❌ Channel setup failed: ${error}`);
@@ -665,11 +523,13 @@ ${nextSteps.map((step, i) => `${i + 1}. ${step}`).join("\n")}`);
                 if (file.endsWith(".json")) {
                   const channelConfig = await readJson(join(channelsDir, file));
                   if (channelConfig) {
-                    // Test channel connectivity
-                    const testResult = await testChannelConnection(
-                      channelConfig.type,
-                      channelConfig.credentials,
-                    );
+                    // Test channel connectivity. New-format records store no
+                    // plaintext credentials, so reconstruct via getChannelStatus
+                    // (durable env secret + stored non-secret values); fall back
+                    // to legacy inline credentials for old records.
+                    const testResult = channelConfig.credentials
+                      ? await testChannelConnection(channelConfig.type, channelConfig.credentials)
+                      : await getChannelStatus(api, channelConfig.id);
 
                     channels.push({
                       channel_type: channelConfig.type,
@@ -985,14 +845,18 @@ WantedBy=default.target
                 for (const f of files) {
                   if (!f.endsWith(".json")) continue;
                   const cfg = await readJson(join(chDir, f));
-                  if (!cfg?.type || !cfg?.credentials) continue;
+                  if (!cfg?.type) continue;
 
                   if (dry_run) {
                     channelResults.push({ id: cfg.id, type: cfg.type, ok: true });
                     continue;
                   }
 
-                  const test = await testChannelConnection(cfg.type, cfg.credentials);
+                  // New-format records have no inline credentials; reconstruct
+                  // via getChannelStatus, falling back to legacy inline creds.
+                  const test = cfg.credentials
+                    ? await testChannelConnection(cfg.type, cfg.credentials)
+                    : await getChannelStatus(api, cfg.id);
                   channelResults.push({
                     id: cfg.id,
                     type: cfg.type,

@@ -119,6 +119,7 @@ import { registerEnrichment } from "./src/enrichment/index.js";
 import { createEnrichmentTools } from "./src/enrichment/tools.js";
 import { registerProvisioning } from "./src/provisioning/index.js";
 import { registerToolApi } from "./src/tool-api/index.js";
+import { registerChannelRoutes } from "./src/channels/routes.js";
 import { createSecurityModule } from "./src/security/index.js";
 import { registerSessionIntel } from "./src/session-intel/index.js";
 import { registerSkillLoop } from "./src/skill-loop/index.js";
@@ -1268,6 +1269,13 @@ export default async function register(api: OpenClawPluginApi) {
     registerToolApi(api, { tools: registeredTools });
   } catch (err) {
     log.warn(`[mabos] Tool API failed to initialize: ${err}`);
+  }
+
+  // Web channel integration routes (connect messengers from the UI).
+  try {
+    registerChannelRoutes(api, { logger: { info: (m) => log.info?.(m), error: (m) => log.error(m) } });
+  } catch (err) {
+    log.warn(`[mabos] Channel API failed to initialize: ${err}`);
   }
 
   // Discover and register printed CLIs (<slug>-pp-cli binaries on PATH).

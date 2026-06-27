@@ -23,6 +23,7 @@ import {
   Sparkles,
   FileSearch,
   Rocket,
+  Plug,
 } from "lucide-react";
 
 export type NavItem = {
@@ -96,5 +97,9 @@ export const navSections: NavSection[] = [
       { icon: Sparkles, label: "Skills", path: "/skills" },
       { icon: FileSearch, label: "Sessions", path: "/sessions" },
     ],
+  },
+  {
+    title: "Setup",
+    items: [{ icon: Plug, label: "Integrations", path: "/integrations" }],
   },
 ];
