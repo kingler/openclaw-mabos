@@ -93,6 +93,14 @@
 - **Durable-secret cleanup:** `plugin-sdk` adds `unsetDurableSecretEnv(id)`; `removeChannel` now deletes the channel's env secrets from `<configDir>/.env` and `process.env` (no more orphaned secrets).
 - **Tests:** remove test asserts secret cleanup; mock extended with `unsetDurableSecretEnv`.
 
+## Phase 3 status (WhatsApp QR pairing — implemented)
+
+- **Drives the gateway's existing login**, not a reimplementation: `plugin-sdk` adds a lazy boundary `whatsapp-login.ts` (`whatsappLoginStart` / `whatsappLoginWait`) that **dynamically** imports `src/web/login-qr.ts` (`startWebLoginWithQr` / `waitForWebLogin`). This is required because `login-qr.ts` statically imports `@whiskeysockets/baileys`; a static re-export from the plugin-sdk barrel would pull Baileys into every plugin and trip the dynamic-import guardrail. `login-qr.js` is only ever imported dynamically (same pattern as the core `whatsapp_login` agent tool).
+- **Catalog:** WhatsApp descriptor with `pairingType: "qr"` and no credential fields. The UI renders a QR flow instead of the form.
+- **Routes:** `POST /mabos/api/channels/whatsapp/login/start` (returns a QR data URL) and `POST /mabos/api/channels/whatsapp/login/wait` (polls; on connect, enables `channels.whatsapp` in gateway config + binds `agentId`, and records the channel so it lists).
+- **UI:** selecting WhatsApp shows a `WhatsAppPairing` component — fetches the QR, polls until linked, then refreshes the channel list.
+- **Tests:** catalog qr-type assertion; `waitWhatsAppLogin` disconnected vs connected (config enable + record) with the login boundary mocked.
+
 ## Risks / notes
 
 - **Live reload (D4)** is the main unknown — verify early; it gates the "no terminal" promise.
