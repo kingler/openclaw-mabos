@@ -136,6 +136,8 @@ export {
   envSecretRefTemplate,
 } from "./config-write.js";
 export type { GatewayConfigMutator } from "./config-write.js";
+export { whatsappLoginStart, whatsappLoginWait } from "./whatsapp-login.js";
+export type { WhatsAppLoginStartResult, WhatsAppLoginWaitResult } from "./whatsapp-login.js";
 
 export type { FileLockHandle, FileLockOptions } from "./file-lock.js";
 export { acquireFileLock, withFileLock } from "./file-lock.js";
