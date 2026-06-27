@@ -14,6 +14,7 @@ import { join } from "node:path";
 import {
   envSecretRefTemplate,
   setDurableSecretEnv,
+  unsetDurableSecretEnv,
   updateGatewayConfig,
   type OpenClawConfig,
   type OpenClawPluginApi,
@@ -385,8 +386,10 @@ export async function removeChannel(
       delete accounts[accountId];
     }
   });
-  // Note: the durable env secret is intentionally left in place (orphaned but
-  // harmless); cleanup is a follow-up.
+  // Clean up the durable env secrets this channel created.
+  for (const envId of Object.values(record.envRefs ?? {})) {
+    await unsetDurableSecretEnv(envId);
+  }
   await rm(join(channelsRecordDir(api), `${accountId}.json`), { force: true });
   return { ok: true };
 }

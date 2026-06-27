@@ -10,7 +10,7 @@ import { promisify } from "node:util";
 import { Type, type Static } from "@sinclair/typebox";
 import type { OpenClawPluginApi, AnyAgentTool } from "openclaw/plugin-sdk";
 import { textResult, resolveWorkspaceDir } from "./common.js";
-import { testChannelConnection } from "../channels/channel-provisioning.js";
+import { provisionChannel, testChannelConnection } from "../channels/channel-provisioning.js";
 
 const exec = promisify(execCallback);
 
@@ -407,69 +407,39 @@ Use other setup wizard tools to complete the configuration.`);
       description: "Guided channel configuration with credential validation and connection testing",
       parameters: SetupChannelParams,
       async execute(_id: string, params: Static<typeof SetupChannelParams>) {
-        const ws = resolveWorkspaceDir(api);
         const { channel_type, credentials, test_connection = true } = params;
 
         try {
-          // Get channel-specific credentials
-          const channelCredentials = credentials[channel_type];
+          // Get channel-specific credentials (keyed by catalog field names).
+          const channelCredentials = credentials[channel_type] as
+            | Record<string, string>
+            | undefined;
           if (!channelCredentials) {
             return textResult(`❌ No credentials provided for ${channel_type}`);
           }
 
-          // Test connection if requested
-          let testResults;
-          if (test_connection) {
-            const testResult = await testChannelConnection(channel_type, channelCredentials);
-            testResults = {
-              connection_ok: testResult.success,
-              test_message_sent: testResult.success,
-              error: testResult.error,
-            };
-          }
-
-          // Generate channel configuration
-          const channelId = `${channel_type}_${Date.now()}`;
-          const channelConfig = {
-            id: channelId,
-            type: channel_type,
-            name: `${channel_type.charAt(0).toUpperCase() + channel_type.slice(1)} Channel`,
+          // Provision through the shared module: validates, tests, writes the
+          // channel into the real gateway config (secrets as ${ENV} refs), and
+          // refreshes the runtime so it goes live. Same path the web UI uses.
+          const result = await provisionChannel(api, {
+            channelType: channel_type,
             credentials: channelCredentials,
-            created_at: new Date().toISOString(),
-            status: testResults?.connection_ok ? "active" : "inactive",
-          };
+            test: test_connection,
+          });
 
-          // Save channel configuration
-          const channelsDir = join(ws, "channels");
-          await mkdir(channelsDir, { recursive: true });
-          await writeJson(join(channelsDir, `${channelId}.json`), channelConfig);
-
-          const nextSteps = [
-            "Configure additional channels or proceed to business setup",
-            "Test channel functionality with a real message",
-          ];
-
-          if (!testResults?.connection_ok) {
-            nextSteps.unshift("Fix connection issues before proceeding");
+          if (!result.ok) {
+            return textResult(`❌ Channel setup failed: ${result.error ?? "unknown error"}`);
           }
 
-          return textResult(`## Channel Configuration ${testResults?.connection_ok ? "✅ Success" : "⚠️ Partial"}
+          const ch = result.channel!;
+          const note = result.test?.error ? `\n**Note:** ${result.test.error}` : "";
+          return textResult(`## Channel Configuration ✅ Success
 
 **Channel:** ${channel_type}
-**ID:** ${channelId}
-**Status:** ${channelConfig.status}
+**ID:** ${ch.id}
+**Status:** ${ch.status}${note}
 
-${
-  testResults
-    ? `**Connection Test:**
-- Connection OK: ${testResults.connection_ok ? "✅" : "❌"}
-- Test Message: ${testResults.test_message_sent ? "✅" : "❌"}
-${testResults.error ? `- Error: ${testResults.error}` : ""}`
-    : "**Connection test skipped**"
-}
-
-**Next Steps:**
-${nextSteps.map((step, i) => `${i + 1}. ${step}`).join("\n")}`);
+The channel was written to the gateway config and is live. Configure another channel or proceed to business setup.`);
         } catch (error) {
           api.logger.error(`Channel setup failed: ${error}`);
           return textResult(`❌ Channel setup failed: ${error}`);

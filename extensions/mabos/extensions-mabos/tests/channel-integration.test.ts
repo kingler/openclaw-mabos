@@ -19,6 +19,10 @@ vi.mock("openclaw/plugin-sdk", () => ({
     sdkState.secrets.push({ id, value });
     process.env[id] = value; // mirror real behaviour so status reconstruction works
   },
+  unsetDurableSecretEnv: async (id: string) => {
+    sdkState.secrets = sdkState.secrets.filter((s) => s.id !== id);
+    delete process.env[id];
+  },
   envSecretRefTemplate: (id: string) => `\${${id}}`,
 }));
 
@@ -210,10 +214,13 @@ describe("channel mappings + lifecycle (Phase 2)", () => {
       credentials: { bot_token: TOKEN },
       test: false,
     });
+    expect(sdkState.secrets).toHaveLength(1);
     const res = await removeChannel(fakeApi(ws), channel!.id);
     expect(res.ok).toBe(true);
     expect((sdkState.config.channels as any).telegram.accounts[channel!.id]).toBeUndefined();
     expect(await listConfiguredChannels(fakeApi(ws))).toHaveLength(0);
+    // durable secret is cleaned up on remove
+    expect(sdkState.secrets).toHaveLength(0);
   });
 
   it("status reconstructs credentials and runs the live test", async () => {
