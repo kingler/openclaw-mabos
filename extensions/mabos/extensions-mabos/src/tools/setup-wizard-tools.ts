@@ -10,7 +10,11 @@ import { promisify } from "node:util";
 import { Type, type Static } from "@sinclair/typebox";
 import type { OpenClawPluginApi, AnyAgentTool } from "openclaw/plugin-sdk";
 import { textResult, resolveWorkspaceDir } from "./common.js";
-import { provisionChannel, testChannelConnection } from "../channels/channel-provisioning.js";
+import {
+  getChannelStatus,
+  provisionChannel,
+  testChannelConnection,
+} from "../channels/channel-provisioning.js";
 
 const exec = promisify(execCallback);
 
@@ -519,11 +523,13 @@ The channel was written to the gateway config and is live. Configure another cha
                 if (file.endsWith(".json")) {
                   const channelConfig = await readJson(join(channelsDir, file));
                   if (channelConfig) {
-                    // Test channel connectivity
-                    const testResult = await testChannelConnection(
-                      channelConfig.type,
-                      channelConfig.credentials,
-                    );
+                    // Test channel connectivity. New-format records store no
+                    // plaintext credentials, so reconstruct via getChannelStatus
+                    // (durable env secret + stored non-secret values); fall back
+                    // to legacy inline credentials for old records.
+                    const testResult = channelConfig.credentials
+                      ? await testChannelConnection(channelConfig.type, channelConfig.credentials)
+                      : await getChannelStatus(api, channelConfig.id);
 
                     channels.push({
                       channel_type: channelConfig.type,
@@ -839,14 +845,18 @@ WantedBy=default.target
                 for (const f of files) {
                   if (!f.endsWith(".json")) continue;
                   const cfg = await readJson(join(chDir, f));
-                  if (!cfg?.type || !cfg?.credentials) continue;
+                  if (!cfg?.type) continue;
 
                   if (dry_run) {
                     channelResults.push({ id: cfg.id, type: cfg.type, ok: true });
                     continue;
                   }
 
-                  const test = await testChannelConnection(cfg.type, cfg.credentials);
+                  // New-format records have no inline credentials; reconstruct
+                  // via getChannelStatus, falling back to legacy inline creds.
+                  const test = cfg.credentials
+                    ? await testChannelConnection(cfg.type, cfg.credentials)
+                    : await getChannelStatus(api, cfg.id);
                   channelResults.push({
                     id: cfg.id,
                     type: cfg.type,

@@ -250,7 +250,10 @@ export async function provisionChannel(
   }
 
   const createdAt = new Date().toISOString();
-  const accountId = `${input.channelType}_${input.businessId ?? "default"}_${Date.now()}`;
+  // Random suffix avoids id/secret collisions when two channels of the same
+  // type/business are provisioned within the same millisecond.
+  const suffix = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  const accountId = `${input.channelType}_${input.businessId ?? "default"}_${suffix}`;
 
   // Build the per-account config entry, persisting secret fields as ${ENV} refs.
   // Also capture reconstruction data (env var ids + non-secret values) so a later
