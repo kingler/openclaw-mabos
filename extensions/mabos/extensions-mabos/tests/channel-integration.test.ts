@@ -8,6 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const sdkState = vi.hoisted(() => ({
   config: {} as Record<string, unknown>,
   secrets: [] as Array<{ id: string; value: string }>,
+  waConnected: false,
 }));
 
 vi.mock("openclaw/plugin-sdk", () => ({
@@ -24,6 +25,14 @@ vi.mock("openclaw/plugin-sdk", () => ({
     delete process.env[id];
   },
   envSecretRefTemplate: (id: string) => `\${${id}}`,
+  whatsappLoginStart: async () => ({
+    qrDataUrl: "data:image/png;base64,AAA",
+    message: "scan",
+  }),
+  whatsappLoginWait: async () => ({
+    connected: sdkState.waConnected,
+    message: sdkState.waConnected ? "linked" : "waiting",
+  }),
 }));
 
 // Make the live credential test deterministic (no real network) for status checks.
@@ -46,6 +55,7 @@ import {
   removeChannel,
   setChannelEnabled,
   validateCredentials,
+  waitWhatsAppLogin,
 } from "../src/channels/channel-provisioning.js";
 
 const TOKEN = "123456789:ABCdefGhIJKlmNoPQRstuVWxyz"; // pragma: allowlist secret
@@ -68,6 +78,12 @@ describe("channel-catalog", () => {
     expect(validateCredentials(d, {})).toMatch(/required/i);
     expect(validateCredentials(d, { bot_token: "not-a-token" })).toMatch(/invalid format/i);
     expect(validateCredentials(d, { bot_token: TOKEN })).toBeNull();
+  });
+
+  it("marks whatsapp as a QR-pairing channel with no credential fields", () => {
+    const d = getChannelDescriptor("whatsapp");
+    expect(d?.pairingType).toBe("qr");
+    expect(d?.fields).toHaveLength(0);
   });
 });
 
@@ -232,5 +248,23 @@ describe("channel mappings + lifecycle (Phase 2)", () => {
     const status = await getChannelStatus(fakeApi(ws), channel!.id);
     expect(status.id).toBe(channel!.id);
     expect(status.success).toBe(true); // httpRequest mocked to ok:true
+  });
+
+  it("whatsapp: waiting stays disconnected until the scan completes", async () => {
+    sdkState.waConnected = false;
+    const pending = await waitWhatsAppLogin(fakeApi(ws), { businessId: "acme" });
+    expect(pending.connected).toBe(false);
+    expect(await listConfiguredChannels(fakeApi(ws))).toHaveLength(0);
+  });
+
+  it("whatsapp: on connect, enables config and records the channel", async () => {
+    sdkState.waConnected = true;
+    const result = await waitWhatsAppLogin(fakeApi(ws), { businessId: "acme", agentId: "wa-agent" });
+    expect(result.connected).toBe(true);
+    expect((sdkState.config.channels as any).whatsapp.enabled).toBe(true);
+    expect((sdkState.config.channels as any).whatsapp.agentId).toBe("wa-agent");
+    const listed = await listConfiguredChannels(fakeApi(ws));
+    expect(listed.some((c) => c.type === "whatsapp")).toBe(true);
+    sdkState.waConnected = false;
   });
 });

@@ -20,7 +20,9 @@ import {
   provisionChannel,
   removeChannel,
   setChannelEnabled,
+  startWhatsAppLogin,
   testChannelConnection,
+  waitWhatsAppLogin,
   type ProvisionChannelInput,
 } from "./channel-provisioning.js";
 
@@ -100,6 +102,28 @@ export function registerChannelRoutes(api: OpenClawPluginApi, deps: ChannelRoute
             test: body.test,
           });
           return sendJson(res, result.ok ? 200 : 400, result);
+        }
+
+        // POST /mabos/api/channels/whatsapp/login/start
+        if (method === "POST" && rest === "/whatsapp/login/start") {
+          const body = (await readBody(req)) as { force?: boolean; timeoutMs?: number };
+          const result = await startWhatsAppLogin({ force: body.force, timeoutMs: body.timeoutMs });
+          return sendJson(res, 200, result);
+        }
+
+        // POST /mabos/api/channels/whatsapp/login/wait
+        if (method === "POST" && rest === "/whatsapp/login/wait") {
+          const body = (await readBody(req)) as {
+            businessId?: string;
+            agentId?: string;
+            timeoutMs?: number;
+          };
+          const result = await waitWhatsAppLogin(api, {
+            businessId: body.businessId,
+            agentId: body.agentId,
+            timeoutMs: body.timeoutMs,
+          });
+          return sendJson(res, 200, result);
         }
 
         // GET /mabos/api/channels/:id/status

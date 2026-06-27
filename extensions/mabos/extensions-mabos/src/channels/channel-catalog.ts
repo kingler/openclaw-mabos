@@ -40,6 +40,11 @@ export type ChannelDescriptor = {
   label: string;
   docsUrl?: string;
   capabilities?: string[];
+  /**
+   * How the channel is connected. "credentials" (default) renders the dynamic
+   * field form; "qr" renders a QR-pairing flow (e.g. WhatsApp web/Baileys).
+   */
+  pairingType?: "credentials" | "qr";
   fields: ChannelField[];
 };
 
@@ -161,7 +166,22 @@ const SIGNAL: ChannelDescriptor = {
   ],
 };
 
-export const CHANNEL_CATALOG: ChannelDescriptor[] = [TELEGRAM, DISCORD, SLACK, SIGNAL];
+const WHATSAPP: ChannelDescriptor = {
+  type: "whatsapp",
+  label: "WhatsApp",
+  docsUrl: "https://docs.openclaw.ai/channels/whatsapp",
+  capabilities: ["dm", "group", "media"],
+  pairingType: "qr", // session-based (Baileys): link by scanning a QR, no token form
+  fields: [],
+};
+
+export const CHANNEL_CATALOG: ChannelDescriptor[] = [
+  TELEGRAM,
+  DISCORD,
+  SLACK,
+  SIGNAL,
+  WHATSAPP,
+];
 
 export function getChannelDescriptor(type: string): ChannelDescriptor | undefined {
   return CHANNEL_CATALOG.find((c) => c.type === type);

@@ -184,6 +184,8 @@ function buildApiIndex(toolCount: number) {
         "GET /mabos/api/channels/:id/status",
         "PATCH /mabos/api/channels/:id",
         "DELETE /mabos/api/channels/:id",
+        "POST /mabos/api/channels/whatsapp/login/start",
+        "POST /mabos/api/channels/whatsapp/login/wait",
       ],
     },
     capabilities: "GET /mabos/api/capabilities",

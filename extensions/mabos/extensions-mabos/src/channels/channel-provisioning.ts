@@ -16,6 +16,8 @@ import {
   setDurableSecretEnv,
   unsetDurableSecretEnv,
   updateGatewayConfig,
+  whatsappLoginStart,
+  whatsappLoginWait,
   type OpenClawConfig,
   type OpenClawPluginApi,
 } from "openclaw/plugin-sdk";
@@ -413,6 +415,63 @@ export async function getChannelStatus(
   }
   const result = await testChannelConnection(record.type, creds);
   return { id: accountId, ...result };
+}
+
+// ── WhatsApp QR pairing (session-based, no credentials form) ────────────────
+
+export type WhatsAppLoginStart = { qrDataUrl?: string; message: string };
+export type WhatsAppLoginWait = {
+  connected: boolean;
+  message: string;
+  channel?: ProvisionedChannel;
+};
+
+/** Begin a WhatsApp web link: returns a QR data URL to scan (or a status message). */
+export async function startWhatsAppLogin(opts: {
+  force?: boolean;
+  timeoutMs?: number;
+}): Promise<WhatsAppLoginStart> {
+  return whatsappLoginStart({ force: opts.force, timeoutMs: opts.timeoutMs });
+}
+
+/**
+ * Poll for the WhatsApp QR scan to complete. On success, enable WhatsApp in the
+ * gateway config (bound to a business agent if provided) and record it so it
+ * appears in the channel list.
+ */
+export async function waitWhatsAppLogin(
+  api: OpenClawPluginApi,
+  opts: { businessId?: string; agentId?: string; timeoutMs?: number },
+): Promise<WhatsAppLoginWait> {
+  const result = await whatsappLoginWait({ timeoutMs: opts.timeoutMs });
+  if (!result.connected) {
+    return { connected: false, message: result.message };
+  }
+
+  // Enable WhatsApp in the real gateway config (session is already persisted).
+  await updateGatewayConfig((draft: OpenClawConfig) => {
+    const cfg = draft as Record<string, unknown>;
+    const channels = (cfg.channels ??= {}) as Record<string, unknown>;
+    const whatsapp = (channels.whatsapp ??= {}) as Record<string, unknown>;
+    whatsapp.enabled = true;
+    if (opts.agentId) {
+      whatsapp.agentId = opts.agentId;
+    }
+  });
+
+  const accountId = `whatsapp_${opts.businessId ?? "default"}`;
+  const record: ChannelRecord = {
+    id: accountId,
+    type: "whatsapp",
+    name: "WhatsApp",
+    status: "active",
+    agentId: opts.agentId,
+    businessId: opts.businessId,
+    createdAt: new Date().toISOString(),
+    maskedCredentials: {},
+  };
+  await writeChannelRecord(api, record);
+  return { connected: true, message: result.message, channel: toApiChannel(record) };
 }
 
 /** List configured channels from MABOS metadata records (masked, no secrets). */
