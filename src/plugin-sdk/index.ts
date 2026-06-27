@@ -132,6 +132,7 @@ export { isDangerousNameMatchingEnabled } from "../config/dangerous-name-matchin
 export {
   updateGatewayConfig,
   setDurableSecretEnv,
+  unsetDurableSecretEnv,
   envSecretRefTemplate,
 } from "./config-write.js";
 export type { GatewayConfigMutator } from "./config-write.js";

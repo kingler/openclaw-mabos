@@ -82,6 +82,23 @@ export async function setDurableSecretEnv(id: string, value: string): Promise<vo
   process.env[id] = value;
 }
 
+/**
+ * Remove `id` from the gateway's durable dotenv and from `process.env`.
+ * No-op if the file or key does not exist. Used to clean up orphaned secrets
+ * when a channel is removed.
+ */
+export async function unsetDurableSecretEnv(id: string): Promise<void> {
+  delete process.env[id];
+  const envPath = path.join(resolveConfigDir(process.env), ".env");
+  if (!fs.existsSync(envPath)) {
+    return;
+  }
+  const raw = await fs.promises.readFile(envPath, "utf-8");
+  const keyPrefix = `${id}=`;
+  const lines = raw.split("\n").filter((l) => !l.startsWith(keyPrefix));
+  await fs.promises.writeFile(envPath, lines.join("\n"), { mode: 0o600 });
+}
+
 /** The `${ID}` env-template form recognized by the config secret resolver. */
 export function envSecretRefTemplate(id: string): string {
   return `\${${id}}`;
