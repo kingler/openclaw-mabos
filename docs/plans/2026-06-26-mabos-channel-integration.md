@@ -78,6 +78,15 @@
 - **UI:** `IntegrationsPage.tsx` + `useChannels.ts` + api/types + router + nav ("Setup -> Integrations").
 - **Tests:** `tests/channel-integration.test.ts` covers catalog validation, env-ref write-through, secret masking, and record listing (plugin-sdk config boundary mocked).
 
+## Phase 2 status (more channels + lifecycle — implemented)
+
+- **Channels added:** Discord, Slack, Signal. Field-to-config mappings reflect the real gateway shapes: Discord `bot_token -> token` (secret) with `application_id` test-only (`persist: false`, not stored); Slack `botToken`/`appToken`/`signingSecret`; Signal `account` + `cli_url -> httpUrl` (no secret).
+- **WhatsApp deferred (scope correction):** OpenClaw's WhatsApp is session/QR-based (Baileys) with no Cloud-API token fields in config, so it does not fit the paste-credentials form. It needs a separate QR-pairing flow and is left as a follow-up rather than shipping a broken form.
+- **Lifecycle:** enable/disable (`PATCH /mabos/api/channels/:id`), remove (`DELETE /mabos/api/channels/:id`), and live status (`GET /mabos/api/channels/:id/status`). Status re-runs the credential test by reconstructing inputs from the durable env secret + stored non-secret values (records keep `envRefs`/`publicCredentials`, stripped from list responses).
+- **Catalog field model:** added `persist?: boolean` for test-only fields.
+- **UI:** Integrations page now shows per-channel live status (30s polling), enable/disable, and remove.
+- **Tests:** extended `tests/channel-integration.test.ts` with Discord/Signal mappings and enable/disable/remove/status (network mocked).
+
 ## Risks / notes
 
 - **Live reload (D4)** is the main unknown — verify early; it gates the "no terminal" promise.
