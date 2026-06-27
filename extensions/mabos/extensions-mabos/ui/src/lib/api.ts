@@ -45,6 +45,8 @@ import type {
   ChannelTestResult,
   ProvisionChannelBody,
   ProvisionResult,
+  WhatsAppLoginStart,
+  WhatsAppLoginWait,
 } from "./types";
 
 const BASE = "/mabos/api";
@@ -455,4 +457,8 @@ export const api = {
   setChannelEnabled: (id: string, enabled: boolean) =>
     patch<ProvisionResult>(`/channels/${encodeURIComponent(id)}`, { enabled }),
   removeChannel: (id: string) => del<ProvisionResult>(`/channels/${encodeURIComponent(id)}`),
+  startWhatsAppLogin: (body: { force?: boolean }) =>
+    post<WhatsAppLoginStart>("/channels/whatsapp/login/start", body),
+  waitWhatsAppLogin: (body: { businessId?: string; agentId?: string; timeoutMs?: number }) =>
+    post<WhatsAppLoginWait>("/channels/whatsapp/login/wait", body),
 };

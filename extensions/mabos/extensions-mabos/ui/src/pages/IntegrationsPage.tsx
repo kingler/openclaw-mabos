@@ -1,5 +1,7 @@
 import { Plug, Plus, CheckCircle2, XCircle, Loader2, ArrowLeft, Power, Trash2 } from "lucide-react";
-import { useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import { useEffect, useState } from "react";
+import { api } from "@/lib/api";
 import { useBusinessContext } from "@/contexts/BusinessContext";
 import {
   useChannelCatalog,
@@ -31,7 +33,9 @@ export function IntegrationsPage() {
         </div>
       </div>
 
-      {adding ? (
+      {adding && adding.pairingType === "qr" ? (
+        <WhatsAppPairing businessId={activeBusinessId} onDone={() => setAdding(null)} />
+      ) : adding ? (
         <ChannelForm
           descriptor={adding}
           businessId={activeBusinessId}
@@ -143,6 +147,104 @@ function ChannelRow({ channel }: { channel: ConfiguredChannel }) {
           <Trash2 className="h-4 w-4" />
         </button>
       </div>
+    </div>
+  );
+}
+
+function WhatsAppPairing({
+  businessId,
+  onDone,
+}: {
+  businessId: string | null;
+  onDone: () => void;
+}) {
+  const queryClient = useQueryClient();
+  const [qr, setQr] = useState<string | null>(null);
+  const [message, setMessage] = useState("Generating QR code...");
+  const [error, setError] = useState<string | null>(null);
+  const [done, setDone] = useState(false);
+
+  // Start the login (request a fresh QR) on mount.
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .startWhatsAppLogin({ force: true })
+      .then((r) => {
+        if (cancelled) return;
+        setQr(r.qrDataUrl ?? null);
+        setMessage(r.message);
+      })
+      .catch((e) => !cancelled && setError(String(e)));
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Poll for the scan to complete.
+  useEffect(() => {
+    if (!qr || done) return;
+    let cancelled = false;
+    const poll = async () => {
+      try {
+        const r = await api.waitWhatsAppLogin({
+          businessId: businessId || undefined,
+          timeoutMs: 5000,
+        });
+        if (cancelled) return;
+        setMessage(r.message);
+        if (r.connected) {
+          setDone(true);
+          queryClient.invalidateQueries({ queryKey: ["channels"] });
+          setTimeout(onDone, 1200);
+          return;
+        }
+        setTimeout(poll, 2000);
+      } catch (e) {
+        if (!cancelled) setError(String(e));
+      }
+    };
+    poll();
+    return () => {
+      cancelled = true;
+    };
+  }, [qr, done, businessId, queryClient, onDone]);
+
+  return (
+    <div
+      className="flex max-w-xl flex-col items-center gap-4 rounded-lg border p-6"
+      style={{ borderColor: "var(--border-mabos)", backgroundColor: "var(--bg-secondary)" }}
+    >
+      <button
+        onClick={onDone}
+        className="flex items-center gap-1 self-start text-xs"
+        style={{ color: "var(--text-secondary)" }}
+      >
+        <ArrowLeft className="h-3 w-3" /> Back
+      </button>
+      <h2 className="text-lg font-semibold" style={{ color: "var(--text-primary)" }}>
+        Link WhatsApp
+      </h2>
+      {done ? (
+        <div className="flex items-center gap-2" style={{ color: "var(--accent-green)" }}>
+          <CheckCircle2 className="h-5 w-5" /> Connected
+        </div>
+      ) : qr ? (
+        <>
+          <img src={qr} alt="WhatsApp QR code" className="h-56 w-56 rounded-md bg-white p-2" />
+          <p className="text-center text-sm" style={{ color: "var(--text-secondary)" }}>
+            Open WhatsApp on your phone → Linked Devices → Link a Device, then scan this code.
+          </p>
+        </>
+      ) : (
+        <div className="flex items-center gap-2" style={{ color: "var(--text-secondary)" }}>
+          <Loader2 className="h-4 w-4 animate-spin" /> {message}
+        </div>
+      )}
+      {error ? (
+        <div className="text-sm" style={{ color: "var(--accent-red, #e5484d)" }}>
+          {error}
+        </div>
+      ) : null}
     </div>
   );
 }

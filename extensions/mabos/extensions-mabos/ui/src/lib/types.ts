@@ -644,7 +644,15 @@ export type ChannelDescriptor = {
   label: string;
   docsUrl?: string;
   capabilities?: string[];
+  pairingType?: "credentials" | "qr";
   fields: ChannelField[];
+};
+
+export type WhatsAppLoginStart = { qrDataUrl?: string; message: string };
+export type WhatsAppLoginWait = {
+  connected: boolean;
+  message: string;
+  channel?: ConfiguredChannel;
 };
 
 export type ConfiguredChannel = {
