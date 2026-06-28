@@ -117,6 +117,7 @@ import { registerGovernance } from "./src/governance/index.js";
 import { registerModelRouter } from "./src/model-router/index.js";
 import { registerEnrichment } from "./src/enrichment/index.js";
 import { createEnrichmentTools } from "./src/enrichment/tools.js";
+import { createEvalTools } from "./src/eval/index.js";
 import { registerProvisioning } from "./src/provisioning/index.js";
 import { registerToolApi } from "./src/tool-api/index.js";
 import { registerChannelRoutes } from "./src/channels/routes.js";
@@ -1238,6 +1239,7 @@ export default async function register(api: OpenClawPluginApi) {
     createLeInventoryTools,
     createCompetitorMonitorTools,
     createEnrichmentTools,
+    createEvalTools,
   ];
 
   // Collect all tool names for capabilities_sync context
