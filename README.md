@@ -1,20 +1,12 @@
 # 🦞 OpenClaw-MABOS — Multi-Agent Business Operating System
 
 <p align="center">
-    <picture>
-        <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/openclaw/openclaw/main/docs/assets/openclaw-logo-text-dark.png">
-        <img src="https://raw.githubusercontent.com/openclaw/openclaw/main/docs/assets/openclaw-logo-text.png" alt="OpenClaw-MABOS" width="500">
-    </picture>
-</p>
-
-<p align="center">
   <strong>Autonomous AI Agents Running Your Business</strong>
 </p>
 
 <p align="center">
-  <a href="https://github.com/openclaw/openclaw/actions/workflows/ci.yml?branch=main"><img src="https://img.shields.io/github/actions/workflow/status/openclaw/openclaw/ci.yml?branch=main&style=for-the-badge" alt="CI status"></a>
-  <a href="https://github.com/openclaw/openclaw/releases"><img src="https://img.shields.io/github/v/release/openclaw/openclaw?include_prereleases&style=for-the-badge" alt="GitHub release"></a>
-  <a href="https://discord.gg/clawd"><img src="https://img.shields.io/discord/1456350064065904867?label=Discord&logo=discord&logoColor=white&color=5865F2&style=for-the-badge" alt="Discord"></a>
+  <a href="https://github.com/kingler/openclaw-mabos/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/kingler/openclaw-mabos/ci.yml?branch=main&style=for-the-badge" alt="CI status"></a>
+  <a href="https://github.com/kingler/openclaw-mabos/releases"><img src="https://img.shields.io/github/v/release/kingler/openclaw-mabos?include_prereleases&style=for-the-badge" alt="GitHub release"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue.svg?style=for-the-badge" alt="MIT License"></a>
 </p>
 
@@ -26,7 +18,7 @@ MABOS combines three architectural paradigms into a unified system:
 - **Corporate Governance** (inspired by [Paperclip](https://github.com/nicepkg/paperclip)) — atomic budget enforcement, RBAC, append-only audit trails, multi-company isolation
 - **Autonomous Agent Runtime** (inspired by [Hermes Agent](https://github.com/NousResearch/hermes-agent)) — multi-model routing with fallback chains, MoA ensemble reasoning, self-improving skill creation, session intelligence with user modeling, execution sandboxes (Docker/SSH/Modal), security hardening
 
-[Website](https://openclaw.ai) · [Docs](https://docs.openclaw.ai) · [Vision](VISION.md) · [Architecture](#architecture) · [Getting Started](https://docs.openclaw.ai/start/getting-started) · [Design Doc](docs/plans/2026-03-29-unified-mabos-design.md) · [Discord](https://discord.gg/clawd)
+[Vision](VISION.md) · [Architecture](#architecture) · [Developer Guide](extensions/mabos/extensions-mabos/docs/developer-guide.md) · [Design Doc](docs/plans/2026-03-29-unified-mabos-design.md) · [Built on OpenClaw](https://github.com/openclaw/openclaw)
 
 ---
 
@@ -498,7 +490,7 @@ Run `openclaw doctor` to surface risky/misconfigured DM policies.
 
 ## Star History
 
-[![Star History Chart](https://api.star-history.com/svg?repos=openclaw/openclaw&type=date&legend=top-left)](https://www.star-history.com/#openclaw/openclaw&type=date&legend=top-left)
+[![Star History Chart](https://api.star-history.com/svg?repos=kingler/openclaw-mabos&type=date&legend=top-left)](https://www.star-history.com/#kingler/openclaw-mabos&type=date&legend=top-left)
 
 ## Everything we built so far
 
