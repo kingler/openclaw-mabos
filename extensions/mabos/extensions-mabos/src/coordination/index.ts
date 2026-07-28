@@ -6,8 +6,8 @@
  * agent-driven delegation workflows.
  */
 
-import type { OpenClawPluginApi, AnyAgentTool } from "openclaw/plugin-sdk";
 import { Type, type Static } from "@sinclair/typebox";
+import type { OpenClawPluginApi, AnyAgentTool } from "openclaw/plugin-sdk";
 import { resolveWorkspaceDir } from "../tools/common.js";
 import { createContractNetManager } from "./contract-net.js";
 import { createMessageRouter } from "./message-router.js";
@@ -27,7 +27,9 @@ function parseQuery(req: any): Record<string, string> {
   try {
     const url = new URL(req.url ?? "/", `http://${req.headers?.host ?? "localhost"}`);
     const params: Record<string, string> = {};
-    url.searchParams.forEach((v, k) => { params[k] = v; });
+    url.searchParams.forEach((v, k) => {
+      params[k] = v;
+    });
     return params;
   } catch {
     return {};
@@ -258,10 +260,28 @@ export function registerCoordination(api: OpenClawPluginApi) {
   }
 
   // ── Heartbeat hook: expire stale auctions ───────────────────
-  api.hook("heartbeat", async () => {
+  mabosHeartbeat("coordination", async () => {
     const expired = await contractNet.expireStale();
     if (expired.length > 0) {
-      api.logger.info(`[coordination] Expired ${expired.length} stale auction(s): ${expired.join(", ")}`);
+      api.logger.info(
+        `[coordination] Expired ${expired.length} stale auction(s): ${expired.join(", ")}`,
+      );
     }
   });
+}
+
+// ── MABOS heartbeat shim ──────────────────────────────────────────────
+// The core plugin API exposes no "heartbeat" hook (valid hooks are the 24
+// PluginHookName values, e.g. agent_end / gateway_start). Periodic work is
+// therefore driven by a timer here instead of api.hook(...).
+function mabosHeartbeat(label, fn, ms = 60_000) {
+  const timer = setInterval(async () => {
+    try {
+      await fn();
+    } catch (err) {
+      console.warn(`[mabos] ${label} heartbeat failed: ${err}`);
+    }
+  }, ms);
+  timer?.unref?.();
+  return timer;
 }

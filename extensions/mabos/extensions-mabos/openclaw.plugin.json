@@ -131,6 +131,46 @@
         "type": "number",
         "default": 5,
         "description": "Cooldown between wake-ups per agent (minutes)"
+      },
+      "modelRouterEnabled": {
+        "type": "boolean",
+        "default": false,
+        "description": "Enable the multi-provider model router"
+      },
+      "governanceEnabled": {
+        "type": "boolean",
+        "default": false,
+        "description": "Enable the governance module"
+      },
+      "sandboxEnabled": {
+        "type": "boolean",
+        "default": false,
+        "description": "Enable the execution sandbox module"
+      },
+      "sessionIntelEnabled": {
+        "type": "boolean",
+        "default": false,
+        "description": "Enable session intelligence"
+      },
+      "skillLoopEnabled": {
+        "type": "boolean",
+        "default": false,
+        "description": "Enable the skill loop module"
+      },
+      "gdcEnabled": {
+        "type": "boolean",
+        "default": false,
+        "description": "Enable the GDC module"
+      },
+      "gdc": {
+        "type": "object",
+        "additionalProperties": true,
+        "description": "GDC module options"
+      },
+      "modelRouter": {
+        "type": "object",
+        "additionalProperties": true,
+        "description": "Model router options"
       }
     }
   }

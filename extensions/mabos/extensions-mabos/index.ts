@@ -100,12 +100,15 @@ async function getCoreModules() {
   };
   return _coreModules;
 }
+import { registerChannelRoutes } from "./src/channels/routes.js";
 import { registerBdiApi } from "./src/coordination/bdi-api.js";
 import { createMabosEventBus } from "./src/coordination/event-bus.js";
 // Unified MABOS modules (Paperclip + Hermes integration)
 import { registerCoordination } from "./src/coordination/index.js";
 // ── End core imports shim ──────────────────────────────────────────
 import { createCronBridgeService } from "./src/cron-bridge.js";
+import { registerEnrichment } from "./src/enrichment/index.js";
+import { createEnrichmentTools } from "./src/enrichment/tools.js";
 import { registerExecutionSandbox } from "./src/execution-sandbox/index.js";
 import { writeCognitiveState } from "./src/gdc/cognitive-writer.js";
 import { generateDomainAgents } from "./src/gdc/domain-agent-generator.js";
@@ -115,14 +118,11 @@ import { generatePersonaBatch } from "./src/gdc/persona-generator.js";
 import type { CompanyDNA, LlmCallFn } from "./src/gdc/types.js";
 import { registerGovernance } from "./src/governance/index.js";
 import { registerModelRouter } from "./src/model-router/index.js";
-import { registerEnrichment } from "./src/enrichment/index.js";
-import { createEnrichmentTools } from "./src/enrichment/tools.js";
 import { registerProvisioning } from "./src/provisioning/index.js";
-import { registerToolApi } from "./src/tool-api/index.js";
-import { registerChannelRoutes } from "./src/channels/routes.js";
 import { createSecurityModule } from "./src/security/index.js";
 import { registerSessionIntel } from "./src/session-intel/index.js";
 import { registerSkillLoop } from "./src/skill-loop/index.js";
+import { registerToolApi } from "./src/tool-api/index.js";
 import { createBdiTools } from "./src/tools/bdi-tools.js";
 import { createBpmnMigrateTools } from "./src/tools/bpmn-migrate.js";
 import { createBusinessTools } from "./src/tools/business-tools.js";
@@ -1273,7 +1273,9 @@ export default async function register(api: OpenClawPluginApi) {
 
   // Web channel integration routes (connect messengers from the UI).
   try {
-    registerChannelRoutes(api, { logger: { info: (m) => log.info?.(m), error: (m) => log.error(m) } });
+    registerChannelRoutes(api, {
+      logger: { info: (m) => log.info?.(m), error: (m) => log.error(m) },
+    });
   } catch (err) {
     log.warn(`[mabos] Channel API failed to initialize: ${err}`);
   }
@@ -7778,7 +7780,7 @@ export default async function register(api: OpenClawPluginApi) {
     });
 
     // Wire BDI heartbeat events into the bus
-    api.hook("heartbeat", async () => {
+    mabosHeartbeat("event-bus", async () => {
       eventBus.emit({
         type: "bdi.cycle.complete",
         source: "bdi",
@@ -7821,4 +7823,20 @@ export default async function register(api: OpenClawPluginApi) {
   }
 
   api.logger.info("[mabos] MABOS extension registered (bundled, deep integration)");
+}
+
+// ── MABOS heartbeat shim ──────────────────────────────────────────────
+// The core plugin API exposes no "heartbeat" hook (valid hooks are the 24
+// PluginHookName values, e.g. agent_end / gateway_start). Periodic work is
+// therefore driven by a timer here instead of api.hook(...).
+function mabosHeartbeat(label, fn, ms = 60_000) {
+  const timer = setInterval(async () => {
+    try {
+      await fn();
+    } catch (err) {
+      console.warn(`[mabos] ${label} heartbeat failed: ${err}`);
+    }
+  }, ms);
+  timer?.unref?.();
+  return timer;
 }
